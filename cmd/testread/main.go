@@ -27,7 +27,7 @@ func main() {
 			continue
 		}
 		path := filepath.Join(testDir, entry.Name())
-		ds, err := godicom.DcmRead(path, &godicom.ReadOptions{Force: true})
+		ds, err := godicom.ReadFile(path, &godicom.ReadOptions{Force: true})
 		if err != nil {
 			fmt.Printf("FAIL %s: %v\n", entry.Name(), err)
 			failed++

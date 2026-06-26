@@ -26,7 +26,7 @@ func main() {
 		}
 		force := false
 		filename := os.Args[2]
-		ds, err := godicom.DcmRead(filename, &godicom.ReadOptions{Force: force})
+		ds, err := godicom.ReadFile(filename, &godicom.ReadOptions{Force: force})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -46,7 +46,7 @@ func main() {
 		src := os.Args[2]
 		dst := os.Args[3]
 
-		ds, err := godicom.DcmRead(src, nil)
+		ds, err := godicom.ReadFile(src, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
 			os.Exit(1)
@@ -61,7 +61,7 @@ func main() {
 		fmt.Printf("Written to %s\n", dst)
 
 		// Re-read and compare
-		ds2, err := godicom.DcmRead(dst, nil)
+		ds2, err := godicom.ReadFile(dst, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Re-read error: %v\n", err)
 			os.Exit(1)

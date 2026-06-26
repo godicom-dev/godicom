@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestDcmWriteReadback(t *testing.T) {
+func TestWriteFileReadback(t *testing.T) {
 	src := testFilePath("CT_small.dcm")
-	ds, err := DcmReadFile(src)
+	ds, err := ReadFile(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestDcmWriteReadback(t *testing.T) {
 	}
 
 	// Read back
-	ds2, err := DcmReadFile(outPath)
+	ds2, err := ReadFile(outPath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,9 +39,9 @@ func TestDcmWriteReadback(t *testing.T) {
 	}
 }
 
-func TestDcmWriteImplicitVR(t *testing.T) {
+func TestWriteFileImplicitVR(t *testing.T) {
 	src := testFilePath("CT_small.dcm")
-	ds, err := DcmReadFile(src)
+	ds, err := ReadFile(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestDcmWriteImplicitVR(t *testing.T) {
 	}
 
 	// Read back with force (no file meta may cause issues)
-	ds2, err := DcmRead(outPath, &ReadOptions{Force: true})
+	ds2, err := ReadFile(outPath, &ReadOptions{Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestDcmWriteImplicitVR(t *testing.T) {
 	}
 }
 
-func TestDcmWriteEmptyDataset(t *testing.T) {
+func TestWriteFileEmptyDataset(t *testing.T) {
 	ds := NewDataset()
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "empty.dcm")
@@ -76,7 +76,7 @@ func TestDcmWriteEmptyDataset(t *testing.T) {
 	}
 }
 
-func TestDcmWriteSequence(t *testing.T) {
+func TestWriteFileSequence(t *testing.T) {
 	ds := NewDataset()
 	item := NewDataset()
 	item.Set(NewDataElement(MustTag(0x00100010), VRPN, "SeqPatient"))
@@ -91,7 +91,7 @@ func TestDcmWriteSequence(t *testing.T) {
 	}
 }
 
-func TestDcmWriteAllVRTypes(t *testing.T) {
+func TestWriteFileAllVRTypes(t *testing.T) {
 	ds := NewDataset()
 	ds.Set(NewDataElement(MustTag(0x00080005), VRCS, "ISO_IR 100"))
 	ds.Set(NewDataElement(MustTag(0x00100010), VRPN, "Test^Patient"))
@@ -112,7 +112,7 @@ func TestDcmWriteAllVRTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds2, err := DcmRead(outPath, &ReadOptions{Force: true})
+	ds2, err := ReadFile(outPath, &ReadOptions{Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}

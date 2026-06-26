@@ -8,8 +8,8 @@ import (
 )
 
 // readUndefinedLengthValue reads an undefined length value until a delimiter tag.
-func readUndefinedLengthValue(fp *DicomIO, delimiterTag Tag, isImplicitVR, isLittleEndian bool) ([]byte, error) {
-	var data []byte
+func readUndefinedLengthValue(fp *dicomIO, delimiterTag Tag, isImplicitVR, isLittleEndian bool) ([]byte, error) {
+	data := []byte{}
 	for {
 		tag, err := fp.ReadTag()
 		if err != nil {

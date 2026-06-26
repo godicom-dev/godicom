@@ -61,16 +61,24 @@ var (
 	ListVR           = map[VR]bool{VRSQ: true}
 	DefaultCharsetVR = map[VR]bool{VRAE: true, VRAS: true, VRCS: true, VRDA: true, VRDS: true, VRDT: true, VRIS: true, VRTM: true, VRUI: true, VRUR: true}
 	CustomCharsetVR  = map[VR]bool{VRLO: true, VRLT: true, VRPN: true, VRSH: true, VRST: true, VRUC: true, VRUT: true}
-	StrVR             = func() map[VR]bool {
+	StrVR            = func() map[VR]bool {
 		m := make(map[VR]bool)
-		for k, v := range DefaultCharsetVR { m[k] = v }
-		for k, v := range CustomCharsetVR { m[k] = v }
+		for k, v := range DefaultCharsetVR {
+			m[k] = v
+		}
+		for k, v := range CustomCharsetVR {
+			m[k] = v
+		}
 		return m
 	}()
 	AllowBackslash = func() map[VR]bool {
 		m := make(map[VR]bool)
-		for k, v := range BytesVR { m[k] = v }
-		m[VRLT] = true; m[VRST] = true; m[VRUT] = true
+		for k, v := range BytesVR {
+			m[k] = v
+		}
+		m[VRLT] = true
+		m[VRST] = true
+		m[VRUT] = true
 		return m
 	}()
 )

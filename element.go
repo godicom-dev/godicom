@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// DataElement holds a single DICOM data element.
-type DataElement struct {
+// Element holds a single DICOM data element.
+type Element struct {
 	Tag               Tag
 	VR                VR
 	Value             interface{}
@@ -15,21 +15,33 @@ type DataElement struct {
 	PrivateCreator    string
 }
 
-func NewDataElement(tag Tag, vr VR, value interface{}) *DataElement {
-	return &DataElement{
+// DataElement holds a single DICOM data element.
+//
+// Deprecated: use Element.
+type DataElement = Element
+
+func NewElement(tag Tag, vr VR, value interface{}) *Element {
+	return &Element{
 		Tag:   tag,
 		VR:    vr,
 		Value: value,
 	}
 }
 
-func (e *DataElement) String() string {
+// NewDataElement creates a DICOM data element.
+//
+// Deprecated: use NewElement.
+func NewDataElement(tag Tag, vr VR, value interface{}) *DataElement {
+	return NewElement(tag, vr, value)
+}
+
+func (e *Element) String() string {
 	name := e.Name()
 	val := e.ReprValue()
 	return fmt.Sprintf("%s %-35s %s: %s", e.Tag, name, e.VR, val)
 }
 
-func (e *DataElement) ReprValue() string {
+func (e *Element) ReprValue() string {
 	if e.Value == nil {
 		return ""
 	}
@@ -57,7 +69,7 @@ func (e *DataElement) ReprValue() string {
 	}
 }
 
-func (e *DataElement) Name() string {
+func (e *Element) Name() string {
 	if e.Tag.IsPrivate() {
 		if e.PrivateCreator != "" {
 			if name, ok := privateDictLookup(e.Tag, e.PrivateCreator); ok {
@@ -78,14 +90,14 @@ func (e *DataElement) Name() string {
 	return ""
 }
 
-func (e *DataElement) Keyword() string {
+func (e *Element) Keyword() string {
 	if kw, ok := keywordForTag(e.Tag); ok {
 		return kw
 	}
 	return ""
 }
 
-func (e *DataElement) VM() int {
+func (e *Element) VM() int {
 	if e.VR == VRSQ {
 		if seq, ok := e.Value.(*Sequence); ok {
 			return seq.Len()
@@ -116,15 +128,15 @@ func (e *DataElement) VM() int {
 	}
 }
 
-func (e *DataElement) IsEmpty() bool {
+func (e *Element) IsEmpty() bool {
 	return e.VM() == 0
 }
 
-func (e *DataElement) IsPrivate() bool {
+func (e *Element) IsPrivate() bool {
 	return e.Tag.IsPrivate()
 }
 
-func (e *DataElement) Equal(other *DataElement) bool {
+func (e *Element) Equal(other *Element) bool {
 	if e.Tag != other.Tag || e.VR != other.VR {
 		return false
 	}
@@ -145,9 +157,9 @@ type RawDataElement struct {
 
 // PersonName holds a DICOM Person Name (PN) value.
 type PersonName struct {
-	Alphabetic string
+	Alphabetic  string
 	Ideographic string
-	Phonetic   string
+	Phonetic    string
 }
 
 func ParsePersonName(s string) PersonName {

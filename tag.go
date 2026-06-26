@@ -4,17 +4,19 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/godicom-dev/godicom/tag"
 )
 
 // Tag represents a DICOM element (group, element) tag as a 32-bit integer.
-type Tag uint32
+type Tag = tag.Tag
 
 const (
-	ItemTag             Tag = 0xFFFEE000
-	ItemDelimiterTag    Tag = 0xFFFEE00D
-	SequenceDelimiterTag Tag = 0xFFFEE0DD
-	TagPixelRep         Tag = 0x00280103
-	TagCharset          Tag = 0x00080005
+	ItemTag              Tag = tag.Item
+	ItemDelimiterTag     Tag = tag.ItemDelimiter
+	SequenceDelimiterTag Tag = tag.SequenceDelimiter
+	TagPixelRep          Tag = tag.PixelRepresentation
+	TagCharset           Tag = tag.SpecificCharacterSet
 )
 
 // ParseTag creates a Tag from various forms:
@@ -72,31 +74,7 @@ func MustTag(arg interface{}, arg2 ...int) Tag {
 
 // NewTag creates a tag from group and element numbers.
 func NewTag(group, element int) Tag {
-	return Tag((group << 16) | element)
-}
-
-func (t Tag) Group() int     { return int(t >> 16) }
-func (t Tag) Element() int   { return int(t & 0xFFFF) }
-func (t Tag) IsPrivate() bool { return t.Group()%2 == 1 }
-
-func (t Tag) IsPrivateCreator() bool {
-	return t.IsPrivate() && 0x0010 <= t.Element() && t.Element() < 0x0100
-}
-
-func (t Tag) PrivateCreator() Tag {
-	return Tag((uint32(t) & 0xFFFF0000) | uint32(t.Element()>>8))
-}
-
-func (t Tag) String() string {
-	return fmt.Sprintf("(%04X,%04X)", t.Group(), t.Element())
-}
-
-func (t Tag) JSONKey() string {
-	return fmt.Sprintf("%04X%04X", t.Group(), t.Element())
-}
-
-func (t Tag) MarshalText() ([]byte, error) {
-	return []byte(t.String()), nil
+	return tag.New(group, element)
 }
 
 func toInt(v interface{}) int {

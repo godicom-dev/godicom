@@ -12,8 +12,8 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
-func TestDcmReadCTSmall(t *testing.T) {
-	ds, err := DcmReadFile(testFilePath("CT_small.dcm"))
+func TestReadFileCTSmall(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +37,8 @@ func TestDcmReadCTSmall(t *testing.T) {
 	}
 }
 
-func TestDcmReadMRSmall(t *testing.T) {
-	ds, err := DcmReadFile(testFilePath("MR_small.dcm"))
+func TestReadFileMRSmall(t *testing.T) {
+	ds, err := ReadFile(testFilePath("MR_small.dcm"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +54,8 @@ func TestDcmReadMRSmall(t *testing.T) {
 	}
 }
 
-func TestDcmReadMRImplicit(t *testing.T) {
-	ds, err := DcmReadFile(testFilePath("MR_small_implicit.dcm"))
+func TestReadFileMRImplicit(t *testing.T) {
+	ds, err := ReadFile(testFilePath("MR_small_implicit.dcm"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +71,8 @@ func TestDcmReadMRImplicit(t *testing.T) {
 	}
 }
 
-func TestDcmReadRTPlan(t *testing.T) {
-	ds, err := DcmRead(testFilePath("rtplan.dcm"), &ReadOptions{Force: true})
+func TestReadFileRTPlan(t *testing.T) {
+	ds, err := ReadFile(testFilePath("rtplan.dcm"), &ReadOptions{Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +81,8 @@ func TestDcmReadRTPlan(t *testing.T) {
 	}
 }
 
-func TestDcmReadRTStruct(t *testing.T) {
-	ds, err := DcmRead(testFilePath("rtstruct.dcm"), &ReadOptions{Force: true})
+func TestReadFileRTStruct(t *testing.T) {
+	ds, err := ReadFile(testFilePath("rtstruct.dcm"), &ReadOptions{Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestDcmReadRTStruct(t *testing.T) {
 	}
 }
 
-func TestDcmReadAllTestFiles(t *testing.T) {
+func TestReadFileAllTestFiles(t *testing.T) {
 	entries, err := os.ReadDir(testDataDir)
 	if err != nil {
 		t.Skipf("test data directory not found: %v", err)
@@ -103,7 +103,7 @@ func TestDcmReadAllTestFiles(t *testing.T) {
 		}
 		t.Run(entry.Name(), func(t *testing.T) {
 			path := filepath.Join(testDataDir, entry.Name())
-			_, err := DcmRead(path, &ReadOptions{Force: true})
+			_, err := ReadFile(path, &ReadOptions{Force: true})
 			if err != nil {
 				t.Errorf("failed to read %s: %v", entry.Name(), err)
 			}
@@ -111,10 +111,10 @@ func TestDcmReadAllTestFiles(t *testing.T) {
 	}
 }
 
-func TestDcmReadWriteRoundtrip(t *testing.T) {
+func TestReadWriteRoundtrip(t *testing.T) {
 	// Read, write to temp file, read back, compare element count
 	src := testFilePath("CT_small.dcm")
-	ds1, err := DcmReadFile(src)
+	ds1, err := ReadFile(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestDcmReadWriteRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds2, err := DcmReadFile(tmpFile)
+	ds2, err := ReadFile(tmpFile, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,8 +135,8 @@ func TestDcmReadWriteRoundtrip(t *testing.T) {
 	}
 }
 
-func TestDcmReadStopBeforePixels(t *testing.T) {
-	ds, err := DcmRead(testFilePath("CT_small.dcm"), &ReadOptions{StopBeforePixels: true})
+func TestReadFileStopBeforePixels(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), &ReadOptions{StopBeforePixels: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +146,8 @@ func TestDcmReadStopBeforePixels(t *testing.T) {
 	}
 }
 
-func TestDcmReadDeferSize(t *testing.T) {
-	ds, err := DcmRead(testFilePath("CT_small.dcm"), &ReadOptions{DeferSize: 100})
+func TestReadFileDeferSize(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), &ReadOptions{DeferSize: 100})
 	if err != nil {
 		t.Fatal(err)
 	}

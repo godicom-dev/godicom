@@ -38,10 +38,10 @@ type FileDataset struct {
 
 // PrivateBlock represents a private block in the dataset.
 type PrivateBlock struct {
-	Group           int
-	PrivateCreator  string
-	dataset         *Dataset
-	blockStart      int
+	Group          int
+	PrivateCreator string
+	dataset        *Dataset
+	blockStart     int
 }
 
 func NewDataset() *Dataset {
@@ -77,7 +77,11 @@ func (d *Dataset) Has(tag Tag) bool {
 }
 
 func (d *Dataset) Elements() map[Tag]*DataElement {
-	return d.elements
+	elements := make(map[Tag]*DataElement, len(d.elements))
+	for tag, elem := range d.elements {
+		elements[tag] = elem
+	}
+	return elements
 }
 
 // SortedTags returns all tags in ascending order.
@@ -162,6 +166,26 @@ func (d *Dataset) GetSequence(tag Tag) (*Sequence, bool) {
 	}
 	s, ok := e.Value.(*Sequence)
 	return s, ok
+}
+
+func (d *Dataset) StringValue(tag Tag) (string, bool) {
+	return d.GetString(tag)
+}
+
+func (d *Dataset) IntValue(tag Tag) (int, bool) {
+	return d.GetInt(tag)
+}
+
+func (d *Dataset) FloatValue(tag Tag) (float64, bool) {
+	return d.GetFloat(tag)
+}
+
+func (d *Dataset) BytesValue(tag Tag) ([]byte, bool) {
+	return d.GetBytes(tag)
+}
+
+func (d *Dataset) SequenceValue(tag Tag) (*Sequence, bool) {
+	return d.GetSequence(tag)
 }
 
 func (d *Dataset) GetDataElement(tag Tag) *DataElement {
@@ -279,11 +303,11 @@ func writeJSONValue(b *strings.Builder, elem *DataElement) {
 // --- Save ---
 
 func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
-	return dcmwrite(filename, d, opts)
+	return WriteFile(filename, d, opts)
 }
 
 func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
-	return dcmwrite(filename, fd.Dataset, opts)
+	return WriteFile(filename, fd.Dataset, opts)
 }
 
 // --- Element count ---

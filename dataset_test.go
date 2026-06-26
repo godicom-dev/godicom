@@ -110,6 +110,112 @@ func TestDatasetIter(t *testing.T) {
 	}
 }
 
+func TestDatasetElementsReturnsCopy(t *testing.T) {
+	ds := NewDataset()
+	tag := MustTag(0x00100010)
+	ds.Set(NewDataElement(tag, VRPN, "Test^Name"))
+
+	elements := ds.Elements()
+	if len(elements) != 1 {
+		t.Fatalf("len(Elements) = %d, want 1", len(elements))
+	}
+	delete(elements, tag)
+	if !ds.Has(tag) {
+		t.Fatal("mutating Elements map changed dataset")
+	}
+}
+
+func TestDatasetGetSequence(t *testing.T) {
+	ds := NewDataset()
+	seqTag := MustTag(0x300A00B0)
+	seq := NewSequence([]*Dataset{NewDataset(), NewDataset()})
+	ds.Set(NewDataElement(seqTag, VRSQ, seq))
+
+	got, ok := ds.GetSequence(seqTag)
+	if !ok {
+		t.Fatal("GetSequence ok = false")
+	}
+	if got != seq {
+		t.Fatal("GetSequence returned wrong sequence")
+	}
+}
+
+func TestDatasetGetSequenceMissingOrWrongType(t *testing.T) {
+	ds := NewDataset()
+	if got, ok := ds.GetSequence(MustTag(0x300A00B0)); ok || got != nil {
+		t.Fatalf("missing GetSequence = %v, %t, want nil false", got, ok)
+	}
+
+	tag := MustTag(0x300A00B0)
+	ds.Set(NewDataElement(tag, VRLO, "not sequence"))
+	if got, ok := ds.GetSequence(tag); ok || got != nil {
+		t.Fatalf("wrong type GetSequence = %v, %t, want nil false", got, ok)
+	}
+}
+
+func TestDatasetValueWrappers(t *testing.T) {
+	ds := NewDataset()
+	stringTag := MustTag(0x00100010)
+	intTag := MustTag(0x00280010)
+	floatTag := MustTag(0x00186050)
+	bytesTag := MustTag(0x7FE00010)
+	sequenceTag := MustTag(0x300A00B0)
+	seq := NewSequence([]*Dataset{NewDataset()})
+
+	ds.Set(NewDataElement(stringTag, VRPN, "Test^Name"))
+	ds.Set(NewDataElement(intTag, VRUS, uint16(512)))
+	ds.Set(NewDataElement(floatTag, VRDS, 3.14))
+	ds.Set(NewDataElement(bytesTag, VROB, []byte{1, 2, 3}))
+	ds.Set(NewDataElement(sequenceTag, VRSQ, seq))
+
+	if got, ok := ds.StringValue(stringTag); !ok || got != "Test^Name" {
+		t.Fatalf("StringValue = %q, %t, want Test^Name true", got, ok)
+	}
+	if got, ok := ds.IntValue(intTag); !ok || got != 512 {
+		t.Fatalf("IntValue = %d, %t, want 512 true", got, ok)
+	}
+	if got, ok := ds.FloatValue(floatTag); !ok || got != 3.14 {
+		t.Fatalf("FloatValue = %f, %t, want 3.14 true", got, ok)
+	}
+	if got, ok := ds.BytesValue(bytesTag); !ok || len(got) != 3 || got[0] != 1 {
+		t.Fatalf("BytesValue = %v, %t, want [1 2 3] true", got, ok)
+	}
+	if got, ok := ds.SequenceValue(sequenceTag); !ok || got != seq {
+		t.Fatalf("SequenceValue = %v, %t, want sequence true", got, ok)
+	}
+}
+
+func TestDatasetGetDataElement(t *testing.T) {
+	ds := NewDataset()
+	tag := MustTag(0x00100010)
+	elem := NewDataElement(tag, VRPN, "Test^Name")
+	ds.Set(elem)
+
+	if got := ds.GetDataElement(tag); got != elem {
+		t.Fatalf("GetDataElement = %v, want %v", got, elem)
+	}
+	if got := ds.GetDataElement(MustTag(0x00100020)); got != nil {
+		t.Fatalf("missing GetDataElement = %v, want nil", got)
+	}
+}
+
+func TestPrivateBlockSet(t *testing.T) {
+	ds := NewDataset()
+	ds.Set(NewDataElement(MustTag(0x00090010), VRLO, "MY_CREATOR"))
+	pb := ds.PrivateBlock(0x0009, "MY_CREATOR")
+	if pb == nil {
+		t.Fatal("private block not found")
+	}
+
+	pb.Set(0x02, VRLO, "PrivateValue2")
+	elem, ok := ds.Get(MustTag(0x00091002))
+	if !ok {
+		t.Fatal("private element not set")
+	}
+	if elem.Value != "PrivateValue2" {
+		t.Fatalf("private element value = %v, want PrivateValue2", elem.Value)
+	}
+}
 func TestDatasetPrivateBlock(t *testing.T) {
 	ds := NewDataset()
 	ds.Set(NewDataElement(MustTag(0x00090010), VRLO, "MY_CREATOR"))

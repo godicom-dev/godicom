@@ -10,13 +10,13 @@ import (
 
 // WriteOptions controls DICOM file writing behavior.
 type WriteOptions struct {
-	ImplicitVR     *bool
-	LittleEndian   *bool
+	ImplicitVR        *bool
+	LittleEndian      *bool
 	EnforceFileFormat bool
 }
 
-// dcmwrite writes a Dataset to a DICOM file.
-func dcmwrite(filename string, ds *Dataset, opts *WriteOptions) error {
+// writeFile writes a Dataset to a DICOM file.
+func writeFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func dcmwrite(filename string, ds *Dataset, opts *WriteOptions) error {
 	}
 
 	// Write File Meta Information (always Explicit VR Little Endian)
-	fp := NewDicomWriter(f)
+	fp := newDicomWriter(f)
 	fp.SetByteOrder(true)
 
 	if err := writeFileMetaInfo(fp, ds); err != nil {
@@ -70,7 +70,7 @@ func dcmwrite(filename string, ds *Dataset, opts *WriteOptions) error {
 	return nil
 }
 
-func writeFileMetaInfo(fp *DicomIO, ds *Dataset) error {
+func writeFileMetaInfo(fp *dicomIO, ds *Dataset) error {
 	// We need to write the Transfer Syntax UID if present
 	// File Meta is always Explicit VR Little Endian
 
@@ -87,7 +87,7 @@ func writeFileMetaInfo(fp *DicomIO, ds *Dataset) error {
 	return nil
 }
 
-func writeDataset(fp *DicomIO, ds *Dataset, isImplicit, isLittleEndian bool) error {
+func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) error {
 	for _, elem := range ds.Iter() {
 		if elem.Tag.Group() == 0x0002 {
 			continue // Already written as file meta
@@ -99,7 +99,7 @@ func writeDataset(fp *DicomIO, ds *Dataset, isImplicit, isLittleEndian bool) err
 	return nil
 }
 
-func writeElement(fp *DicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
+func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
 	fp.SetByteOrder(isLittleEndian)
 
 	// Write tag
@@ -455,9 +455,16 @@ func encodeBytes(elem *DataElement) []byte {
 	return nil
 }
 
-// DcmWrite is the public API for writing DICOM files.
+// WriteFile writes a Dataset to a DICOM file.
+func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
+	return writeFile(filename, ds, opts)
+}
+
+// DcmWrite writes a Dataset to a DICOM file.
+//
+// Deprecated: use WriteFile.
 func DcmWrite(filename string, ds *Dataset, opts *WriteOptions) error {
-	return dcmwrite(filename, ds, opts)
+	return WriteFile(filename, ds, opts)
 }
 
 // Ensure binary is used

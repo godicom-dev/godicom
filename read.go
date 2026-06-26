@@ -13,7 +13,7 @@ type ReadOptions struct {
 	SpecificTags     []Tag
 }
 
-func dcmread(filename string, opts *ReadOptions) (*FileDataset, error) {
+func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -442,10 +442,21 @@ func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, 
 	return pos
 }
 
-func DcmRead(filename string, opts *ReadOptions) (*FileDataset, error) {
-	return dcmread(filename, opts)
+// ReadFile reads a DICOM file from filename.
+func ReadFile(filename string, opts *ReadOptions) (*FileDataset, error) {
+	return readFile(filename, opts)
 }
 
+// DcmRead reads a DICOM file from filename.
+//
+// Deprecated: use ReadFile.
+func DcmRead(filename string, opts *ReadOptions) (*FileDataset, error) {
+	return ReadFile(filename, opts)
+}
+
+// DcmReadFile reads a DICOM file from filename with default options.
+//
+// Deprecated: use ReadFile with nil options.
 func DcmReadFile(filename string) (*FileDataset, error) {
-	return dcmread(filename, nil)
+	return ReadFile(filename, nil)
 }
