@@ -1,0 +1,282 @@
+package godicom
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Dataset represents a DICOM Dataset - a collection of DataElements keyed by Tag.
+type Dataset struct {
+	elements      map[Tag]*DataElement
+	privateBlocks map[[2]interface{}]*PrivateBlock // key: (group, creator)
+	fileMeta      *FileMetaDataset
+	preamble      []byte
+	originalEnc   EncodingInfo
+	parent        *Sequence
+}
+
+// EncodingInfo describes the DICOM encoding used when reading/writing.
+type EncodingInfo struct {
+	IsImplicitVR   bool
+	IsLittleEndian bool
+}
+
+// FileMetaDataset holds DICOM File Meta Information (group 0x0002).
+type FileMetaDataset struct {
+	*Dataset
+}
+
+// FileDataset extends Dataset with file-specific info.
+type FileDataset struct {
+	*Dataset
+	Filename  string
+	Preamble  []byte
+	FileMeta  *FileMetaDataset
+	Timestamp string
+}
+
+// PrivateBlock represents a private block in the dataset.
+type PrivateBlock struct {
+	Group           int
+	PrivateCreator  string
+	dataset         *Dataset
+	blockStart      int
+}
+
+func NewDataset() *Dataset {
+	return &Dataset{
+		elements:      make(map[Tag]*DataElement),
+		privateBlocks: make(map[[2]interface{}]*PrivateBlock),
+	}
+}
+
+func NewFileMetaDataset() *FileMetaDataset {
+	return &FileMetaDataset{Dataset: NewDataset()}
+}
+
+// --- Element access ---
+
+func (d *Dataset) Get(tag Tag) (*DataElement, bool) {
+	e, ok := d.elements[tag]
+	return e, ok
+}
+
+func (d *Dataset) Set(element *DataElement) {
+	d.elements[element.Tag] = element
+}
+
+func (d *Dataset) Delete(tag Tag) {
+	delete(d.elements, tag)
+}
+
+func (d *Dataset) Has(tag Tag) bool {
+	_, ok := d.elements[tag]
+	return ok
+}
+
+func (d *Dataset) Elements() map[Tag]*DataElement {
+	return d.elements
+}
+
+// SortedTags returns all tags in ascending order.
+func (d *Dataset) SortedTags() []Tag {
+	tags := make([]Tag, 0, len(d.elements))
+	for t := range d.elements {
+		tags = append(tags, t)
+	}
+	sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
+	return tags
+}
+
+// Iter returns all elements sorted by tag.
+func (d *Dataset) Iter() []*DataElement {
+	tags := d.SortedTags()
+	elems := make([]*DataElement, len(tags))
+	for i, t := range tags {
+		elems[i] = d.elements[t]
+	}
+	return elems
+}
+
+// --- Convenience getters ---
+
+func (d *Dataset) GetString(tag Tag) (string, bool) {
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return "", false
+	}
+	s, ok := e.Value.(string)
+	return s, ok
+}
+
+func (d *Dataset) GetInt(tag Tag) (int, bool) {
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return 0, false
+	}
+	switch v := e.Value.(type) {
+	case int:
+		return v, true
+	case uint16:
+		return int(v), true
+	case int32:
+		return int(v), true
+	case uint32:
+		return int(v), true
+	}
+	return 0, false
+}
+
+func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return 0, false
+	}
+	f, ok := e.Value.(float64)
+	return f, ok
+}
+
+func (d *Dataset) GetBytes(tag Tag) ([]byte, bool) {
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return nil, false
+	}
+	b, ok := e.Value.([]byte)
+	return b, ok
+}
+
+func (d *Dataset) GetSequence(tag Tag) (*Sequence, bool) {
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return nil, false
+	}
+	s, ok := e.Value.(*Sequence)
+	return s, ok
+}
+
+func (d *Dataset) GetDataElement(tag Tag) *DataElement {
+	return d.elements[tag]
+}
+
+// --- Private blocks ---
+
+func (d *Dataset) PrivateBlock(group int, creator string) *PrivateBlock {
+	key := [2]interface{}{group, creator}
+	if pb, ok := d.privateBlocks[key]; ok {
+		return pb
+	}
+	// Find the private creator element
+	for _, e := range d.elements {
+		if e.Tag.Group() == group && e.Tag.Element() >= 0x0010 && e.Tag.Element() < 0x0100 {
+			if s, ok := e.Value.(string); ok && s == creator {
+				pb := &PrivateBlock{
+					Group:          group,
+					PrivateCreator: creator,
+					dataset:        d,
+					blockStart:     e.Tag.Element() << 8,
+				}
+				d.privateBlocks[key] = pb
+				return pb
+			}
+		}
+	}
+	return nil
+}
+
+func (pb *PrivateBlock) GetTag(offset int) Tag {
+	return NewTag(pb.Group, pb.blockStart+offset)
+}
+
+func (pb *PrivateBlock) Get(offset int) (*DataElement, bool) {
+	return pb.dataset.Get(pb.GetTag(offset))
+}
+
+func (pb *PrivateBlock) Set(offset int, vr VR, value interface{}) {
+	tag := pb.GetTag(offset)
+	pb.dataset.Set(NewDataElement(tag, vr, value))
+}
+
+// --- String ---
+
+func (d *Dataset) String() string {
+	var b strings.Builder
+	for _, elem := range d.Iter() {
+		b.WriteString(elem.String())
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// --- JSON ---
+
+func (d *Dataset) ToJSON() (string, error) {
+	// Simple JSON serialization
+	var b strings.Builder
+	b.WriteString("{\n")
+	first := true
+	for _, elem := range d.Iter() {
+		if !first {
+			b.WriteString(",\n")
+		}
+		first = false
+		b.WriteString(fmt.Sprintf("  %q: ", elem.Tag.JSONKey()))
+		writeJSONValue(&b, elem)
+	}
+	b.WriteString("\n}")
+	return b.String(), nil
+}
+
+func writeJSONValue(b *strings.Builder, elem *DataElement) {
+	b.WriteString(fmt.Sprintf(`{"vr": %q`, string(elem.VR)))
+	if elem.VR == VRSQ {
+		b.WriteString(`, "Value": [`)
+		if seq, ok := elem.Value.(*Sequence); ok {
+			for i, item := range seq.Items() {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				json, _ := item.ToJSON()
+				b.WriteString(json)
+			}
+		}
+		b.WriteString("]")
+	} else if !elem.IsEmpty() {
+		b.WriteString(`, "Value": [`)
+		switch v := elem.Value.(type) {
+		case string:
+			b.WriteString(fmt.Sprintf("%q", v))
+		case int, uint16, uint32, int32:
+			b.WriteString(fmt.Sprintf("%d", v))
+		case float64:
+			b.WriteString(fmt.Sprintf("%g", v))
+		case *MultiValue[interface{}]:
+			for i, item := range v.Values() {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				fmt.Fprintf(b, "%q", fmt.Sprintf("%v", item))
+			}
+		case []byte:
+			b.WriteString(fmt.Sprintf("%q", string(v)))
+		default:
+			b.WriteString(fmt.Sprintf("%q", fmt.Sprintf("%v", v)))
+		}
+		b.WriteString("]")
+	}
+	b.WriteString("}")
+}
+
+// --- Save ---
+
+func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
+	return dcmwrite(filename, d, opts)
+}
+
+func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
+	return dcmwrite(filename, fd.Dataset, opts)
+}
+
+// --- Element count ---
+
+func (d *Dataset) Len() int { return len(d.elements) }
