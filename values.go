@@ -165,17 +165,16 @@ func convertATValue(b []byte, le bool) (interface{}, error) {
 	if len(b) < 4 {
 		return nil, fmt.Errorf("godicom: AT value too short: %d bytes", len(b))
 	}
-	var order binary.ByteOrder = binary.LittleEndian
-	if !le {
-		order = binary.BigEndian
+	if len(b)%4 != 0 {
+		return nil, fmt.Errorf("godicom: AT value length must be multiple of 4, got %d", len(b))
 	}
 	if len(b) == 4 {
-		return Tag(order.Uint32(b)), nil
+		return convertTag(b, le), nil
 	}
 	n := len(b) / 4
 	tags := make([]Tag, n)
 	for i := 0; i < n; i++ {
-		tags[i] = Tag(order.Uint32(b[i*4:]))
+		tags[i] = convertTag(b[i*4:], le)
 	}
 	return NewMultiValue(tags), nil
 }
@@ -245,11 +244,13 @@ func convertInts(b []byte, le bool, size int, signed bool) (interface{}, error) 
 	return NewMultiValue(vals), nil
 }
 
-// convertTag decodes a tag from 4 bytes.
+// convertTag decodes a tag from 4 bytes (group, element as two uint16).
 func convertTag(b []byte, le bool) Tag {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !le {
 		order = binary.BigEndian
 	}
-	return Tag(order.Uint32(b))
+	group := order.Uint16(b[0:2])
+	elem := order.Uint16(b[2:4])
+	return NewTag(int(group), int(elem))
 }

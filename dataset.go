@@ -48,6 +48,7 @@ func NewDataset() *Dataset {
 	return &Dataset{
 		elements:      make(map[Tag]*DataElement),
 		privateBlocks: make(map[[2]interface{}]*PrivateBlock),
+		originalEnc:   EncodingInfo{IsImplicitVR: false, IsLittleEndian: true},
 	}
 }
 
@@ -106,8 +107,16 @@ func (d *Dataset) GetString(tag Tag) (string, bool) {
 	if !ok || e.Value == nil {
 		return "", false
 	}
-	s, ok := e.Value.(string)
-	return s, ok
+	switch v := e.Value.(type) {
+	case string:
+		return v, true
+	case PersonName:
+		return v.String(), true
+	case UID:
+		return string(v), true
+	default:
+		return fmt.Sprintf("%v", v), true
+	}
 }
 
 func (d *Dataset) GetInt(tag Tag) (int, bool) {
