@@ -39,6 +39,87 @@ func TestWriteFileReadback(t *testing.T) {
 	}
 }
 
+func TestWriteFilePreservesFileMeta(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds.FileMeta == nil || ds.FileMeta.Len() == 0 {
+		t.Fatal("source file meta is empty")
+	}
+
+	outPath := filepath.Join(t.TempDir(), "file_meta.dcm")
+	if err := ds.SaveAs(outPath, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := ReadFile(outPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sourceClass, ok := ds.FileMeta.Get(MustTag("MediaStorageSOPClassUID"))
+	if !ok {
+		t.Fatal("source MediaStorageSOPClassUID missing")
+	}
+	outClass, ok := out.FileMeta.Get(MustTag("MediaStorageSOPClassUID"))
+	if !ok {
+		t.Fatal("output MediaStorageSOPClassUID missing")
+	}
+	if sourceClass.Value != outClass.Value {
+		t.Fatalf("MediaStorageSOPClassUID = %v, want %v", outClass.Value, sourceClass.Value)
+	}
+
+	sourceAddress, ok := ds.FileMeta.Get(MustTag("ReceivingPresentationAddress"))
+	if !ok {
+		t.Fatal("source ReceivingPresentationAddress missing")
+	}
+	outAddress, ok := out.FileMeta.Get(MustTag("ReceivingPresentationAddress"))
+	if !ok {
+		t.Fatal("output ReceivingPresentationAddress missing")
+	}
+	if sourceAddress.Value != outAddress.Value {
+		t.Fatalf("ReceivingPresentationAddress = %v, want %v", outAddress.Value, sourceAddress.Value)
+	}
+}
+
+func TestWriteFilePreservesPreamble(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	customPreamble := append([]byte{1, 2, 3, 4}, make([]byte, 124)...)
+	ds.Preamble = customPreamble
+
+	outPath := filepath.Join(t.TempDir(), "preamble.dcm")
+	if err := ds.SaveAs(outPath, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data[:128]) != string(customPreamble) {
+		t.Fatalf("preamble = % X, want % X", data[:4], customPreamble[:4])
+	}
+	if string(data[128:132]) != "DICM" {
+		t.Fatalf("prefix = %q, want DICM", data[128:132])
+	}
+}
+
+func TestWriteFileRejectsInvalidPreamble(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Preamble = make([]byte, 127)
+
+	outPath := filepath.Join(t.TempDir(), "bad_preamble.dcm")
+	if err := ds.SaveAs(outPath, nil); err == nil {
+		t.Fatal("SaveAs error = nil, want invalid preamble error")
+	}
+}
 func TestWriteFileImplicitVR(t *testing.T) {
 	src := testFilePath("CT_small.dcm")
 	ds, err := ReadFile(src, nil)

@@ -307,7 +307,11 @@ func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
 }
 
 func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
-	return WriteFile(filename, fd.Dataset, opts)
+	return writeFile(filename, writeSource{
+		dataset:  fd.Dataset,
+		fileMeta: fd.FileMeta,
+		preamble: fd.Preamble,
+	}, opts)
 }
 
 // --- Element count ---

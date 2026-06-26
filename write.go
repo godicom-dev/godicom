@@ -15,8 +15,14 @@ type WriteOptions struct {
 	EnforceFileFormat bool
 }
 
+type writeSource struct {
+	dataset  *Dataset
+	fileMeta *FileMetaDataset
+	preamble []byte
+}
+
 // writeFile writes a Dataset to a DICOM file.
-func writeFile(filename string, ds *Dataset, opts *WriteOptions) error {
+func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -27,6 +33,10 @@ func writeFile(filename string, ds *Dataset, opts *WriteOptions) error {
 		opts = &WriteOptions{}
 	}
 
+	if source.dataset == nil {
+		return fmt.Errorf("godicom: missing dataset")
+	}
+
 	// Determine encoding
 	isImplicit := false
 	isLittleEndian := true
@@ -34,17 +44,23 @@ func writeFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	if opts.ImplicitVR != nil {
 		isImplicit = *opts.ImplicitVR
 	} else {
-		isImplicit = ds.originalEnc.IsImplicitVR
+		isImplicit = source.dataset.originalEnc.IsImplicitVR
 	}
 
 	if opts.LittleEndian != nil {
 		isLittleEndian = *opts.LittleEndian
 	} else {
-		isLittleEndian = ds.originalEnc.IsLittleEndian
+		isLittleEndian = source.dataset.originalEnc.IsLittleEndian
 	}
 
+	preamble := source.preamble
+	if len(preamble) == 0 {
+		preamble = make([]byte, 128)
+	}
+	if len(preamble) != 128 {
+		return fmt.Errorf("godicom: preamble must be 128 bytes, got %d", len(preamble))
+	}
 	// Write preamble (128 bytes + "DICM")
-	preamble := make([]byte, 128)
 	if _, err := f.Write(preamble); err != nil {
 		return err
 	}
@@ -56,26 +72,26 @@ func writeFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	fp := newDicomWriter(f)
 	fp.SetByteOrder(true)
 
-	if err := writeFileMetaInfo(fp, ds); err != nil {
+	if err := writeFileMetaInfo(fp, source.fileMeta); err != nil {
 		return fmt.Errorf("godicom: error writing file meta: %w", err)
 	}
 
 	// Write dataset
 	fp.SetByteOrder(isLittleEndian)
 
-	if err := writeDataset(fp, ds, isImplicit, isLittleEndian); err != nil {
+	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
 	return nil
 }
 
-func writeFileMetaInfo(fp *dicomIO, ds *Dataset) error {
-	// We need to write the Transfer Syntax UID if present
+func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset) error {
+	if fileMeta == nil {
+		return nil
+	}
 	// File Meta is always Explicit VR Little Endian
-
-	// Write group 0x0002 elements
-	for _, elem := range ds.Iter() {
+	for _, elem := range fileMeta.Iter() {
 		if elem.Tag.Group() != 0x0002 {
 			continue
 		}
@@ -457,7 +473,7 @@ func encodeBytes(elem *DataElement) []byte {
 
 // WriteFile writes a Dataset to a DICOM file.
 func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
-	return writeFile(filename, ds, opts)
+	return writeFile(filename, writeSource{dataset: ds}, opts)
 }
 
 // DcmWrite writes a Dataset to a DICOM file.
