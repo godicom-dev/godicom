@@ -13,6 +13,18 @@ type ReadOptions struct {
 	SpecificTags     []Tag
 }
 
+func shouldKeepElement(opts *ReadOptions, tag Tag) bool {
+	if opts == nil || len(opts.SpecificTags) == 0 {
+		return true
+	}
+	for _, specificTag := range opts.SpecificTags {
+		if tag == specificTag {
+			return true
+		}
+	}
+	return false
+}
+
 func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -134,7 +146,9 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
 			pos += int64(hdrSize)
-			allElements = append(allElements, elem)
+			if shouldKeepElement(opts, elem.Tag) {
+				allElements = append(allElements, elem)
+			}
 			continue
 		}
 
@@ -148,7 +162,9 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				newPos := skipUntilDelimiter(data, pos+int64(hdrSize), SequenceDelimiterTag, isImplicit, isLittleEndian)
 				pos = newPos
 			}
-			allElements = append(allElements, elem)
+			if shouldKeepElement(opts, elem.Tag) {
+				allElements = append(allElements, elem)
+			}
 			continue
 		}
 
@@ -178,7 +194,9 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			}
 		}
 
-		allElements = append(allElements, elem)
+		if shouldKeepElement(opts, elem.Tag) {
+			allElements = append(allElements, elem)
+		}
 		pos += int64(hdrSize + length)
 
 		if Tag(tag) == TagCharset {
@@ -368,7 +386,9 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
 			pos += int64(hdrSize)
-			ds.Set(elem)
+			if shouldKeepElement(opts, elem.Tag) {
+				ds.Set(elem)
+			}
 			continue
 		}
 
@@ -382,7 +402,9 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 				newPos := skipUntilDelimiter(data, pos+int64(hdrSize), SequenceDelimiterTag, isImplicitVR, isLittleEndian)
 				pos = newPos
 			}
-			ds.Set(elem)
+			if shouldKeepElement(opts, elem.Tag) {
+				ds.Set(elem)
+			}
 			continue
 		}
 
@@ -412,7 +434,9 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 			}
 		}
 
-		ds.Set(elem)
+		if shouldKeepElement(opts, elem.Tag) {
+			ds.Set(elem)
+		}
 		pos += int64(hdrSize + length)
 
 		if Tag(tag) == TagCharset {

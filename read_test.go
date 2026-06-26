@@ -111,6 +111,89 @@ func TestReadFileAllTestFiles(t *testing.T) {
 	}
 }
 
+func TestReadFileSpecificTags(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), &ReadOptions{
+		SpecificTags: []Tag{
+			MustTag(0x00100010),
+			MustTag("PatientID"),
+			MustTag("ImageType"),
+			MustTag("ViewName"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []Tag{
+		MustTag(0x00080008),
+		MustTag(0x00100010),
+		MustTag(0x00100020),
+	}
+	got := ds.SortedTags()
+	if len(got) != len(expected) {
+		t.Fatalf("tags = %v, want %v", got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Fatalf("tags = %v, want %v", got, expected)
+		}
+	}
+}
+
+func TestReadFileSpecificTagsWithUnknownLengthElements(t *testing.T) {
+	ds, err := ReadFile(testFilePath("rtstruct.dcm"), &ReadOptions{
+		Force: true,
+		SpecificTags: []Tag{
+			MustTag("PatientName"),
+			MustTag("PatientID"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []Tag{
+		MustTag(0x00100010),
+		MustTag(0x00100020),
+	}
+	got := ds.SortedTags()
+	if len(got) != len(expected) {
+		t.Fatalf("tags = %v, want %v", got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Fatalf("tags = %v, want %v", got, expected)
+		}
+	}
+}
+
+func TestReadFileSpecificTagsPixelData(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), &ReadOptions{
+		SpecificTags: []Tag{MustTag("PixelData")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := ds.SortedTags()
+	if len(got) != 0 {
+		t.Fatalf("tags = %v, want none because this file has no native PixelData tag", got)
+	}
+}
+
+func TestReadFileSpecificTagsOnlyCharacterSet(t *testing.T) {
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), &ReadOptions{
+		SpecificTags: []Tag{MustTag("SpecificCharacterSet")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := ds.SortedTags()
+	if len(got) != 0 {
+		t.Fatalf("tags = %v, want none because this file has no SpecificCharacterSet", got)
+	}
+}
 func TestReadWriteRoundtrip(t *testing.T) {
 	// Read, write to temp file, read back, compare element count
 	src := testFilePath("CT_small.dcm")
