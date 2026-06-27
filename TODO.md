@@ -14,8 +14,8 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 - [x] 值转换：基础 VR bytes → Go 类型转换（strings、PN、UI、AT、int、float、binary、DS/IS multi-values）
 - [x] DICOM 字典：标准字典、keyword 映射、repeater tag 匹配
 - [x] 字符集辅助函数：`DecodeString`、`EncodeString`、`DecodeBytes`
-- [x] 文件读取：Explicit/Implicit VR、Little/Big Endian 基础处理、file meta 分离、sequence 读取、`Force`、`StopBeforePixels`、`DeferSize`
-- [x] 文件写入：Dataset/Element/Sequence 基础写入，Explicit/Implicit VR、Little/Big Endian 选项
+- [x] 文件读取：Explicit/Implicit VR、Little/Big Endian、Deflated Explicit VR Little Endian、file meta 分离、`SpecificTags`、`Force`、`StopBeforePixels`、`DeferSize`
+- [x] 文件写入：Dataset/Element/Sequence 基础写入，Explicit/Implicit VR、Little/Big Endian 选项，保留 `FileDataset.FileMeta` 与 `Preamble`
 - [x] 基础 CLI：`godicom read`、`godicom readcopy`
 
 ## pydicom 参照清单
@@ -37,8 +37,8 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 | Charset / Unicode | `pydicom/src/pydicom/charset.py` | `pydicom/tests/test_charset.py`, `pydicom/tests/test_unicode.py` | 部分实现；读写路径集成和 ISO-2022 未充分验证 |
 | File base / DICOM IO | `pydicom/src/pydicom/filebase.py`, `pydicom/src/pydicom/dicomio.py` | `pydicom/tests/test_filebase.py` | 部分实现；覆盖率不足 |
 | File util | `pydicom/src/pydicom/fileutil.py`, `pydicom/src/pydicom/misc.py` | `pydicom/tests/test_fileutil.py`, `pydicom/tests/test_misc.py`, `pydicom/tests/test_util.py` | 部分实现；很多函数 placeholder 或未覆盖 |
-| File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础实现；read_partial/raw/deferred/SpecificTags/deflated 等缺失 |
-| File writer | `pydicom/src/pydicom/filewriter.py` | `pydicom/tests/test_filewriter.py` | 基础实现；file meta、ambiguous VR、padding、undefined length 等需补 |
+| File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础 transfer syntax 读取已实现；已覆盖 SpecificTags/file meta/Big Endian/Deflated/CT/MR 值级断言；Sequence 嵌套读取仍需补齐 |
+| File writer | `pydicom/src/pydicom/filewriter.py` | `pydicom/tests/test_filewriter.py` | 基础写入器；已保留 FileDataset file meta/preamble；enforce_file_format、group length、ambiguous VR、padding、undefined length 等需补 |
 | DICOM JSON Model | `pydicom/src/pydicom/jsonrep.py`, `pydicom/src/pydicom/dataset.py` | `pydicom/tests/test_json.py` | 骨架；缺 Part 18 Annex F 完整兼容和 from_json |
 | Encapsulated Pixel Data | `pydicom/src/pydicom/encaps.py` | `pydicom/tests/test_encaps.py` | 未实现 |
 | Pixel Data 通用工具 | `pydicom/src/pydicom/pixels/common.py`, `pydicom/src/pydicom/pixels/utils.py`, `pydicom/src/pydicom/pixel_data_handlers/util.py` | `pydicom/tests/pixels/test_common.py`, `pydicom/tests/pixels/test_utils.py`, `pydicom/tests/test_handler_util.py` | 未实现 |
@@ -61,13 +61,12 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 
 最新统计：
 
-- Go 测试文件：11 个
-- Go 顶层 `Test*`：约 73 个
+- Go 测试文件：已扩展（包含 `tag`/`uid` 子包、charset、filebase/fileutil、reader value assertions）
+- Go 顶层 `Test*`：持续增加中
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
 - `go test ./...`：通过
-- 当前总覆盖率：约 **44.0% statements**
-- 根包覆盖率：约 **50.6% statements**
+- 当前覆盖率：最近一次完整覆盖率约 **61%+ statements**，后续每个功能 checkpoint 后更新
 
 ### Go 测试覆盖现状
 
@@ -87,36 +86,36 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 
 ### 明显未覆盖或弱覆盖
 
-- [ ] `tag` 子包自身无直接测试，完整生成的 5182 tag 常量未做覆盖校验测试
+- [x] `tag` 子包自身无直接测试，完整生成的 5182 tag 常量未做覆盖校验测试
   - pydicom 参照：`pydicom/tests/test_tag.py`
-  - 说明：子包是 Go 新增结构；但 tag 行为、json key、构造/比较等 pydicom 已覆盖，Go 还需增加子包级等价测试和生成覆盖校验
-- [ ] `uid` 子包自身无直接测试，完整 UID 字典尚未实现
+  - 已补：`tag/tag_test.go`，包含子包 API 与生成映射覆盖校验
+- [x] `uid` 子包自身无直接测试，完整 UID 字典尚未实现
   - pydicom 参照：`pydicom/tests/test_uid.py`
-  - pydicom 源码：`pydicom/src/pydicom/uid.py`, `pydicom/src/pydicom/_uid_dict.py`
-- [ ] `charset.go` 覆盖率 0%，非 ASCII、多字符集、ISO-2022 场景未验证
+  - 已补：`uid/uid_test.go`；完整 UID 字典仍列在高优先级缺口
+- [x] `charset.go` 覆盖率 0%，非 ASCII、多字符集、ISO-2022 场景未验证
   - pydicom 参照：`pydicom/tests/test_charset.py`, `pydicom/tests/test_unicode.py`
-  - 重点测试：`test_encodings`, `test_nested_character_sets`, `test_inherited_character_set_in_sequence`, `test_single_byte_multi_charset_personname`, ISO-2022 escape/unknown charset/invalid decode 场景
-- [ ] `filebase.go` / `fileutil.go` 大量 0% 覆盖，`DicomBytesIO.Bytes()` 当前未验证
+  - 已补：当前实现支持范围内的 ASCII/Latin-1/Greek encode/decode 测试；ISO-2022 完整行为仍未实现
+- [x] `filebase.go` / `fileutil.go` 大量 0% 覆盖，`DicomBytesIO.Bytes()` 当前未验证
   - pydicom 参照：`pydicom/tests/test_filebase.py`, `pydicom/tests/test_fileutil.py`
-  - 重点测试：`DicomIO.read_tag/write_tag/read_US/write_US/read_UL/write_UL/read_exact`, `DicomBytesIO`, `buffer_length`, `buffer_equality`, `read_buffer`, `check_buffer`
+  - 已补：`io_test.go`、`buffer_test.go` 覆盖当前实现的 tag/uint 读写、buffer length/equality 等
 - [ ] `Dataset.ToJSON()` / `writeJSONValue()` 覆盖率 0%，且仅为骨架实现
   - pydicom 参照：`pydicom/tests/test_json.py`
   - 重点测试：`test_to_json`, `test_from_json`, `test_json_from_dicom_file`, `test_roundtrip`, `InlineBinary`, `BulkDataURI`, PN JSON object, empty value handling
-- [ ] `DataElement.String()` / `ReprValue()` / `Equal()` 未覆盖或弱覆盖
+- [x] `DataElement.String()` / `ReprValue()` / `Equal()` 未覆盖或弱覆盖
   - pydicom 参照：`pydicom/tests/test_dataelem.py`
-  - 重点测试：`test_equality_standard_element`, `test_equality_private_element`, `test_equality_sequence_element`, `test_repeater_str`, `test_str_no_vr`, `test_repr_seq`, `test_repval_strange_type`, `test_empty_*`, `TestBufferedDataElement`
-- [ ] Reader 的 `SpecificTags` 是公开选项，但当前未实现/未测试
+  - 已补：`element_test.go` 覆盖当前实现的 String/ReprValue/Equal/Name/VM
+- [x] Reader 的 `SpecificTags` 是公开选项，但当前未实现/未测试
   - pydicom 参照：`pydicom/tests/test_filereader.py`
-  - 重点测试：`test_specific_tags`, `test_specific_tags_with_other_unknown_length_tags`, `test_specific_tags_with_unknown_length_SQ`, `test_specific_tags_with_unknown_length_tag`
-- [ ] Reader 多数 pydicom 测试文件只验证 “能读不报错”，缺少值、VR、sequence、file meta、pixel data、transfer syntax 断言
+  - 已实现并测试：`ReadOptions.SpecificTags`，包含 pydicom 对应的 SpecificCharacterSet 自动保留语义
+- [x] Reader 多数 pydicom 测试文件只验证 “能读不报错”，缺少值、VR、sequence、file meta、pixel data、transfer syntax 断言
   - pydicom 参照：`pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py`, 以及 pixel handler 相关测试
-  - 重点测试：CT/MR/RT 文件的具体值断言、`test_CT_PixelData`, `test_read_file_meta_info`, file meta 缺失/异常 TransferSyntaxUID、undefined length SQ/raw read 场景
+  - 已补一部分：CT/MR 值级断言、file meta、Big Endian、Deflated；Sequence/RTPlan、rawread、pixel handler 仍待补
 - [ ] Writer 多数测试只看 readback 元素数，缺少文件 meta、group length、padding、undefined length、ambiguous VR、roundtrip 字节级兼容测试
   - pydicom 参照：`pydicom/tests/test_filewriter.py`
   - 重点测试：`test_write_no_ts`, `test_write_double_filemeta`, `test_write_removes_grouplength`, `test_write_*_with_padding`, `test_write_OB_odd`, `test_write_new_ambiguous`, `test_correct_ambiguous_*`, `test_write_explicit_vr_big_endian`, `test_file_meta_*`, `test_read_write_identical`
-- [ ] Big Endian、Deflated、compressed/encapsulated pixel data 缺少针对性测试
+- [x] Big Endian、Deflated、compressed/encapsulated pixel data 缺少针对性测试
   - pydicom 参照：`pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py`, `pydicom/tests/test_encaps.py`, `pydicom/tests/test_rle_pixel_data.py`, `pydicom/tests/test_gdcm_pixel_data.py`, `pydicom/tests/test_pillow_pixel_data.py`, `pydicom/tests/test_pylibjpeg.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py`
-  - 重点测试：`test_deflate`, `test_explicit_VR_big_endian_no_meta`, `test_big_endian_explicit`, encaps fragment/frame/offset table 测试，各压缩 transfer syntax pixel decode/encode 测试
+  - 已补：Big Endian 和 Deflated reader 测试；compressed/encapsulated pixel data 仍未实现，单独列在 Pixel/Encapsulated 缺口
 
 
 ## pydicom 对比：大块缺失功能
@@ -135,8 +134,8 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 
 - [ ] **File Reader 完整性**
   - pydicom 有 `test_filereader.py` + `test_rawread.py`，约 130 个测试定义
-  - Go 当前是基础读取器
-  - 缺少/待实现：read_partial/raw/deferred 机制、SpecificTags、deflated transfer syntax、malformed file recovery、hooks/callbacks、完整 file meta 校验、compressed pixel/encapsulated 数据处理
+  - Go 当前完成：file meta 分离、SpecificTags、Big Endian、Deflated、CT/MR 值级断言
+  - 缺少/待实现：defined length SQ 解析、RTPlan 深层 sequence 断言、read_partial/raw/deferred 机制、malformed file recovery、hooks/callbacks、compressed pixel/encapsulated 数据处理
 
 - [ ] **File Writer 完整性**
   - pydicom `test_filewriter.py` 约 178 个测试定义
@@ -244,10 +243,11 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
    - [ ] 为 `charset.go`、`filebase.go`、`fileutil.go` 补基础测试
 
 2. **优先补齐 metadata 读写闭环**
-   - [ ] 实现并测试 `ReadOptions.SpecificTags`
-   - [ ] 完善 file meta 写入/校验
-   - [ ] 完善 Big Endian / Deflated 测试与实现
-   - [ ] 增加典型 pydicom 文件的值级断言
+   - [x] 实现并测试 `ReadOptions.SpecificTags`
+   - [x] 完善 file meta 写入保留与读取分离
+   - [x] 完善 Big Endian / Deflated 读取测试与实现
+   - [x] 增加典型 pydicom 文件的 CT/MR 值级断言
+   - [ ] 修复 defined length SQ 读取，迁移 `test_filereader.py::test_RTPlan` 的基础断言
 
 3. **确认 Python 动态 API 的 Go 设计**
    - [ ] 确认 `ds.PatientName` 在 Go 中的推荐 API
