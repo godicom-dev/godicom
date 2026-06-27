@@ -189,15 +189,11 @@ func ParsePersonName(s string) PersonName {
 }
 
 func (pn PersonName) String() string {
-	parts := make([]string, 0, 3)
-	if pn.Alphabetic != "" {
-		parts = append(parts, pn.Alphabetic)
+	if pn.Phonetic != "" {
+		return strings.Join([]string{pn.Alphabetic, pn.Ideographic, pn.Phonetic}, "=")
 	}
 	if pn.Ideographic != "" {
-		parts = append(parts, pn.Ideographic)
+		return strings.Join([]string{pn.Alphabetic, pn.Ideographic}, "=")
 	}
-	if pn.Phonetic != "" {
-		parts = append(parts, pn.Phonetic)
-	}
-	return strings.Join(parts, "=")
+	return pn.Alphabetic
 }
