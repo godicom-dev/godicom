@@ -281,6 +281,179 @@ func TestDICOMFileJSONRoundtripValues(t *testing.T) {
 	}
 }
 
+func TestBulkDataURIBoundaries(t *testing.T) {
+	parsed, err := ParseDataset([]byte(`{"00091002":{"vr":"OB","BulkDataURI":"https://example.com/bulk"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elem, ok := parsed.Get(godicom.MustTag(0x0009, 0x1002)); !ok || elem.Value != nil {
+		t.Fatalf("BulkDataURI without reader = %#v, %t", elem, ok)
+	}
+
+	for _, data := range [][]byte{
+		[]byte(`{"00091002":{"vr":"OB","BulkDataURI":42}}`),
+		[]byte(`{"00091002":{"vr":"OB","BulkDataURI":[42]}}`),
+	} {
+		if _, err := ParseDataset(data); err == nil {
+			t.Fatalf("expected BulkDataURI type error for %s", data)
+		}
+	}
+
+	for _, data := range [][]byte{
+		[]byte(`{"00091002":{"vr":"OB","InlineBinary":42}}`),
+		[]byte(`{"00091002":{"vr":"OB","InlineBinary":[42]}}`),
+	} {
+		if _, err := ParseDataset(data); err == nil {
+			t.Fatalf("expected InlineBinary type error for %s", data)
+		}
+	}
+}
+
+func TestBulkDataURIWithinSequence(t *testing.T) {
+	parsed, err := ParseDataset(
+		[]byte(`{"003A0200":{"vr":"SQ","Value":[{"54001010":{"vr":"OW","BulkDataURI":"https://example.com/waveform"}}]}}`),
+		WithBulkDataURIReader(func(tag godicom.Tag, vr godicom.VR, uri string) ([]byte, error) {
+			if tag != godicom.MustTag(0x5400, 0x1010) || vr != godicom.VROW || uri != "https://example.com/waveform" {
+				t.Fatalf("bulk callback args = %s %s %q", tag, vr, uri)
+			}
+			return []byte("xyzzy"), nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq, ok := parsed.GetSequence(godicom.MustTag(0x003A, 0x0200))
+	if !ok || seq.Len() != 1 {
+		t.Fatalf("waveform sequence missing: %v %t", seq, ok)
+	}
+	got, ok := seq.Get(0).GetBytes(godicom.MustTag(0x5400, 0x1010))
+	if !ok || !bytes.Equal(got, []byte("xyzzy")) {
+		t.Fatalf("nested BulkDataURI = %q, %t", got, ok)
+	}
+}
+
+func TestBulkDataURIBuilderThreshold(t *testing.T) {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.MustTag(0x0009, 0x1002), godicom.VROB, []byte("BinaryContent")))
+
+	model, err := DatasetToMap(
+		ds,
+		WithBulkDataThreshold(4),
+		WithBulkDataURIBuilder(func(tag godicom.Tag, vr godicom.VR, value []byte) (string, error) {
+			if tag != godicom.MustTag(0x0009, 0x1002) || vr != godicom.VROB || !bytes.Equal(value, []byte("BinaryContent")) {
+				t.Fatalf("bulk builder args = %s %s %q", tag, vr, value)
+			}
+			return "https://example.com/bulk", nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := model["00091002"].BulkDataURI; got != "https://example.com/bulk" {
+		t.Fatalf("BulkDataURI = %q", got)
+	}
+	if got := model["00091002"].InlineBinary; got != "" {
+		t.Fatalf("InlineBinary should be omitted, got %q", got)
+	}
+}
+
+func TestEmptyJSONValues(t *testing.T) {
+	parsed, err := ParseDataset([]byte(`{
+		"00091000":{"vr":"CS","Value":[""]},
+		"00091001":{"vr":"CS","Value":[null]},
+		"00091002":{"vr":"LO","Value":[""]},
+		"00091003":{"vr":"LO","Value":[null]},
+		"00091006":{"vr":"UI","Value":[""]},
+		"00091007":{"vr":"UI","Value":[null]},
+		"00091008":{"vr":"DA","Value":[""]},
+		"00091009":{"vr":"DA","Value":[null]},
+		"00091020":{"vr":"DS","Value":[""]},
+		"00091021":{"vr":"DS","Value":[null]},
+		"00091022":{"vr":"US","Value":[""]},
+		"00091023":{"vr":"US","Value":[null]},
+		"00091024":{"vr":"FL","Value":[""]},
+		"00091025":{"vr":"FL","Value":[null]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range []godicom.Tag{
+		godicom.MustTag(0x0009, 0x1000),
+		godicom.MustTag(0x0009, 0x1001),
+		godicom.MustTag(0x0009, 0x1002),
+		godicom.MustTag(0x0009, 0x1003),
+		godicom.MustTag(0x0009, 0x1006),
+		godicom.MustTag(0x0009, 0x1007),
+		godicom.MustTag(0x0009, 0x1008),
+		godicom.MustTag(0x0009, 0x1009),
+	} {
+		value, ok := parsed.GetString(tag)
+		if !ok || value != "" {
+			t.Fatalf("string empty value for %s = %q, %t", tag, value, ok)
+		}
+	}
+	for _, tag := range []godicom.Tag{
+		godicom.MustTag(0x0009, 0x1020),
+		godicom.MustTag(0x0009, 0x1021),
+		godicom.MustTag(0x0009, 0x1022),
+		godicom.MustTag(0x0009, 0x1023),
+		godicom.MustTag(0x0009, 0x1024),
+		godicom.MustTag(0x0009, 0x1025),
+	} {
+		elem, ok := parsed.Get(tag)
+		if !ok || elem.Value != nil {
+			t.Fatalf("numeric empty value for %s = %#v, %t", tag, elem.Value, ok)
+		}
+	}
+}
+
+func TestSuppressInvalidTags(t *testing.T) {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientName"), godicom.VRPN, godicom.ParsePersonName("Jane^Doe")))
+	ds.Set(godicom.NewDataElement(godicom.MustTag(0x0009, 0x1001), godicom.VRAT, "not a tag"))
+
+	if _, err := DatasetToMap(ds); err == nil {
+		t.Fatal("expected AT marshal error")
+	}
+	model, err := DatasetToMap(ds, WithSuppressInvalidTags())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := model["00091001"]; ok {
+		t.Fatal("invalid AT tag should be suppressed")
+	}
+	if _, ok := model["00100010"]; !ok {
+		t.Fatal("valid PatientName should remain")
+	}
+}
+
+func TestPydicomTest1JSONFixture(t *testing.T) {
+	data, err := os.ReadFile(testDataFile("test1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds, err := ParseDataset(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matrixElem, ok := ds.Get(godicom.MustTag(0x0018, 0x1310))
+	if !ok {
+		t.Fatal("AcquisitionMatrix missing")
+	}
+	matrix, ok := matrixElem.Value.(*godicom.MultiValue[interface{}])
+	if !ok || matrix.Len() != 5 || matrix.Get(0) != int64(128) || matrix.Get(4) != nil {
+		t.Fatalf("AcquisitionMatrix = %#v", matrixElem.Value)
+	}
+	seq, ok := ds.GetSequence(godicom.MustTag(0x0012, 0x0064))
+	if !ok || seq.Len() == 0 {
+		t.Fatalf("DeidentificationMethodCodeSequence missing: %v %t", seq, ok)
+	}
+	pixel, ok := ds.Get(godicom.MustTag("PixelData"))
+	if !ok || pixel.Value != nil {
+		t.Fatalf("PixelData from empty BulkDataURI = %#v, %t", pixel, ok)
+	}
+}
+
 func testDataFile(name string) string {
 	return filepath.Join("..", "pydicom", "src", "pydicom", "data", "test_files", name)
 }
