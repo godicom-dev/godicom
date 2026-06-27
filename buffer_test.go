@@ -2,7 +2,6 @@ package godicom
 
 import (
 	"bytes"
-	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -123,7 +122,7 @@ func TestBufferEquality(t *testing.T) {
 }
 
 func TestUnackTag(t *testing.T) {
-	if got := unackTag([]byte{0x20, 0x00, 0x10, 0x00}, true); got != MustTag(0x00100020) {
+	if got := unackTag([]byte{0x10, 0x00, 0x20, 0x00}, true); got != MustTag(0x00100020) {
 		t.Fatalf("unackTag little = %s, want (0010,0020)", got)
 	}
 	if got := unackTag([]byte{0x00, 0x10, 0x00, 0x20}, false); got != MustTag(0x00100020) {
@@ -132,14 +131,15 @@ func TestUnackTag(t *testing.T) {
 }
 
 func TestReadUndefinedLengthValueImplicit(t *testing.T) {
-	var buf bytes.Buffer
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(MustTag(0x00100010)))
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(2))
-	buf.Write([]byte("AB"))
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(SequenceDelimiterTag))
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(0))
+	data := []byte{
+		0x10, 0x00, 0x10, 0x00,
+		0x02, 0x00, 0x00, 0x00,
+		'A', 'B',
+		0xFE, 0xFF, 0xDD, 0xE0,
+		0x00, 0x00, 0x00, 0x00,
+	}
 
-	fp := newDicomReader(bytes.NewReader(buf.Bytes()))
+	fp := newDicomReader(bytes.NewReader(data))
 	fp.SetByteOrder(true)
 	value, err := readUndefinedLengthValue(fp, SequenceDelimiterTag, true, true)
 	if err != nil {

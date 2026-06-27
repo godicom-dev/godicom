@@ -12,13 +12,36 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
+func TestReadFileMetaInfo(t *testing.T) {
+	ds, err := ReadFile(testFilePath("rtplan.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds.FileMeta == nil {
+		t.Fatal("FileMeta is nil")
+	}
+	if ds.FileMeta.Len() != 6 {
+		t.Fatalf("file meta len = %d, want 6", ds.FileMeta.Len())
+	}
+	transferSyntax, ok := ds.FileMeta.Get(MustTag("TransferSyntaxUID"))
+	if !ok {
+		t.Fatal("TransferSyntaxUID missing")
+	}
+	if transferSyntax.Value != ImplicitVRLittleEndian {
+		t.Fatalf("TransferSyntaxUID = %v, want %v", transferSyntax.Value, ImplicitVRLittleEndian)
+	}
+	if ds.Has(MustTag("TransferSyntaxUID")) {
+		t.Fatal("dataset contains TransferSyntaxUID; file meta should be separate")
+	}
+}
+
 func TestReadFileCTSmall(t *testing.T) {
 	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 264 {
-		t.Errorf("expected ~264 elements, got %d", ds.Len())
+	if ds.Len() != 258 {
+		t.Errorf("expected ~258 elements, got %d", ds.Len())
 	}
 	// Check key values
 	pn, ok := ds.GetString(MustTag(0x00100010))
@@ -42,8 +65,8 @@ func TestReadFileMRSmall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 79 {
-		t.Errorf("expected ~79 elements, got %d", ds.Len())
+	if ds.Len() != 73 {
+		t.Errorf("expected ~73 elements, got %d", ds.Len())
 	}
 	pn, ok := ds.GetString(MustTag(0x00100010))
 	if !ok {
@@ -59,8 +82,8 @@ func TestReadFileMRImplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 78 {
-		t.Errorf("expected ~78 elements, got %d", ds.Len())
+	if ds.Len() != 72 {
+		t.Errorf("expected ~72 elements, got %d", ds.Len())
 	}
 	pn, ok := ds.GetString(MustTag(0x00100010))
 	if !ok {
@@ -76,8 +99,8 @@ func TestReadFileRTPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 38 {
-		t.Errorf("expected ~38 elements, got %d", ds.Len())
+	if ds.Len() != 36 {
+		t.Errorf("expected ~36 elements, got %d", ds.Len())
 	}
 }
 
@@ -86,8 +109,8 @@ func TestReadFileRTStruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 30 {
-		t.Errorf("expected ~30 elements, got %d", ds.Len())
+	if ds.Len() != 31 {
+		t.Errorf("expected ~31 elements, got %d", ds.Len())
 	}
 }
 
@@ -125,6 +148,7 @@ func TestReadFileSpecificTags(t *testing.T) {
 	}
 
 	expected := []Tag{
+		MustTag(0x00080005),
 		MustTag(0x00080008),
 		MustTag(0x00100010),
 		MustTag(0x00100020),
@@ -153,6 +177,7 @@ func TestReadFileSpecificTagsWithUnknownLengthElements(t *testing.T) {
 	}
 
 	expected := []Tag{
+		MustTag(0x00080005),
 		MustTag(0x00100010),
 		MustTag(0x00100020),
 	}
@@ -176,8 +201,9 @@ func TestReadFileSpecificTagsPixelData(t *testing.T) {
 	}
 
 	got := ds.SortedTags()
-	if len(got) != 0 {
-		t.Fatalf("tags = %v, want none because this file has no native PixelData tag", got)
+	expected := []Tag{MustTag(0x00080005), MustTag(0x7FE00010)}
+	if len(got) != len(expected) || got[0] != expected[0] || got[1] != expected[1] {
+		t.Fatalf("tags = %v, want %v", got, expected)
 	}
 }
 
@@ -190,8 +216,9 @@ func TestReadFileSpecificTagsOnlyCharacterSet(t *testing.T) {
 	}
 
 	got := ds.SortedTags()
-	if len(got) != 0 {
-		t.Fatalf("tags = %v, want none because this file has no SpecificCharacterSet", got)
+	expected := []Tag{MustTag(0x00080005)}
+	if len(got) != len(expected) || got[0] != expected[0] {
+		t.Fatalf("tags = %v, want %v", got, expected)
 	}
 }
 func TestReadWriteRoundtrip(t *testing.T) {

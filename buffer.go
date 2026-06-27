@@ -106,5 +106,7 @@ func unackTag(b []byte, le bool) Tag {
 	if !le {
 		order = binary.BigEndian
 	}
-	return Tag(order.Uint32(b))
+	group := order.Uint16(b[:2])
+	element := order.Uint16(b[2:])
+	return NewTag(int(group), int(element))
 }

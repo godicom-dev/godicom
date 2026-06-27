@@ -13,7 +13,20 @@ type ReadOptions struct {
 	SpecificTags     []Tag
 }
 
+func readTagBytes(data []byte, pos int64, isLittleEndian bool) Tag {
+	var order binary.ByteOrder = binary.LittleEndian
+	if !isLittleEndian {
+		order = binary.BigEndian
+	}
+	group := order.Uint16(data[pos : pos+2])
+	element := order.Uint16(data[pos+2 : pos+4])
+	return NewTag(int(group), int(element))
+}
+
 func shouldKeepElement(opts *ReadOptions, tag Tag) bool {
+	if tag.Group() == 0x0002 || tag == TagCharset {
+		return true
+	}
 	if opts == nil || len(opts.SpecificTags) == 0 {
 		return true
 	}
@@ -58,7 +71,8 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		pos = 0
 	}
 	isLittleEndian := true
-	isImplicit := true
+	isImplicit := false
+	inFileMeta := true
 
 	if pos+6 <= int64(len(data)) {
 		rawVR := data[pos+4 : pos+6]
@@ -72,19 +86,27 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	encoding := DefaultCharacterSet
 
 	for pos+4 <= int64(len(data)) {
-		var tag uint32
-		if isLittleEndian {
-			tag = binary.LittleEndian.Uint32(data[pos : pos+4])
-		} else {
-			tag = binary.BigEndian.Uint32(data[pos : pos+4])
+		currentTag := readTagBytes(data, pos, isLittleEndian)
+		if inFileMeta && currentTag.Group() != 0x0002 {
+			inFileMeta = false
+			if len(allElements) == 0 {
+				rawVR := data[pos+4 : pos+6]
+				isExplicit := rawVR[0] >= 0x41 && rawVR[0] <= 0x5A && rawVR[1] >= 0x41 && rawVR[1] <= 0x5A
+				isImplicit = !isExplicit
+			} else {
+				ts := determineTransferSyntaxFromElements(allElements)
+				isImplicit = ts.IsImplicitVR()
+				isLittleEndian = ts.IsLittleEndian()
+				currentTag = readTagBytes(data, pos, isLittleEndian)
+			}
 		}
 
-		if Tag(tag) == ItemDelimiterTag || Tag(tag) == SequenceDelimiterTag {
+		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
 			pos += 8
 			break
 		}
 
-		if opts.StopBeforePixels && Tag(tag) == MustTag(0x7FE00010) {
+		if opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
 			break
 		}
 
@@ -102,7 +124,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 			}
 			hdrSize = 8
-			vr = LookupVR(Tag(tag))
+			vr = LookupVR(currentTag)
 		} else {
 			if pos+8 > int64(len(data)) {
 				break
@@ -120,7 +142,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 				}
 				hdrSize = 8
-				vr = LookupVR(Tag(tag))
+				vr = LookupVR(currentTag)
 			} else if ExplicitVRLength16[vr] {
 				if isLittleEndian {
 					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
@@ -141,7 +163,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			}
 		}
 
-		elem := NewDataElement(Tag(tag), vr, nil)
+		elem := NewDataElement(currentTag, vr, nil)
 
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
@@ -178,7 +200,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			elem.Value = value
 		} else {
 			raw := &RawDataElement{
-				Tag:            Tag(tag),
+				Tag:            currentTag,
 				VR:             vr,
 				Length:         uint32(length),
 				Value:          value,
@@ -199,7 +221,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		}
 		pos += int64(hdrSize + length)
 
-		if Tag(tag) == TagCharset {
+		if currentTag == TagCharset {
 			if s, ok := elem.Value.(string); ok && s != "" {
 				encoding = s
 			}
@@ -235,6 +257,20 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	return fd, nil
 }
 
+func determineTransferSyntaxFromElements(elements []*DataElement) UID {
+	for _, elem := range elements {
+		if elem.Tag == MustTag(0x00020010) {
+			if uid, ok := elem.Value.(UID); ok {
+				return uid
+			}
+			if s, ok := elem.Value.(string); ok {
+				return UID(s)
+			}
+		}
+	}
+	return ImplicitVRLittleEndian
+}
+
 func determineTransferSyntax(fileMeta *FileMetaDataset) UID {
 	if elem, ok := fileMeta.Get(MustTag(0x00020010)); ok {
 		if uid, ok2 := elem.Value.(UID); ok2 {
@@ -253,19 +289,14 @@ func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian b
 	pos := offset
 
 	for pos+4 <= int64(len(data)) {
-		var tag uint32
-		if isLittleEndian {
-			tag = binary.LittleEndian.Uint32(data[pos : pos+4])
-		} else {
-			tag = binary.BigEndian.Uint32(data[pos : pos+4])
-		}
+		currentTag := readTagBytes(data, pos, isLittleEndian)
 
-		if Tag(tag) == SequenceDelimiterTag {
+		if currentTag == SequenceDelimiterTag {
 			pos += 8
 			break
 		}
 
-		if Tag(tag) != ItemTag {
+		if currentTag != ItemTag {
 			break
 		}
 
@@ -287,13 +318,7 @@ func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian b
 		if itemLength == 0xFFFFFFFF {
 			readDatasetElements(data, pos, item, isImplicitVR, isLittleEndian, encoding, opts)
 			for pos+4 <= int64(len(data)) {
-				var t uint32
-				if isLittleEndian {
-					t = binary.LittleEndian.Uint32(data[pos : pos+4])
-				} else {
-					t = binary.BigEndian.Uint32(data[pos : pos+4])
-				}
-				if Tag(t) == ItemDelimiterTag {
+				if readTagBytes(data, pos, isLittleEndian) == ItemDelimiterTag {
 					pos += 8
 					break
 				}
@@ -314,19 +339,14 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 	pos := offset
 
 	for pos+4 <= int64(len(data)) {
-		var tag uint32
-		if isLittleEndian {
-			tag = binary.LittleEndian.Uint32(data[pos : pos+4])
-		} else {
-			tag = binary.BigEndian.Uint32(data[pos : pos+4])
-		}
+		currentTag := readTagBytes(data, pos, isLittleEndian)
 
-		if Tag(tag) == ItemDelimiterTag || Tag(tag) == SequenceDelimiterTag {
+		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
 			pos += 8
 			break
 		}
 
-		if opts.StopBeforePixels && Tag(tag) == MustTag(0x7FE00010) {
+		if opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
 			break
 		}
 
@@ -344,7 +364,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 			}
 			hdrSize = 8
-			vr = LookupVR(Tag(tag))
+			vr = LookupVR(currentTag)
 		} else {
 			if pos+8 > int64(len(data)) {
 				break
@@ -360,7 +380,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 				}
 				hdrSize = 8
-				vr = LookupVR(Tag(tag))
+				vr = LookupVR(currentTag)
 			} else if ExplicitVRLength16[vr] {
 				if isLittleEndian {
 					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
@@ -381,7 +401,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 			}
 		}
 
-		elem := NewDataElement(Tag(tag), vr, nil)
+		elem := NewDataElement(currentTag, vr, nil)
 
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
@@ -418,7 +438,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 			elem.Value = value
 		} else {
 			raw := &RawDataElement{
-				Tag:            Tag(tag),
+				Tag:            currentTag,
 				VR:             vr,
 				Length:         uint32(length),
 				Value:          value,
@@ -439,7 +459,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 		}
 		pos += int64(hdrSize + length)
 
-		if Tag(tag) == TagCharset {
+		if currentTag == TagCharset {
 			if s, ok := elem.Value.(string); ok && s != "" {
 				encoding = s
 			}
@@ -452,13 +472,7 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, isLittleEndian bool) int64 {
 	pos := offset
 	for pos+4 <= int64(len(data)) {
-		var tag uint32
-		if isLittleEndian {
-			tag = binary.LittleEndian.Uint32(data[pos : pos+4])
-		} else {
-			tag = binary.BigEndian.Uint32(data[pos : pos+4])
-		}
-		if Tag(tag) == delimiter {
+		if readTagBytes(data, pos, isLittleEndian) == delimiter {
 			return pos + 8
 		}
 		pos++

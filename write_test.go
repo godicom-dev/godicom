@@ -58,6 +58,18 @@ func TestWriteFilePreservesFileMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	sourceTS, ok := ds.FileMeta.Get(MustTag("TransferSyntaxUID"))
+	if !ok {
+		t.Fatal("source TransferSyntaxUID missing")
+	}
+	outTS, ok := out.FileMeta.Get(MustTag("TransferSyntaxUID"))
+	if !ok {
+		t.Fatal("output TransferSyntaxUID missing")
+	}
+	if sourceTS.Value != outTS.Value {
+		t.Fatalf("TransferSyntaxUID = %v, want %v", outTS.Value, sourceTS.Value)
+	}
+
 	sourceClass, ok := ds.FileMeta.Get(MustTag("MediaStorageSOPClassUID"))
 	if !ok {
 		t.Fatal("source MediaStorageSOPClassUID missing")
@@ -68,18 +80,6 @@ func TestWriteFilePreservesFileMeta(t *testing.T) {
 	}
 	if sourceClass.Value != outClass.Value {
 		t.Fatalf("MediaStorageSOPClassUID = %v, want %v", outClass.Value, sourceClass.Value)
-	}
-
-	sourceAddress, ok := ds.FileMeta.Get(MustTag("ReceivingPresentationAddress"))
-	if !ok {
-		t.Fatal("source ReceivingPresentationAddress missing")
-	}
-	outAddress, ok := out.FileMeta.Get(MustTag("ReceivingPresentationAddress"))
-	if !ok {
-		t.Fatal("output ReceivingPresentationAddress missing")
-	}
-	if sourceAddress.Value != outAddress.Value {
-		t.Fatalf("ReceivingPresentationAddress = %v, want %v", outAddress.Value, sourceAddress.Value)
 	}
 }
 

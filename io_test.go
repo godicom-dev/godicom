@@ -17,7 +17,7 @@ func TestDicomIOReadTag(t *testing.T) {
 			name:           "little endian",
 			data:           []byte{0x10, 0x00, 0x20, 0x00},
 			isLittleEndian: true,
-			expected:       MustTag(0x00200010),
+			expected:       MustTag(0x00100020),
 		},
 		{
 			name:           "big endian",
@@ -129,7 +129,7 @@ func TestDicomIOWritePrimitiveValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := []byte{0xFF, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, 0x20, 0x00, 0x10, 0x00}
+	expected := []byte{0xFF, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, 0x10, 0x00, 0x20, 0x00}
 	if !bytes.Equal(buf.Bytes(), expected) {
 		t.Fatalf("written bytes = % X, want % X", buf.Bytes(), expected)
 	}

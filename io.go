@@ -77,8 +77,13 @@ func (d *dicomIO) ReadUint32() (uint32, error) {
 }
 
 func (d *dicomIO) ReadTag() (Tag, error) {
-	v, err := d.ReadUint32()
-	return Tag(v), err
+	var b [4]byte
+	if _, err := io.ReadFull(d.reader, b[:]); err != nil {
+		return 0, err
+	}
+	group := d.byteOrder.Uint16(b[:2])
+	element := d.byteOrder.Uint16(b[2:])
+	return NewTag(int(group), int(element)), nil
 }
 
 func (d *dicomIO) Seek(offset int64, whence int) (int64, error) {
@@ -109,7 +114,11 @@ func (d *dicomIO) WriteUint32(v uint32) error {
 }
 
 func (d *dicomIO) WriteTag(tag Tag) error {
-	return d.WriteUint32(uint32(tag))
+	var b [4]byte
+	d.byteOrder.PutUint16(b[:2], uint16(tag.Group()))
+	d.byteOrder.PutUint16(b[2:], uint16(tag.Element()))
+	_, err := d.writer.Write(b[:])
+	return err
 }
 
 type dicomBytesIO struct {
