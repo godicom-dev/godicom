@@ -12,6 +12,53 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
+func TestReadFileExplicitVRBigEndianNoMeta(t *testing.T) {
+	ds, err := ReadFile(testFilePath("ExplVR_BigEndNoMeta.dcm"), &ReadOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := ds.GetString(MustTag("InstanceCreationDate"))
+	if !ok {
+		t.Fatal("InstanceCreationDate missing")
+	}
+	if got != "20150529" {
+		t.Fatalf("InstanceCreationDate = %q, want 20150529", got)
+	}
+	if ds.originalEnc.IsImplicitVR {
+		t.Fatal("IsImplicitVR = true, want false")
+	}
+	if ds.originalEnc.IsLittleEndian {
+		t.Fatal("IsLittleEndian = true, want false")
+	}
+}
+
+func TestReadFileExplicitVRBigEndianWithMeta(t *testing.T) {
+	ds, err := ReadFile(testFilePath("MR_small_bigendian.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transferSyntax, ok := ds.FileMeta.Get(MustTag("TransferSyntaxUID"))
+	if !ok {
+		t.Fatal("TransferSyntaxUID missing")
+	}
+	if transferSyntax.Value != ExplicitVRBigEndian {
+		t.Fatalf("TransferSyntaxUID = %v, want %v", transferSyntax.Value, ExplicitVRBigEndian)
+	}
+	name, ok := ds.GetString(MustTag("PatientName"))
+	if !ok {
+		t.Fatal("PatientName missing")
+	}
+	if name != "CompressedSamples^MR1" {
+		t.Fatalf("PatientName = %q, want CompressedSamples^MR1", name)
+	}
+	if ds.originalEnc.IsImplicitVR {
+		t.Fatal("IsImplicitVR = true, want false")
+	}
+	if ds.originalEnc.IsLittleEndian {
+		t.Fatal("IsLittleEndian = true, want false")
+	}
+}
+
 func TestReadFileMetaInfo(t *testing.T) {
 	ds, err := ReadFile(testFilePath("rtplan.dcm"), nil)
 	if err != nil {

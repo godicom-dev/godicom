@@ -13,6 +13,14 @@ type ReadOptions struct {
 	SpecificTags     []Tag
 }
 
+func hasExplicitVRAt(data []byte, pos int64) bool {
+	if pos+6 > int64(len(data)) {
+		return false
+	}
+	rawVR := data[pos+4 : pos+6]
+	return rawVR[0] >= 0x41 && rawVR[0] <= 0x5A && rawVR[1] >= 0x41 && rawVR[1] <= 0x5A
+}
+
 func readTagBytes(data []byte, pos int64, isLittleEndian bool) Tag {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !isLittleEndian {
@@ -75,10 +83,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	inFileMeta := true
 
 	if pos+6 <= int64(len(data)) {
-		rawVR := data[pos+4 : pos+6]
-		// Valid VR is ASCII uppercase letters (0x41-0x5A)
-		isExplicit := rawVR[0] >= 0x41 && rawVR[0] <= 0x5A && rawVR[1] >= 0x41 && rawVR[1] <= 0x5A
-		isImplicit = !isExplicit
+		isImplicit = !hasExplicitVRAt(data, pos)
 	}
 
 	// Read all elements in one pass, then separate file meta
@@ -90,9 +95,21 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		if inFileMeta && currentTag.Group() != 0x0002 {
 			inFileMeta = false
 			if len(allElements) == 0 {
-				rawVR := data[pos+4 : pos+6]
-				isExplicit := rawVR[0] >= 0x41 && rawVR[0] <= 0x5A && rawVR[1] >= 0x41 && rawVR[1] <= 0x5A
-				isImplicit = !isExplicit
+				littleTag := readTagBytes(data, pos, true)
+				bigTag := readTagBytes(data, pos, false)
+				switch {
+				case hasExplicitVRAt(data, pos) && !dictionaryHasTag(littleTag) && dictionaryHasTag(bigTag):
+					isImplicit = false
+					isLittleEndian = false
+					currentTag = bigTag
+				case hasExplicitVRAt(data, pos):
+					isImplicit = false
+					currentTag = littleTag
+				default:
+					isImplicit = true
+					isLittleEndian = true
+					currentTag = littleTag
+				}
 			} else {
 				ts := determineTransferSyntaxFromElements(allElements)
 				isImplicit = ts.IsImplicitVR()
@@ -240,11 +257,17 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		}
 	}
 
-	// Determine transfer syntax from file meta
-	ts := determineTransferSyntax(fileMeta)
-	ds.originalEnc = EncodingInfo{
-		IsImplicitVR:   ts.IsImplicitVR(),
-		IsLittleEndian: ts.IsLittleEndian(),
+	if fileMeta.Len() > 0 {
+		ts := determineTransferSyntax(fileMeta)
+		ds.originalEnc = EncodingInfo{
+			IsImplicitVR:   ts.IsImplicitVR(),
+			IsLittleEndian: ts.IsLittleEndian(),
+		}
+	} else {
+		ds.originalEnc = EncodingInfo{
+			IsImplicitVR:   isImplicit,
+			IsLittleEndian: isLittleEndian,
+		}
 	}
 
 	fd := &FileDataset{
