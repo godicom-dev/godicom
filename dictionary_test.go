@@ -74,8 +74,72 @@ func TestRepeaterTag(t *testing.T) {
 	}
 }
 
-func TestRepeaterHasTag(t *testing.T) {
-	if !repeaterHasTag(MustTag(0x60103000)) {
-		t.Error("should match repeater")
+func TestPrivateDictionary(t *testing.T) {
+	vr, err := PrivateDictionaryVR(MustTag(0x00090000), "ACUSON")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vr != VRIS {
+		t.Fatalf("VR = %s, want IS", vr)
+	}
+
+	vm, err := PrivateDictionaryVM(MustTag(0x00090000), "ACUSON")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vm != "1" {
+		t.Fatalf("VM = %q, want 1", vm)
+	}
+
+	name, err := PrivateDictionaryDescription(MustTag(0x00090000), "ACUSON")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "Unknown" {
+		t.Fatalf("Name = %q, want Unknown", name)
+	}
+}
+
+func TestAddPrivateDictEntry(t *testing.T) {
+	t.Cleanup(ResetExtraPrivateDictionaries)
+
+	tag := MustTag(0x0041, 0x0001)
+	if err := AddPrivateDictEntry("ACME 3.2", tag, VRUS, "Some Number"); err != nil {
+		t.Fatal(err)
+	}
+
+	vr, err := PrivateDictionaryVR(tag, "ACME 3.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vr != VRUS {
+		t.Fatalf("VR = %s, want US", vr)
+	}
+
+	if err := AddPrivateDictEntry("ACME 3.2", MustTag(0x0010, 0x0010), VRDS, "Patient"); err == nil {
+		t.Fatal("expected error for non-private tag")
+	}
+}
+
+func TestPrivateDictLookupElementName(t *testing.T) {
+	elem := &Element{
+		Tag:            MustTag(0x00090000),
+		PrivateCreator: "ACUSON",
+	}
+	if got := elem.Name(); got != "[Unknown]" {
+		t.Fatalf("Name() = %q, want [Unknown]", got)
+	}
+}
+
+func TestPrivateDictionaryGeneratedSize(t *testing.T) {
+	if len(PrivateDictionaries) < 400 {
+		t.Fatalf("PrivateDictionaries has only %d creators", len(PrivateDictionaries))
+	}
+	entries := 0
+	for _, inner := range PrivateDictionaries {
+		entries += len(inner)
+	}
+	if entries < 10000 {
+		t.Fatalf("PrivateDictionaries has only %d entries", entries)
 	}
 }

@@ -2,6 +2,8 @@ package godicom
 
 import (
 	"testing"
+
+	"github.com/godicom-dev/godicom/uid"
 )
 
 func TestUIDKnown(t *testing.T) {
@@ -34,6 +36,16 @@ func TestUIDCompressed(t *testing.T) {
 	}
 	if ImplicitVRLittleEndian.IsCompressed() {
 		t.Error("implicit VR LE should not be compressed")
+	}
+}
+
+func TestUIDDictionary(t *testing.T) {
+	if len(UIDDictionary) != len(uid.Dictionary) {
+		t.Fatalf("UIDDictionary size = %d, want %d", len(UIDDictionary), len(uid.Dictionary))
+	}
+	got, ok := LookupUID("CTImageStorage")
+	if !ok || got != CTImageStorage {
+		t.Fatalf("LookupUID(CTImageStorage) = %q, %t", got, ok)
 	}
 }
 

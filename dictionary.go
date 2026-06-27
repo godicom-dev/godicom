@@ -124,17 +124,6 @@ func maskMatch(tag Tag) string {
 	return ""
 }
 
-// privateDictLookup looks up a private tag description.
-func privateDictLookup(tag Tag, creator string) (string, bool) {
-	// Private dictionary lookup - placeholder for now
-	return "", false
-}
-
-// privateDictionaryVR returns the VR for a private tag.
-func privateDictionaryVR(tag Tag, creator string) (VR, bool) {
-	return "", false
-}
-
 // dictionaryVRFromKeyword returns the VR for a given keyword.
 func dictionaryVRFromKeyword(keyword string) (VR, error) {
 	tag, ok := tagForKeyword(keyword)

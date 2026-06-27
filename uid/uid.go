@@ -8,87 +8,161 @@ import (
 // UID represents a DICOM Unique Identifier.
 type UID string
 
+// Native encoding transfer syntaxes are uncompressed (not encapsulated).
+var nativeEncoding = map[UID]struct{}{
+	ImplicitVRLittleEndian:         {},
+	ExplicitVRLittleEndian:         {},
+	ExplicitVRBigEndian:            {},
+	DeflatedExplicitVRLittleEndian: {},
+}
+
+// Non-dictionary UIDs used by godicom.
 const (
-	ImplicitVRLittleEndian         UID = "1.2.840.10008.1.2"
-	ExplicitVRLittleEndian         UID = "1.2.840.10008.1.2.1"
-	DeflatedExplicitVRLittleEndian UID = "1.2.840.10008.1.2.1.99"
-	ExplicitVRBigEndian            UID = "1.2.840.10008.1.2.2"
-	JPEGBaseline                   UID = "1.2.840.10008.1.2.4.50"
-	JPEGExtended                   UID = "1.2.840.10008.1.2.4.51"
-	JPEGLossless                   UID = "1.2.840.10008.1.2.4.57"
-	JPEGLosslessSV1                UID = "1.2.840.10008.1.2.4.70"
-	JPEGLSLossless                 UID = "1.2.840.10008.1.2.4.80"
-	JPEGLSLossy                    UID = "1.2.840.10008.1.2.4.81"
-	JPEG2000Lossless               UID = "1.2.840.10008.1.2.4.90"
-	JPEG2000                       UID = "1.2.840.10008.1.2.4.91"
-	RLELossless                    UID = "1.2.840.10008.1.2.5"
-	NativePixels                   UID = "1.2.840.10008.1.2"
-	VerificationSOPClass           UID = "1.2.840.10008.1.1"
-	PYDICOMImplementationUID       UID = "1.2.40.0.13.1.1.1"
+	NativePixels             UID = ImplicitVRLittleEndian
+	PYDICOMImplementationUID UID = "1.2.40.0.13.1.1.1"
+	GodicomImplementationUID UID = "1.2.826.0.1.3680043.8.498.1"
 )
 
-// Info holds metadata about a UID.
+// Backward-compatible aliases for earlier godicom constant names.
+const (
+	JPEGBaseline           = JPEGBaseline8Bit
+	JPEGExtended           = JPEGExtended12Bit
+	JPEGLSLossy            = JPEGLSNearLossless
+	VerificationSOPClass   = Verification
+)
+
+// Info holds metadata about a UID (legacy shape for KnownUIDs consumers).
 type Info struct {
 	UID              UID
 	Name             string
 	Type             string
+	ExtraInfo        string
+	Retired          bool
+	Keyword          string
 	IsTransferSyntax bool
 	IsCompressed     bool
 	IsImplicitVR     bool
 	IsLittleEndian   bool
 }
 
-// Known maps UID strings to their info.
-var Known = map[UID]Info{
-	ImplicitVRLittleEndian:         {UID: ImplicitVRLittleEndian, Name: "Implicit VR Little Endian", Type: "Transfer Syntax", IsTransferSyntax: true, IsImplicitVR: true, IsLittleEndian: true},
-	ExplicitVRLittleEndian:         {UID: ExplicitVRLittleEndian, Name: "Explicit VR Little Endian", Type: "Transfer Syntax", IsTransferSyntax: true, IsLittleEndian: true},
-	DeflatedExplicitVRLittleEndian: {UID: DeflatedExplicitVRLittleEndian, Name: "Deflated Explicit VR Little Endian", Type: "Transfer Syntax", IsTransferSyntax: true, IsLittleEndian: true},
-	ExplicitVRBigEndian:            {UID: ExplicitVRBigEndian, Name: "Explicit VR Big Endian", Type: "Transfer Syntax", IsTransferSyntax: true},
-	JPEGBaseline:                   {UID: JPEGBaseline, Name: "JPEG Baseline (Process 1)", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEGExtended:                   {UID: JPEGExtended, Name: "JPEG Extended (Process 2 & 4)", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEGLossless:                   {UID: JPEGLossless, Name: "JPEG Lossless (Process 14)", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEGLosslessSV1:                {UID: JPEGLosslessSV1, Name: "JPEG Lossless (SV1)", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEGLSLossless:                 {UID: JPEGLSLossless, Name: "JPEG-LS Lossless", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEGLSLossy:                    {UID: JPEGLSLossy, Name: "JPEG-LS Lossy (Near-Lossless)", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEG2000Lossless:               {UID: JPEG2000Lossless, Name: "JPEG 2000 Lossless", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	JPEG2000:                       {UID: JPEG2000, Name: "JPEG 2000", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	RLELossless:                    {UID: RLELossless, Name: "RLE Lossless", Type: "Transfer Syntax", IsTransferSyntax: true, IsCompressed: true, IsLittleEndian: true},
-	VerificationSOPClass:           {UID: VerificationSOPClass, Name: "Verification SOP Class", Type: "SOP Class"},
+// Known maps UID strings to their metadata. Populated from Dictionary.
+var Known map[UID]Info
+
+func init() {
+	Known = make(map[UID]Info, len(Dictionary))
+	for value, entry := range Dictionary {
+		u := UID(value)
+		info := Info{
+			UID:       u,
+			Name:      entry.Name,
+			Type:      entry.Type,
+			ExtraInfo: entry.ExtraInfo,
+			Retired:   entry.Retired,
+			Keyword:   entry.Keyword,
+		}
+		if entry.Type == "Transfer Syntax" {
+			info.IsTransferSyntax = true
+			info.IsCompressed = u.isCompressedTransferSyntax()
+			info.IsImplicitVR = u == ImplicitVRLittleEndian
+			info.IsLittleEndian = u != ExplicitVRBigEndian
+		}
+		Known[u] = info
+	}
+}
+
+func (u UID) entry() (DictEntry, bool) {
+	e, ok := Dictionary[string(u)]
+	return e, ok
+}
+
+// Lookup returns the UID for a dictionary keyword.
+func Lookup(keyword string) (UID, bool) {
+	u, ok := KeywordToUID[keyword]
+	return u, ok
 }
 
 func (u UID) Name() string {
-	if info, ok := Known[u]; ok {
-		return info.Name
+	if e, ok := u.entry(); ok {
+		return e.Name
 	}
 	return string(u)
 }
 
-func (u UID) IsTransferSyntax() bool {
-	if info, ok := Known[u]; ok {
-		return info.IsTransferSyntax
+func (u UID) Type() string {
+	if e, ok := u.entry(); ok {
+		return e.Type
+	}
+	return ""
+}
+
+func (u UID) ExtraInfo() string {
+	if e, ok := u.entry(); ok {
+		return e.ExtraInfo
+	}
+	return ""
+}
+
+func (u UID) Keyword() string {
+	if e, ok := u.entry(); ok {
+		return e.Keyword
+	}
+	return ""
+}
+
+func (u UID) IsRetired() bool {
+	if e, ok := u.entry(); ok {
+		return e.Retired
 	}
 	return false
+}
+
+func (u UID) IsPrivate() bool {
+	return !strings.HasPrefix(string(u), "1.2.840.10008.")
+}
+
+func (u UID) IsTransferSyntax() bool {
+	if e, ok := u.entry(); ok {
+		return e.Type == "Transfer Syntax"
+	}
+	return false
+}
+
+func (u UID) isCompressedTransferSyntax() bool {
+	if !u.IsTransferSyntax() {
+		return false
+	}
+	_, native := nativeEncoding[u]
+	return !native
 }
 
 func (u UID) IsCompressed() bool {
-	if info, ok := Known[u]; ok {
-		return info.IsCompressed
-	}
-	return false
+	return u.isCompressedTransferSyntax()
+}
+
+func (u UID) IsEncapsulated() bool {
+	return u.IsCompressed()
+}
+
+func (u UID) IsDeflated() bool {
+	return u.IsTransferSyntax() && u == DeflatedExplicitVRLittleEndian
 }
 
 func (u UID) IsImplicitVR() bool {
-	if info, ok := Known[u]; ok {
-		return info.IsImplicitVR
+	if !u.IsTransferSyntax() {
+		return false
 	}
 	return u == ImplicitVRLittleEndian
 }
 
 func (u UID) IsLittleEndian() bool {
-	if info, ok := Known[u]; ok {
-		return info.IsLittleEndian
+	if !u.IsTransferSyntax() {
+		return false
 	}
-	return true
+	return u != ExplicitVRBigEndian
+}
+
+func (u UID) IsValid() bool {
+	return Validate(string(u)) == nil
 }
 
 // Validate checks if the UID string conforms to DICOM rules.

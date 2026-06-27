@@ -21,14 +21,24 @@ const (
 	RLELossless                    UID = uid.RLELossless
 	NativePixels                   UID = uid.NativePixels
 	VerificationSOPClass           UID = uid.VerificationSOPClass
+	CTImageStorage                 UID = uid.CTImageStorage
 	PYDICOMImplementationUID       UID = uid.PYDICOMImplementationUID
+	GodicomImplementationUID       UID = uid.GodicomImplementationUID
 )
 
 // UIDInfo holds metadata about a UID.
 type UIDInfo = uid.Info
 
+// UIDDictionary maps UID values to their metadata.
+var UIDDictionary = uid.Dictionary
+
 // KnownUIDs maps UID strings to their info.
 var KnownUIDs = uid.Known
+
+// LookupUID returns the UID for a dictionary keyword.
+func LookupUID(keyword string) (UID, bool) {
+	return uid.Lookup(keyword)
+}
 
 // ValidateUID checks if the UID string conforms to DICOM rules.
 func ValidateUID(s string) error {
