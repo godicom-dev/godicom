@@ -12,6 +12,33 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
+func TestReadFileDeflatedExplicitVRLittleEndian(t *testing.T) {
+	ds, err := ReadFile(testFilePath("image_dfl.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transferSyntax, ok := ds.FileMeta.Get(MustTag("TransferSyntaxUID"))
+	if !ok {
+		t.Fatal("TransferSyntaxUID missing")
+	}
+	if transferSyntax.Value != DeflatedExplicitVRLittleEndian {
+		t.Fatalf("TransferSyntaxUID = %v, want %v", transferSyntax.Value, DeflatedExplicitVRLittleEndian)
+	}
+	conversionType, ok := ds.GetString(MustTag("ConversionType"))
+	if !ok {
+		t.Fatal("ConversionType missing")
+	}
+	if conversionType != "WSD" {
+		t.Fatalf("ConversionType = %q, want WSD", conversionType)
+	}
+	if ds.originalEnc.IsImplicitVR {
+		t.Fatal("IsImplicitVR = true, want false")
+	}
+	if !ds.originalEnc.IsLittleEndian {
+		t.Fatal("IsLittleEndian = false, want true")
+	}
+}
+
 func TestReadFileExplicitVRBigEndianNoMeta(t *testing.T) {
 	ds, err := ReadFile(testFilePath("ExplVR_BigEndNoMeta.dcm"), &ReadOptions{Force: true})
 	if err != nil {

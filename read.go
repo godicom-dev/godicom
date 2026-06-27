@@ -1,6 +1,8 @@
 package godicom
 
 import (
+	"bytes"
+	"compress/flate"
 	"encoding/binary"
 	"io"
 	"os"
@@ -19,6 +21,12 @@ func hasExplicitVRAt(data []byte, pos int64) bool {
 	}
 	rawVR := data[pos+4 : pos+6]
 	return rawVR[0] >= 0x41 && rawVR[0] <= 0x5A && rawVR[1] >= 0x41 && rawVR[1] <= 0x5A
+}
+
+func inflateRaw(data []byte) ([]byte, error) {
+	r := flate.NewReader(bytes.NewReader(data))
+	defer r.Close()
+	return io.ReadAll(r)
 }
 
 func readTagBytes(data []byte, pos int64, isLittleEndian bool) Tag {
@@ -94,7 +102,24 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 		if inFileMeta && currentTag.Group() != 0x0002 {
 			inFileMeta = false
-			if len(allElements) == 0 {
+			if len(allElements) > 0 {
+				ts := determineTransferSyntaxFromElements(allElements)
+				if ts == DeflatedExplicitVRLittleEndian {
+					inflated, err := inflateRaw(data[pos:])
+					if err != nil {
+						return nil, err
+					}
+					data = inflated
+					pos = 0
+					isImplicit = false
+					isLittleEndian = true
+					currentTag = readTagBytes(data, pos, isLittleEndian)
+				} else {
+					isImplicit = ts.IsImplicitVR()
+					isLittleEndian = ts.IsLittleEndian()
+					currentTag = readTagBytes(data, pos, isLittleEndian)
+				}
+			} else {
 				littleTag := readTagBytes(data, pos, true)
 				bigTag := readTagBytes(data, pos, false)
 				switch {
@@ -110,11 +135,6 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 					isLittleEndian = true
 					currentTag = littleTag
 				}
-			} else {
-				ts := determineTransferSyntaxFromElements(allElements)
-				isImplicit = ts.IsImplicitVR()
-				isLittleEndian = ts.IsLittleEndian()
-				currentTag = readTagBytes(data, pos, isLittleEndian)
 			}
 		}
 
