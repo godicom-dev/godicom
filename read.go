@@ -405,7 +405,7 @@ func readSequenceItemsUntil(
 		item.parent = seq
 
 		if itemLength == 0xFFFFFFFF {
-			readDatasetElements(data, pos, item, isImplicitVR, isLittleEndian, encoding, opts)
+			readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts)
 			for pos+4 <= int64(len(data)) {
 				if readTagBytes(data, pos, isLittleEndian) == ItemDelimiterTag {
 					pos += 8
@@ -414,7 +414,8 @@ func readSequenceItemsUntil(
 				pos++
 			}
 		} else if itemLength > 0 {
-			readDatasetElements(data, pos, item, isImplicitVR, isLittleEndian, encoding, opts)
+			itemEnd := pos + int64(itemLength)
+			readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts)
 			pos += int64(itemLength)
 		} else {
 			pos += int64(itemLength)
@@ -426,10 +427,10 @@ func readSequenceItemsUntil(
 	return seq, pos
 }
 
-func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) error {
+func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) error {
 	pos := offset
 
-	for pos+4 <= int64(len(data)) {
+	for pos+4 <= end && pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 
 		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {

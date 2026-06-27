@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -273,6 +274,68 @@ func TestWriteElementUNExplicitLittle(t *testing.T) {
 	expected = []byte{0x10, 0x00, 0x10, 0x00, 'U', 'N', 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00}
 	if !bytes.Equal(got, expected) {
 		t.Fatalf("odd got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteFileRoundtripValues(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{"CT", "CT_small.dcm"},
+		{"MR", "MR_small.dcm"},
+		{"RTPlan", "rtplan.dcm"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original, err := ReadFile(testFilePath(tt.file), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			outPath := filepath.Join(t.TempDir(), "roundtrip_"+tt.name+".dcm")
+			if err := original.SaveAs(outPath, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			reread, err := ReadFile(outPath, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if original.Len() != reread.Len() {
+				t.Fatalf("element count: original=%d reread=%d", original.Len(), reread.Len())
+			}
+
+			if original.FileMeta.Len() != reread.FileMeta.Len() {
+				t.Fatalf("file meta count: original=%d reread=%d", original.FileMeta.Len(), reread.FileMeta.Len())
+			}
+
+			tsOriginal, _ := original.FileMeta.GetString(MustTag("TransferSyntaxUID"))
+			tsReread, ok := reread.FileMeta.GetString(MustTag("TransferSyntaxUID"))
+			if !ok || tsOriginal != tsReread {
+				t.Fatalf("TransferSyntaxUID: original=%q reread=%q", tsOriginal, tsReread)
+			}
+
+			for _, tag := range original.SortedTags() {
+				origElem, _ := original.Get(tag)
+				rereadElem, ok := reread.Get(tag)
+				if !ok {
+					t.Fatalf("tag %s missing on reread", tag)
+				}
+				if origElem.VR != rereadElem.VR {
+					t.Fatalf("tag %s VR: original=%s reread=%s", tag, origElem.VR, rereadElem.VR)
+				}
+				if origElem.VR != VRSQ {
+					ov := fmt.Sprintf("%v", origElem.Value)
+					rv := fmt.Sprintf("%v", rereadElem.Value)
+					if ov != rv {
+						t.Fatalf("tag %s value: original=%q reread=%q", tag, ov, rv)
+					}
+				}
+			}
+		})
 	}
 }
 

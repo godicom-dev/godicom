@@ -1,12 +1,23 @@
 package godicom
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
 	"os"
 )
+
+var (
+	sqDepth    int
+	sqTagStack []Tag
+)
+
+func resetWriteGlobals() {
+	sqDepth = 0
+	sqTagStack = sqTagStack[:0]
+}
 
 // WriteOptions controls DICOM file writing behavior.
 type WriteOptions struct {
@@ -23,6 +34,7 @@ type writeSource struct {
 
 // writeFile writes a Dataset to a DICOM file.
 func writeFile(filename string, source writeSource, opts *WriteOptions) error {
+	resetWriteGlobals()
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -118,35 +130,80 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) err
 func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
 	fp.SetByteOrder(isLittleEndian)
 
+	isSQ := elem.VR == VRSQ
+
+	// Cycle detection: check if this SQ tag is already in the ancestor stack
+	isCircular := false
+	if isSQ {
+		for _, t := range sqTagStack {
+			if t == elem.Tag {
+				isCircular = true
+				break
+			}
+		}
+		sqTagStack = append(sqTagStack, elem.Tag)
+	}
+
+	// For defined-length SQs with items (and not circular), pre-compute content
+	var sqBuf *bytes.Buffer
+	if isSQ && !isCircular && !elem.IsUndefinedLength {
+		seq, ok := elem.Value.(*Sequence)
+		if ok && seq != nil && !seq.IsEmpty() {
+			sqBuf = new(bytes.Buffer)
+			sqFp := newDicomWriter(sqBuf)
+			sqFp.SetByteOrder(isLittleEndian)
+
+			for _, item := range seq.Items() {
+				if err := sqFp.WriteTag(ItemTag); err != nil {
+					return err
+				}
+				var itemBuf bytes.Buffer
+				itemFp := newDicomWriter(&itemBuf)
+				itemFp.SetByteOrder(isLittleEndian)
+				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian); err != nil {
+					return err
+				}
+				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
+					return err
+				}
+				if _, err := sqFp.Write(itemBuf.Bytes()); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	// Write tag
 	if err := fp.WriteTag(elem.Tag); err != nil {
 		return err
 	}
 
-	// Get encoded value
+	// Get encoded value (nil for SQ)
 	encoded := encodeValue(elem, isLittleEndian)
 
 	// Pad to even length per PS3.5
 	encoded = padToEven(elem.VR, encoded)
 
+	// Write VR + length
 	if isImplicit {
-		// Implicit VR: tag + 4-byte length + value
 		length := uint32(len(encoded))
-		if elem.IsUndefinedLength {
+		if sqBuf != nil {
+			length = uint32(sqBuf.Len())
+		} else if isSQ && elem.IsUndefinedLength {
 			length = 0xFFFFFFFF
 		}
 		if err := fp.WriteUint32(length); err != nil {
 			return err
 		}
 	} else {
-		// Explicit VR: tag + VR + [2 reserved] + length (2 or 4) + value
-		vr := string(elem.VR)
-		if _, err := fp.Write([]byte(vr)); err != nil {
+		if _, err := fp.Write([]byte(string(elem.VR))); err != nil {
 			return err
 		}
 
 		length := uint32(len(encoded))
-		if elem.IsUndefinedLength {
+		if sqBuf != nil {
+			length = uint32(sqBuf.Len())
+		} else if isSQ && elem.IsUndefinedLength {
 			length = 0xFFFFFFFF
 		}
 
@@ -158,7 +215,6 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 				return err
 			}
 		} else {
-			// 2 reserved bytes + 4-byte length
 			if _, err := fp.Write([]byte{0, 0}); err != nil {
 				return err
 			}
@@ -168,44 +224,53 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 		}
 	}
 
-	// Write value
-	if len(encoded) > 0 {
+	// Write value content
+	if sqBuf != nil {
+		if _, err := fp.Write(sqBuf.Bytes()); err != nil {
+			return err
+		}
+	} else if len(encoded) > 0 {
 		if _, err := fp.Write(encoded); err != nil {
 			return err
 		}
 	}
 
-	// Handle sequences with undefined length
-	if elem.VR == VRSQ && elem.IsUndefinedLength {
-		if seq, ok := elem.Value.(*Sequence); ok {
-			for _, item := range seq.Items() {
-				// Write Item tag
-				if err := fp.WriteTag(ItemTag); err != nil {
-					return err
+	// For undefined-length SQs, write items + delimiters
+	if isSQ && sqBuf == nil {
+		sqDepth++
+		if !isCircular && sqDepth <= 100 {
+			if seq, ok := elem.Value.(*Sequence); ok && seq != nil && !seq.IsEmpty() {
+				for _, item := range seq.Items() {
+					if err := fp.WriteTag(ItemTag); err != nil {
+						return err
+					}
+					if err := fp.WriteUint32(0xFFFFFFFF); err != nil {
+						return err
+					}
+					if err := writeDataset(fp, item, isImplicit, isLittleEndian); err != nil {
+						return err
+					}
+					if err := fp.WriteTag(ItemDelimiterTag); err != nil {
+						return err
+					}
+					if err := fp.WriteUint32(0); err != nil {
+						return err
+					}
 				}
-				if err := fp.WriteUint32(0xFFFFFFFF); err != nil {
-					return err
-				}
-				// Write item contents
-				if err := writeDataset(fp, item, isImplicit, isLittleEndian); err != nil {
-					return err
-				}
-				// Write ItemDelimiter
-				if err := fp.WriteTag(ItemDelimiterTag); err != nil {
-					return err
-				}
-				if err := fp.WriteUint32(0); err != nil {
-					return err
-				}
-			}
-			// Write SequenceDelimiter
-			if err := fp.WriteTag(SequenceDelimiterTag); err != nil {
-				return err
-			}
-			if err := fp.WriteUint32(0); err != nil {
-				return err
 			}
 		}
+		sqDepth--
+		if err := fp.WriteTag(SequenceDelimiterTag); err != nil {
+			return err
+		}
+		if err := fp.WriteUint32(0); err != nil {
+			return err
+		}
+	}
+
+	// Pop tag from ancestor stack
+	if isSQ {
+		sqTagStack = sqTagStack[:len(sqTagStack)-1]
 	}
 
 	return nil
