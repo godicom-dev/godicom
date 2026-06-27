@@ -211,6 +211,24 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			continue
 		}
 
+		if vr == VRSQ {
+			seq, newPos := readDefinedLengthSequence(
+				data,
+				pos+int64(hdrSize),
+				length,
+				isImplicit,
+				isLittleEndian,
+				encoding,
+				opts,
+			)
+			elem.Value = seq
+			pos = newPos
+			if shouldKeepElement(opts, elem.Tag) {
+				allElements = append(allElements, elem)
+			}
+			continue
+		}
+
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
@@ -327,11 +345,39 @@ func determineTransferSyntax(fileMeta *FileMetaDataset) UID {
 }
 
 func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) (*Sequence, int64) {
-	seq := NewSequence(nil)
+	seq, newPos := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, encoding, opts)
 	seq.IsUndefinedLength = true
+	return seq, newPos
+}
+
+func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) (*Sequence, int64) {
+	return readSequenceItemsUntil(
+		data,
+		offset,
+		offset+int64(length),
+		false,
+		isImplicitVR,
+		isLittleEndian,
+		encoding,
+		opts,
+	)
+}
+
+func readSequenceItemsUntil(
+	data []byte,
+	offset int64,
+	end int64,
+	undefinedLength bool,
+	isImplicitVR bool,
+	isLittleEndian bool,
+	encoding string,
+	opts *ReadOptions,
+) (*Sequence, int64) {
+	seq := NewSequence(nil)
+	seq.IsUndefinedLength = undefinedLength
 	pos := offset
 
-	for pos+4 <= int64(len(data)) {
+	for pos+8 <= end && pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 
 		if currentTag == SequenceDelimiterTag {
@@ -369,6 +415,8 @@ func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian b
 			}
 		} else if itemLength > 0 {
 			readDatasetElements(data, pos, item, isImplicitVR, isLittleEndian, encoding, opts)
+			pos += int64(itemLength)
+		} else {
 			pos += int64(itemLength)
 		}
 
@@ -449,6 +497,24 @@ func readDatasetElements(data []byte, offset int64, ds *Dataset, isImplicitVR, i
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
 			pos += int64(hdrSize)
+			if shouldKeepElement(opts, elem.Tag) {
+				ds.Set(elem)
+			}
+			continue
+		}
+
+		if vr == VRSQ {
+			seq, newPos := readDefinedLengthSequence(
+				data,
+				pos+int64(hdrSize),
+				length,
+				isImplicitVR,
+				isLittleEndian,
+				encoding,
+				opts,
+			)
+			elem.Value = seq
+			pos = newPos
 			if shouldKeepElement(opts, elem.Tag) {
 				ds.Set(elem)
 			}

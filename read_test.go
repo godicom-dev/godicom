@@ -12,6 +12,35 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
+func TestReadFileRTPlanSequence(t *testing.T) {
+	plan, err := ReadFile(testFilePath("rtplan.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beamSeq, ok := plan.GetSequence(MustTag("BeamSequence"))
+	if !ok {
+		t.Fatal("BeamSequence missing or not SQ")
+	}
+	if beamSeq.Len() != 1 {
+		t.Fatalf("BeamSequence len = %d, want 1", beamSeq.Len())
+	}
+	beam := beamSeq.Get(0)
+	machineName, ok := beam.GetString(MustTag("TreatmentMachineName"))
+	if !ok {
+		t.Fatal("TreatmentMachineName missing")
+	}
+	if machineName != "unit001" {
+		t.Fatalf("TreatmentMachineName = %q, want unit001", machineName)
+	}
+	controlPointSeq, ok := beam.GetSequence(MustTag("ControlPointSequence"))
+	if !ok {
+		t.Fatal("ControlPointSequence missing or not SQ")
+	}
+	if controlPointSeq.Len() != 2 {
+		t.Fatalf("ControlPointSequence len = %d, want 2", controlPointSeq.Len())
+	}
+}
+
 func TestReadFileCTValues(t *testing.T) {
 	ct, err := ReadFile(testFilePath("CT_small.dcm"), nil)
 	if err != nil {

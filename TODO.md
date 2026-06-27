@@ -37,7 +37,7 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 | Charset / Unicode | `pydicom/src/pydicom/charset.py` | `pydicom/tests/test_charset.py`, `pydicom/tests/test_unicode.py` | 部分实现；读写路径集成和 ISO-2022 未充分验证 |
 | File base / DICOM IO | `pydicom/src/pydicom/filebase.py`, `pydicom/src/pydicom/dicomio.py` | `pydicom/tests/test_filebase.py` | 部分实现；覆盖率不足 |
 | File util | `pydicom/src/pydicom/fileutil.py`, `pydicom/src/pydicom/misc.py` | `pydicom/tests/test_fileutil.py`, `pydicom/tests/test_misc.py`, `pydicom/tests/test_util.py` | 部分实现；很多函数 placeholder 或未覆盖 |
-| File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础 transfer syntax 读取已实现；已覆盖 SpecificTags/file meta/Big Endian/Deflated/CT/MR 值级断言；Sequence 嵌套读取仍需补齐 |
+| File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础 transfer syntax 读取已实现；已覆盖 SpecificTags/file meta/Big Endian/Deflated/CT/MR 值级断言/defined length SQ；更深层 sequence、rawread、deferred 仍需补齐 |
 | File writer | `pydicom/src/pydicom/filewriter.py` | `pydicom/tests/test_filewriter.py` | 基础写入器；已保留 FileDataset file meta/preamble；enforce_file_format、group length、ambiguous VR、padding、undefined length 等需补 |
 | DICOM JSON Model | `pydicom/src/pydicom/jsonrep.py`, `pydicom/src/pydicom/dataset.py` | `pydicom/tests/test_json.py` | 骨架；缺 Part 18 Annex F 完整兼容和 from_json |
 | Encapsulated Pixel Data | `pydicom/src/pydicom/encaps.py` | `pydicom/tests/test_encaps.py` | 未实现 |
@@ -134,8 +134,8 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 
 - [ ] **File Reader 完整性**
   - pydicom 有 `test_filereader.py` + `test_rawread.py`，约 130 个测试定义
-  - Go 当前完成：file meta 分离、SpecificTags、Big Endian、Deflated、CT/MR 值级断言
-  - 缺少/待实现：defined length SQ 解析、RTPlan 深层 sequence 断言、read_partial/raw/deferred 机制、malformed file recovery、hooks/callbacks、compressed pixel/encapsulated 数据处理
+  - Go 当前完成：file meta 分离、SpecificTags、Big Endian、Deflated、CT/MR 值级断言、defined length SQ 基础读取
+  - 缺少/待实现：RTPlan 更深层 sequence 断言、read_partial/raw/deferred 机制、malformed file recovery、hooks/callbacks、compressed pixel/encapsulated 数据处理
 
 - [ ] **File Writer 完整性**
   - pydicom `test_filewriter.py` 约 178 个测试定义
@@ -247,7 +247,8 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
    - [x] 完善 file meta 写入保留与读取分离
    - [x] 完善 Big Endian / Deflated 读取测试与实现
    - [x] 增加典型 pydicom 文件的 CT/MR 值级断言
-   - [ ] 修复 defined length SQ 读取，迁移 `test_filereader.py::test_RTPlan` 的基础断言
+   - [x] 修复 defined length SQ 读取，迁移 `test_filereader.py::test_RTPlan` 的基础断言
+   - [ ] 继续补 `test_filereader.py::test_RTPlan` 更深层嵌套断言：`ReferencedDoseReferenceSequence`、`BeamLimitingDevicePositionSequence`
 
 3. **确认 Python 动态 API 的 Go 设计**
    - [ ] 确认 `ds.PatientName` 在 Go 中的推荐 API
