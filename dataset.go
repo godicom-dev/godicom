@@ -296,65 +296,6 @@ func (d *Dataset) String() string {
 	return b.String()
 }
 
-// --- JSON ---
-
-func (d *Dataset) ToJSON() (string, error) {
-	// Simple JSON serialization
-	var b strings.Builder
-	b.WriteString("{\n")
-	first := true
-	for _, elem := range d.Iter() {
-		if !first {
-			b.WriteString(",\n")
-		}
-		first = false
-		b.WriteString(fmt.Sprintf("  %q: ", elem.Tag.JSONKey()))
-		writeJSONValue(&b, elem)
-	}
-	b.WriteString("\n}")
-	return b.String(), nil
-}
-
-func writeJSONValue(b *strings.Builder, elem *DataElement) {
-	b.WriteString(fmt.Sprintf(`{"vr": %q`, string(elem.VR)))
-	if elem.VR == VRSQ {
-		b.WriteString(`, "Value": [`)
-		if seq, ok := elem.Value.(*Sequence); ok {
-			for i, item := range seq.Items() {
-				if i > 0 {
-					b.WriteString(", ")
-				}
-				json, _ := item.ToJSON()
-				b.WriteString(json)
-			}
-		}
-		b.WriteString("]")
-	} else if !elem.IsEmpty() {
-		b.WriteString(`, "Value": [`)
-		switch v := elem.Value.(type) {
-		case string:
-			b.WriteString(fmt.Sprintf("%q", v))
-		case int, uint16, uint32, int32:
-			b.WriteString(fmt.Sprintf("%d", v))
-		case float64:
-			b.WriteString(fmt.Sprintf("%g", v))
-		case *MultiValue[interface{}]:
-			for i, item := range v.Values() {
-				if i > 0 {
-					b.WriteString(", ")
-				}
-				fmt.Fprintf(b, "%q", fmt.Sprintf("%v", item))
-			}
-		case []byte:
-			b.WriteString(fmt.Sprintf("%q", string(v)))
-		default:
-			b.WriteString(fmt.Sprintf("%q", fmt.Sprintf("%v", v)))
-		}
-		b.WriteString("]")
-	}
-	b.WriteString("}")
-}
-
 // --- Save ---
 
 func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
