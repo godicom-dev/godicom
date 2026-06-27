@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,6 +39,39 @@ func TestReadFileRTPlanSequence(t *testing.T) {
 	}
 	if controlPointSeq.Len() != 2 {
 		t.Fatalf("ControlPointSequence len = %d, want 2", controlPointSeq.Len())
+	}
+	cp0 := controlPointSeq.Get(0)
+	cp1 := controlPointSeq.Get(1)
+	doseReferenceSeq, ok := cp1.GetSequence(MustTag("ReferencedDoseReferenceSequence"))
+	if !ok {
+		t.Fatal("ReferencedDoseReferenceSequence missing or not SQ")
+	}
+	doseReference := doseReferenceSeq.Get(0)
+	coefficient, ok := doseReference.GetFloat(MustTag("CumulativeDoseReferenceCoefficient"))
+	if !ok {
+		t.Fatal("CumulativeDoseReferenceCoefficient missing")
+	}
+	if math.Abs(coefficient-0.9990268) > 1e-9 {
+		t.Fatalf("CumulativeDoseReferenceCoefficient = %g, want 0.9990268", coefficient)
+	}
+	positionSeq, ok := cp0.GetSequence(MustTag("BeamLimitingDevicePositionSequence"))
+	if !ok {
+		t.Fatal("BeamLimitingDevicePositionSequence missing or not SQ")
+	}
+	if positionSeq.Len() == 0 {
+		t.Fatal("BeamLimitingDevicePositionSequence is empty")
+	}
+	position := positionSeq.Get(0)
+	leafElem, ok := position.Get(MustTag("LeafJawPositions"))
+	if !ok {
+		t.Fatal("LeafJawPositions missing")
+	}
+	leafJawPositions, ok := leafElem.Value.(*MultiValue[float64])
+	if !ok {
+		t.Fatalf("LeafJawPositions type = %T, want *MultiValue[float64]", leafElem.Value)
+	}
+	if leafJawPositions.Len() != 2 || leafJawPositions.Get(0) != -100 || leafJawPositions.Get(1) != 100 {
+		t.Fatalf("LeafJawPositions = %v, want [-100 100]", leafJawPositions.Values())
 	}
 }
 
