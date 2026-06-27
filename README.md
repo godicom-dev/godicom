@@ -15,7 +15,7 @@ import "github.com/godicom-dev/godicom"
 // 读取 DICOM 文件
 ds, err := godicom.DcmReadFile("ct.dcm")
 // 或使用选项
-ds, err := godicom.DcmRead("ct.dcm", &godicom.ReadOptions{Force: true})
+ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Force: true})
 
 // 访问元素
 name, _ := ds.GetString(godicom.MustTag(0x00100010))
@@ -35,21 +35,24 @@ ds.SaveAs("output.dcm", nil)
 | 读取 Explicit VR Little Endian | ✅ |
 | 读取 Implicit VR Little Endian | ✅ |
 | 读取 Explicit VR Big Endian | ✅ |
+| 读取 Deflated Explicit VR Little Endian | ✅ |
 | 混合编码自动切换 | ✅ |
 | 文件 Meta 信息解析 | ✅ |
 | 序列 (SQ) 解析 | ✅ |
 | 嵌套私有 Tag | ✅ |
+| `ReadOptions.SpecificTags` | ✅ |
 | 写入 Explicit VR Little Endian | ✅ |
 | 写入 Implicit VR Little Endian | ✅ |
 | 写入序列 | ✅ |
-| 所有 VR 值转换 | ✅ |
-| DICOM 字符集 (ISO-8859-x, Shift-JIS, GBK, GB18030, Big5 等) | ✅ |
+| 基础 VR 值转换 | ✅ |
+| DICOM 字符集 (ASCII/Latin-1/Greek 等) | 🚧 |
 | DICOM 标准字典 (5189 Tag + 88 Repeater) | ✅ |
-| Deflated Explicit VR LE | ❌ |
 | Pixel Data 解码 (Native) | ❌ |
 | Pixel Data 解码 (JPEG/JPEG-LS/JPEG-2000/RLE) | ❌ |
 | JSON 序列化 | 🚧 |
 | DICOMweb / WADO-RS | ❌ |
+
+当前聚焦 **metadata 读写子集**；完整路线图见 [TODO.md](TODO.md)。
 
 ## 测试
 
@@ -57,32 +60,34 @@ ds.SaveAs("output.dcm", nil)
 go test -count=1 ./...
 ```
 
-测试覆盖 11 个模块，共 154 个测试用例，覆盖 78 个真实 DICOM 测试文件。
+- 17 个测试文件，282 个测试用例（含 subtest）
+- 语句覆盖率约 **71%**
+- 使用 pydicom submodule 中 78 个真实 `.dcm` 测试文件
 
 ## 项目结构
 
 ```
 godicom/
-├── tag.go              # Tag 类型
-├── vr.go               # VR 类型及分类
-├── uid.go              # UID 类型
-├── errors.go           # 错误类型
-├── dataelem.go         # DataElement / RawDataElement / PersonName
-├── dataset.go          # Dataset / FileDataset / PrivateBlock
-├── sequence.go         # Sequence
-├── multival.go         # MultiValue
-├── values.go           # 值转换 (bytes → Go 类型)
-├── charset.go          # DICOM 字符编码
-├── datadict.go         # 字典查询
-├── dicom_dict_generated.go  # 自动生成的 DICOM 字典
-├── filebase.go         # I/O 基础
-├── fileutil.go         # 文件工具
-├── filereader.go       # 文件读取
-├── filewriter.go       # 文件写入
-├── godicom.go          # 包文档
-├── generate_dict.py    # 字典生成脚本
-├── cmd/godicom/        # CLI 工具
-└── pydicom/            # pydicom submodule (参考/测试数据)
+├── tag.go / tag/           # Tag 类型与 keyword 子包
+├── vr.go                   # VR 类型及分类
+├── uid.go / uid/           # UID 类型与子包
+├── errors.go               # 错误类型
+├── element.go              # DataElement / RawDataElement / PersonName
+├── dataset.go              # Dataset / FileDataset / PrivateBlock
+├── sequence.go             # Sequence
+├── multivalue.go           # MultiValue
+├── values.go               # 值转换 (bytes → Go 类型)
+├── charset.go              # DICOM 字符编码
+├── dictionary.go           # 字典查询
+├── dictionary_generated.go # 自动生成的 DICOM 字典
+├── io.go                   # I/O 基础
+├── buffer.go               # 缓冲区工具
+├── read.go                 # 文件读取
+├── write.go                # 文件写入
+├── godicom.go              # 包文档
+├── generate_dict.py        # 字典生成脚本
+├── cmd/godicom/            # CLI 工具 (read / readcopy)
+└── pydicom/                # pydicom submodule (参考 / 测试数据)
 ```
 
 ## 许可
