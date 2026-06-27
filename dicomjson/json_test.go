@@ -454,6 +454,45 @@ func TestPydicomTest1JSONFixture(t *testing.T) {
 	}
 }
 
+func TestInlineBinaryUNSequence(t *testing.T) {
+	data := []byte(`{"300A0180":{"vr":"UN","InlineBinary":"/v8A4B4AAAAYAABRBAAAAEhGUyAKMIIBAgAAADEgCjCyAQAAAAA="}}`)
+	parsed, err := ParseDataset(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq, ok := parsed.GetSequence(godicom.MustTag("PatientSetupSequence"))
+	if !ok || seq.Len() != 1 {
+		t.Fatalf("PatientSetupSequence missing: %v %t", seq, ok)
+	}
+	position, ok := seq.Get(0).GetString(godicom.MustTag("PatientPosition"))
+	if !ok || position != "HFS" {
+		t.Fatalf("PatientPosition = %q, %t", position, ok)
+	}
+	setupNumber, ok := seq.Get(0).GetInt(godicom.MustTag("PatientSetupNumber"))
+	if !ok || setupNumber != 1 {
+		t.Fatalf("PatientSetupNumber = %d, %t", setupNumber, ok)
+	}
+	desc, ok := seq.Get(0).GetString(godicom.MustTag("SetupTechniqueDescription"))
+	if !ok || desc != "" {
+		t.Fatalf("SetupTechniqueDescription = %q, %t", desc, ok)
+	}
+}
+
+func TestInlineBinaryUNKnownVRPadding(t *testing.T) {
+	parsed, err := ParseDataset([]byte(`{"00185100":{"vr":"UN","InlineBinary":"SEZTIA=="}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, ok := parsed.GetString(godicom.MustTag("PatientPosition"))
+	if !ok || position != "HFS" {
+		t.Fatalf("PatientPosition = %q, %t", position, ok)
+	}
+	elem, ok := parsed.Get(godicom.MustTag("PatientPosition"))
+	if !ok || elem.VR != godicom.VRCS {
+		t.Fatalf("PatientPosition VR = %s, %t", elem.VR, ok)
+	}
+}
+
 func testDataFile(name string) string {
 	return filepath.Join("..", "pydicom", "src", "pydicom", "data", "test_files", name)
 }

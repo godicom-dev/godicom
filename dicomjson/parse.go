@@ -206,6 +206,11 @@ func parseInlineBinaryElement(tag godicom.Tag, vr godicom.VR, data json.RawMessa
 	if err != nil {
 		return nil, fmt.Errorf("dicomjson: invalid InlineBinary for %s: %w", tag, err)
 	}
+	if vr == godicom.VRUN {
+		if elem, ok, err := parseUnknownInlineBinary(tag, value); err != nil || ok {
+			return elem, err
+		}
+	}
 	return godicom.NewDataElement(tag, vr, value), nil
 }
 
