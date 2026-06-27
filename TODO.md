@@ -112,7 +112,7 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
   - 已补一部分：CT/MR 值级断言、file meta、Big Endian、Deflated；Sequence/RTPlan、rawread、pixel handler 仍待补
 - [x] Writer 多数测试只看 readback 元素数，缺少文件 meta、group length、padding、undefined length、ambiguous VR、roundtrip 字节级兼容测试
   - pydicom 参照：`pydicom/tests/test_filewriter.py`
-  - 已补：string VR padding（AE/CS space、UI NUL）、OB odd padding；group length、ambiguous VR、undefined length、roundtrip 字节级仍需补
+  - 已补：string VR padding（AE/CS space、UI NUL）、OB odd padding；OD/OL/UC/UR/UN explicit VR 字节布局；group length、ambiguous VR、undefined length、roundtrip 字节级仍需补
 - [x] Big Endian、Deflated、compressed/encapsulated pixel data 缺少针对性测试
   - pydicom 参照：`pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py`, `pydicom/tests/test_encaps.py`, `pydicom/tests/test_rle_pixel_data.py`, `pydicom/tests/test_gdcm_pixel_data.py`, `pydicom/tests/test_pillow_pixel_data.py`, `pydicom/tests/test_pylibjpeg.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py`
   - 已补：Big Endian 和 Deflated reader 测试；compressed/encapsulated pixel data 仍未实现，单独列在 Pixel/Encapsulated 缺口

@@ -129,6 +129,14 @@ func encodeElementImplicitLittle(elem *DataElement) []byte {
 	return buf.Bytes()
 }
 
+func encodeElementExplicitLittle(elem *DataElement) []byte {
+	var buf bytes.Buffer
+	fp := newDicomWriter(&buf)
+	fp.SetByteOrder(true)
+	_ = writeElement(fp, elem, false, true)
+	return buf.Bytes()
+}
+
 func TestWriteElementASCIIVRWithPadding(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -177,6 +185,94 @@ func TestWriteElementOBOdd(t *testing.T) {
 	expected = []byte{0xE0, 0x7F, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if !bytes.Equal(got, expected) {
 		t.Fatalf("empty got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteElementODExplicitLittle(t *testing.T) {
+	bytestring := []byte{0, 1, 2, 3, 4, 5, 6, 7, 1, 1, 2, 3, 4, 5, 6, 7}
+	elem := NewDataElement(MustTag(0x0070150D), VROD, bytestring)
+	got := encodeElementExplicitLittle(elem)
+	expected := append([]byte{0x70, 0x00, 0x0D, 0x15, 'O', 'D', 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, bytestring...)
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+
+	elem.Value = []byte{}
+	got = encodeElementExplicitLittle(elem)
+	expected = []byte{0x70, 0x00, 0x0D, 0x15, 'O', 'D', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("empty got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteElementOLExplicitLittle(t *testing.T) {
+	bytestring := []byte{0, 1, 2, 3, 4, 5, 6, 7, 1, 1, 2, 3}
+	elem := NewDataElement(MustTag(0x00660129), VROL, bytestring)
+	got := encodeElementExplicitLittle(elem)
+	expected := append([]byte{0x66, 0x00, 0x29, 0x01, 'O', 'L', 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00}, bytestring...)
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteElementUCExplicitLittle(t *testing.T) {
+	elem := NewDataElement(MustTag(0x00189908), VRUC, "Test")
+	got := encodeElementExplicitLittle(elem)
+	expected := []byte{0x18, 0x00, 0x08, 0x99, 'U', 'C', 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 'T', 'e', 's', 't'}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+
+	elem.Value = "Test."
+	got = encodeElementExplicitLittle(elem)
+	expected = []byte{0x18, 0x00, 0x08, 0x99, 'U', 'C', 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 'T', 'e', 's', 't', '.', ' '}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("odd got = % X, want % X", got, expected)
+	}
+
+	elem.Value = ""
+	got = encodeElementExplicitLittle(elem)
+	expected = []byte{0x18, 0x00, 0x08, 0x99, 'U', 'C', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("empty got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteElementURExplicitLittle(t *testing.T) {
+	elem := NewDataElement(MustTag(0x00080120), VRUR, "ftp://bits")
+	got := encodeElementExplicitLittle(elem)
+	expected := []byte{
+		0x08, 0x00, 0x20, 0x01, 'U', 'R', 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
+		'f', 't', 'p', ':', '/', '/', 'b', 'i', 't', 's',
+	}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+
+	elem.Value = "ftp://bit"
+	got = encodeElementExplicitLittle(elem)
+	expected = []byte{
+		0x08, 0x00, 0x20, 0x01, 'U', 'R', 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
+		'f', 't', 'p', ':', '/', '/', 'b', 'i', 't', ' ',
+	}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("odd got = % X, want % X", got, expected)
+	}
+}
+
+func TestWriteElementUNExplicitLittle(t *testing.T) {
+	elem := NewDataElement(MustTag(0x00100010), VRUN, []byte{0x01, 0x02})
+	got := encodeElementExplicitLittle(elem)
+	expected := []byte{0x10, 0x00, 0x10, 0x00, 'U', 'N', 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+
+	elem.Value = []byte{0x01}
+	got = encodeElementExplicitLittle(elem)
+	expected = []byte{0x10, 0x00, 0x10, 0x00, 'U', 'N', 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("odd got = % X, want % X", got, expected)
 	}
 }
 
