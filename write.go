@@ -49,6 +49,14 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		return fmt.Errorf("godicom: missing dataset")
 	}
 
+	for _, elem := range source.dataset.Iter() {
+		if elem.Tag.Group() == 0x0002 {
+			return fmt.Errorf(
+				"godicom: File Meta Information group elements (0002,eeee) must be in FileDataset.FileMeta, not the dataset",
+			)
+		}
+	}
+
 	// Determine encoding
 	isImplicit := false
 	isLittleEndian := true
@@ -65,27 +73,82 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		isLittleEndian = source.dataset.originalEnc.IsLittleEndian
 	}
 
+	if !opts.EnforceFileFormat && isImplicit && !isLittleEndian {
+		return fmt.Errorf("godicom: implicit VR and big endian is not a valid encoding combination")
+	}
+
+	fileMeta := source.fileMeta
+	if fileMeta != nil {
+		fileMeta = cloneFileMeta(fileMeta)
+	}
+
+	if opts.EnforceFileFormat {
+		if fileMeta == nil {
+			fileMeta = NewFileMetaDataset()
+		}
+
+		ts, _ := transferSyntaxUID(fileMeta)
+		if ts == "" {
+			if isImplicit && isLittleEndian {
+				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ImplicitVRLittleEndian))
+			} else if !isImplicit && isLittleEndian {
+				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRLittleEndian))
+			} else if !isImplicit && !isLittleEndian {
+				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRBigEndian))
+			}
+			ts, _ = transferSyntaxUID(fileMeta)
+		}
+
+		if sopClass, ok := source.dataset.GetString(MustTag("SOPClassUID")); ok {
+			if metaClass, ok := fileMeta.GetString(MustTag("MediaStorageSOPClassUID")); !ok || metaClass == "" || metaClass != sopClass {
+				fileMeta.Set(NewDataElement(MustTag("MediaStorageSOPClassUID"), VRUI, UID(sopClass)))
+			}
+		}
+		if sopInstance, ok := source.dataset.GetString(MustTag("SOPInstanceUID")); ok {
+			if metaInstance, ok := fileMeta.GetString(MustTag("MediaStorageSOPInstanceUID")); !ok || metaInstance == "" || metaInstance != sopInstance {
+				fileMeta.Set(NewDataElement(MustTag("MediaStorageSOPInstanceUID"), VRUI, UID(sopInstance)))
+			}
+		}
+
+		if err := ValidateFileMeta(fileMeta, true); err != nil {
+			return err
+		}
+	}
+
+	if ts, ok := transferSyntaxUID(fileMeta); ok {
+		if UID(ts).IsCompressed() {
+			if elem, ok := source.dataset.Get(MustTag("PixelData")); ok {
+				elem.IsUndefinedLength = true
+			}
+		}
+	}
+
 	preamble := source.preamble
-	if len(preamble) == 0 {
+	writePreamble := len(preamble) > 0
+	if opts.EnforceFileFormat && !writePreamble {
 		preamble = make([]byte, 128)
+		writePreamble = true
 	}
-	if len(preamble) != 128 {
-		return fmt.Errorf("godicom: preamble must be 128 bytes, got %d", len(preamble))
-	}
-	// Write preamble (128 bytes + "DICM")
-	if _, err := f.Write(preamble); err != nil {
-		return err
-	}
-	if _, err := f.Write([]byte("DICM")); err != nil {
-		return err
+	if writePreamble {
+		if len(preamble) != 128 {
+			return fmt.Errorf("godicom: preamble must be 128 bytes, got %d", len(preamble))
+		}
+		if _, err := f.Write(preamble); err != nil {
+			return err
+		}
+		if _, err := f.Write([]byte("DICM")); err != nil {
+			return err
+		}
 	}
 
 	// Write File Meta Information (always Explicit VR Little Endian)
 	fp := newDicomWriter(f)
 	fp.SetByteOrder(true)
 
-	if err := writeFileMetaInfo(fp, source.fileMeta); err != nil {
-		return fmt.Errorf("godicom: error writing file meta: %w", err)
+	if fileMeta != nil && fileMeta.Len() > 0 {
+		if err := writeFileMetaInfo(fp, fileMeta, opts.EnforceFileFormat); err != nil {
+			return fmt.Errorf("godicom: error writing file meta: %w", err)
+		}
 	}
 
 	// Write dataset
@@ -98,27 +161,74 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 	return nil
 }
 
-func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset) error {
+func transferSyntaxUID(fileMeta *FileMetaDataset) (string, bool) {
+	if fileMeta == nil {
+		return "", false
+	}
+	return fileMeta.GetString(MustTag("TransferSyntaxUID"))
+}
+
+func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard bool) error {
 	if fileMeta == nil {
 		return nil
 	}
-	// File Meta is always Explicit VR Little Endian
+
+	if enforceStandard {
+		if _, ok := fileMeta.Get(MustTag("FileMetaInformationGroupLength")); !ok {
+			fileMeta.Set(NewDataElement(MustTag("FileMetaInformationGroupLength"), VRUL, uint32(0)))
+		}
+	}
+
+	var buf bytes.Buffer
+	metaWriter := newDicomWriter(&buf)
+	metaWriter.SetByteOrder(true)
 	for _, elem := range fileMeta.Iter() {
 		if elem.Tag.Group() != 0x0002 {
 			continue
 		}
-		if err := writeElement(fp, elem, false, true); err != nil {
+		if err := writeElement(metaWriter, elem, false, true); err != nil {
 			return err
 		}
 	}
 
+	if enforceStandard {
+		if elem, ok := fileMeta.Get(MustTag("FileMetaInformationGroupLength")); ok {
+			elem.Value = uint32(buf.Len() - 12)
+			elem.RawValue = nil
+			buf.Reset()
+			metaWriter = newDicomWriter(&buf)
+			metaWriter.SetByteOrder(true)
+			for _, e := range fileMeta.Iter() {
+				if e.Tag.Group() != 0x0002 {
+					continue
+				}
+				if err := writeElement(metaWriter, e, false, true); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if _, err := fp.Write(buf.Bytes()); err != nil {
+		return err
+	}
 	return nil
 }
 
 func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) error {
+	if isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian {
+		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
+			return err
+		}
+	}
+
 	for _, elem := range ds.Iter() {
 		if elem.Tag.Group() == 0x0002 {
 			continue // Already written as file meta
+		}
+		// Do not write retired Group Length (see PS3.5, 7.2)
+		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
+			continue
 		}
 		if err := writeElement(fp, elem, isImplicit, isLittleEndian); err != nil {
 			return err
@@ -127,7 +237,75 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) err
 	return nil
 }
 
+func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
+	if err := fp.WriteTag(elem.Tag); err != nil {
+		return err
+	}
+
+	valueLength := uint32(len(elem.RawValue))
+	isUndefinedLength := elem.IsUndefinedLength
+
+	if isImplicit {
+		length := valueLength
+		if isUndefinedLength {
+			length = 0xFFFFFFFF
+		}
+		if err := fp.WriteUint32(length); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fp.Write([]byte(string(elem.VR))); err != nil {
+			return err
+		}
+		if isUndefinedLength {
+			if !ExplicitVRLength16[elem.VR] {
+				if _, err := fp.Write([]byte{0, 0}); err != nil {
+					return err
+				}
+			}
+			if _, err := fp.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF}); err != nil {
+				return err
+			}
+		} else if ExplicitVRLength16[elem.VR] {
+			if valueLength > 0xFFFF {
+				return fmt.Errorf("godicom: value too long for VR %s with 16-bit length: %d", elem.VR, valueLength)
+			}
+			if err := fp.WriteUint16(uint16(valueLength)); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fp.Write([]byte{0, 0}); err != nil {
+				return err
+			}
+			if err := fp.WriteUint32(valueLength); err != nil {
+				return err
+			}
+		}
+	}
+
+	if !isUndefinedLength && len(elem.RawValue) > 0 {
+		if _, err := fp.Write(elem.RawValue); err != nil {
+			return err
+		}
+	}
+
+	if isUndefinedLength {
+		if err := fp.WriteTag(SequenceDelimiterTag); err != nil {
+			return err
+		}
+		if err := fp.WriteUint32(0); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
+	if elem.RawValue != nil && elem.VR != VRSQ {
+		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
+	}
+
 	fp.SetByteOrder(isLittleEndian)
 
 	isSQ := elem.VR == VRSQ
@@ -241,20 +419,35 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 		if !isCircular && sqDepth <= 100 {
 			if seq, ok := elem.Value.(*Sequence); ok && seq != nil && !seq.IsEmpty() {
 				for _, item := range seq.Items() {
+					var itemBuf bytes.Buffer
+					itemFp := newDicomWriter(&itemBuf)
+					itemFp.SetByteOrder(isLittleEndian)
+					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian); err != nil {
+						return err
+					}
 					if err := fp.WriteTag(ItemTag); err != nil {
 						return err
 					}
-					if err := fp.WriteUint32(0xFFFFFFFF); err != nil {
-						return err
-					}
-					if err := writeDataset(fp, item, isImplicit, isLittleEndian); err != nil {
-						return err
-					}
-					if err := fp.WriteTag(ItemDelimiterTag); err != nil {
-						return err
-					}
-					if err := fp.WriteUint32(0); err != nil {
-						return err
+					if item.IsUndefinedLengthSequenceItem {
+						if err := fp.WriteUint32(0xFFFFFFFF); err != nil {
+							return err
+						}
+						if _, err := fp.Write(itemBuf.Bytes()); err != nil {
+							return err
+						}
+						if err := fp.WriteTag(ItemDelimiterTag); err != nil {
+							return err
+						}
+						if err := fp.WriteUint32(0); err != nil {
+							return err
+						}
+					} else {
+						if err := fp.WriteUint32(uint32(itemBuf.Len())); err != nil {
+							return err
+						}
+						if _, err := fp.Write(itemBuf.Bytes()); err != nil {
+							return err
+						}
 					}
 				}
 			}

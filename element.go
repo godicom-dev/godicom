@@ -10,6 +10,12 @@ type Element struct {
 	Tag               Tag
 	VR                VR
 	Value             interface{}
+	RawValue          []byte // original value bytes from read; written verbatim when set
+	ValueTell         int64  // value offset in source; used for deferred reads
+	ValueLength       uint32 // byte length when deferred
+	Deferred          bool   // value not yet loaded from source
+	IsImplicitVR      bool   // encoding at read time; for deferred load
+	IsLittleEndian    bool
 	FileTell          int64
 	IsUndefinedLength bool
 	PrivateCreator    string
@@ -108,8 +114,13 @@ func (e *Element) VM() int {
 		return 0
 	}
 	switch v := e.Value.(type) {
-	case string, []byte:
-		if len(v.(string)) == 0 {
+	case string:
+		if len(v) == 0 {
+			return 0
+		}
+		return 1
+	case []byte:
+		if len(v) == 0 {
 			return 0
 		}
 		return 1

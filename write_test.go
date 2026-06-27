@@ -277,6 +277,130 @@ func TestWriteElementUNExplicitLittle(t *testing.T) {
 	}
 }
 
+func bytesIdentical(a, b []byte) (bool, int) {
+	if len(a) != len(b) {
+		return false, min(len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false, i
+		}
+	}
+	return true, 0
+}
+
+func TestWriteFileBytesIdentical(t *testing.T) {
+	// pydicom.tests.test_filewriter.TestWriteFile
+	files := []string{
+		"CT_small.dcm",
+		"MR_small.dcm",
+		"rtplan.dcm",
+		"rtdose.dcm",
+	}
+
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
+			path := testFilePath(file)
+			original, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ds, err := ReadFile(path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			outPath := filepath.Join(t.TempDir(), file)
+			if err := ds.SaveAs(outPath, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			written, err := os.ReadFile(outPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			same, pos := bytesIdentical(original, written)
+			if !same {
+				t.Fatalf("bytes differ at %d (orig=%d written=%d)", pos, len(original), len(written))
+			}
+		})
+	}
+}
+
+func TestWriteFileRemovesGroupLength(t *testing.T) {
+	// pydicom.tests.test_filewriter.TestWriteFile.test_write_removes_grouplength
+	// color-pl.dcm is not in the submodule; use any file that contains a retired group length.
+	ds, err := ReadFile(testFilePath("CT_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject a retired group length element (group > 6, element 0).
+	ds.Set(NewDataElement(MustTag(0x00080000), VRUL, uint32(42)))
+	if !ds.Has(MustTag(0x00080000)) {
+		t.Fatal("expected injected group length element")
+	}
+
+	outPath := filepath.Join(t.TempDir(), "no_group_length.dcm")
+	if err := ds.SaveAs(outPath, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	reread, err := ReadFile(outPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reread.Has(MustTag(0x00080000)) {
+		t.Fatal("retired group length element should not be written")
+	}
+}
+
+func TestWriteElementRawUndefinedExplicitLongVR(t *testing.T) {
+	var buf bytes.Buffer
+	fp := newDicomWriter(&buf)
+	fp.SetByteOrder(true)
+	elem := NewDataElement(MustTag("PixelData"), VROB, nil)
+	elem.RawValue = []byte{0x01, 0x02}
+	elem.IsUndefinedLength = true
+
+	if err := writeElement(fp, elem, false, true); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []byte{
+		0xE0, 0x7F, 0x10, 0x00,
+		'O', 'B', 0x00, 0x00,
+		0xFF, 0xFF, 0xFF, 0xFF,
+		0xFE, 0xFF, 0xDD, 0xE0,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	if !bytes.Equal(buf.Bytes(), expected) {
+		t.Fatalf("got = % X, want % X", buf.Bytes(), expected)
+	}
+}
+
+func TestWriteFileEnforceFileFormatDefaultsExplicitLittleEndian(t *testing.T) {
+	ds := NewDataset()
+	ds.Set(NewDataElement(MustTag("SOPClassUID"), VRUI, CTImageStorage))
+	ds.Set(NewDataElement(MustTag("SOPInstanceUID"), VRUI, UID("1.2.826.0.1.3680043.8.498.123")))
+
+	outPath := filepath.Join(t.TempDir(), "enforced.dcm")
+	if err := ds.SaveAs(outPath, &WriteOptions{EnforceFileFormat: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	reread, err := ReadFile(outPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts, ok := reread.FileMeta.GetString(MustTag("TransferSyntaxUID"))
+	if !ok || ts != string(ExplicitVRLittleEndian) {
+		t.Fatalf("TransferSyntaxUID = %q, %t; want ExplicitVRLittleEndian", ts, ok)
+	}
+}
+
 func TestWriteFileRoundtripValues(t *testing.T) {
 	tests := []struct {
 		name string

@@ -8,12 +8,21 @@ import (
 
 // Dataset represents a DICOM Dataset - a collection of DataElements keyed by Tag.
 type Dataset struct {
-	elements      map[Tag]*DataElement
-	privateBlocks map[[2]interface{}]*PrivateBlock // key: (group, creator)
-	fileMeta      *FileMetaDataset
-	preamble      []byte
-	originalEnc   EncodingInfo
-	parent        *Sequence
+	elements                      map[Tag]*DataElement
+	privateBlocks                 map[[2]interface{}]*PrivateBlock // key: (group, creator)
+	fileMeta                      *FileMetaDataset
+	preamble                      []byte
+	originalEnc                   EncodingInfo
+	parent                        *Sequence
+	IsUndefinedLengthSequenceItem bool
+	readCtx                       *readContext
+}
+
+// readContext holds the source used for deferred element loading.
+type readContext struct {
+	data     []byte
+	filename string
+	modTime  int64
 }
 
 // EncodingInfo describes the DICOM encoding used when reading/writing.
@@ -33,7 +42,7 @@ type FileDataset struct {
 	Filename  string
 	Preamble  []byte
 	FileMeta  *FileMetaDataset
-	Timestamp string
+	Timestamp string // file modification time as Unix seconds (deferred read checks)
 }
 
 // PrivateBlock represents a private block in the dataset.
@@ -59,11 +68,33 @@ func NewFileMetaDataset() *FileMetaDataset {
 // --- Element access ---
 
 func (d *Dataset) Get(tag Tag) (*DataElement, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return nil, false
+	}
 	e, ok := d.elements[tag]
 	return e, ok
 }
 
+// LoadDeferred reads a deferred element's value from the source file/buffer.
+// Mirrors pydicom deferred read triggered by Dataset.__getitem__.
+func (d *Dataset) LoadDeferred(tag Tag) error {
+	return d.loadDeferred(tag)
+}
+
+func (d *Dataset) loadDeferred(tag Tag) error {
+	elem, ok := d.elements[tag]
+	if !ok || !elem.Deferred {
+		return nil
+	}
+	if d.readCtx == nil {
+		return fmt.Errorf("godicom: deferred read requires source data")
+	}
+	return loadDeferredElement(d.readCtx, d, elem)
+}
+
 func (d *Dataset) Set(element *DataElement) {
+	// Replacing an element clears any prior raw bytes; caller-owned elements
+	// created via NewElement do not carry RawValue unless set explicitly.
 	d.elements[element.Tag] = element
 }
 
@@ -107,6 +138,9 @@ func (d *Dataset) Iter() []*DataElement {
 // --- Convenience getters ---
 
 func (d *Dataset) GetString(tag Tag) (string, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return "", false
+	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
 		return "", false
@@ -124,6 +158,9 @@ func (d *Dataset) GetString(tag Tag) (string, bool) {
 }
 
 func (d *Dataset) GetInt(tag Tag) (int, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return 0, false
+	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
 		return 0, false
@@ -148,6 +185,9 @@ func (d *Dataset) GetInt(tag Tag) (int, bool) {
 }
 
 func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return 0, false
+	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
 		return 0, false
@@ -157,6 +197,9 @@ func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
 }
 
 func (d *Dataset) GetBytes(tag Tag) ([]byte, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return nil, false
+	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
 		return nil, false
@@ -166,6 +209,9 @@ func (d *Dataset) GetBytes(tag Tag) ([]byte, bool) {
 }
 
 func (d *Dataset) GetSequence(tag Tag) (*Sequence, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return nil, false
+	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
 		return nil, false
@@ -195,6 +241,9 @@ func (d *Dataset) SequenceValue(tag Tag) (*Sequence, bool) {
 }
 
 func (d *Dataset) GetDataElement(tag Tag) *DataElement {
+	if err := d.loadDeferred(tag); err != nil {
+		return nil
+	}
 	return d.elements[tag]
 }
 

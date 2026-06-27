@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 )
@@ -59,7 +60,6 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	if opts == nil {
 		opts = &ReadOptions{}
@@ -67,7 +67,12 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 
 	data, err := io.ReadAll(f)
 	if err != nil {
+		f.Close()
 		return nil, err
+	}
+	var modTime int64
+	if info, statErr := f.Stat(); statErr == nil {
+		modTime = info.ModTime().Unix()
 	}
 	f.Close()
 
@@ -97,6 +102,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
 	encoding := DefaultCharacterSet
+	readCtx := &readContext{data: data, filename: filename, modTime: modTime}
 
 	for pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
@@ -220,6 +226,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				isLittleEndian,
 				encoding,
 				opts,
+				readCtx,
 			)
 			elem.Value = seq
 			pos = newPos
@@ -232,7 +239,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicit, isLittleEndian, encoding, opts)
+				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicit, isLittleEndian, encoding, opts, readCtx)
 				elem.Value = seq
 				pos = newPos
 			} else {
@@ -250,25 +257,12 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		}
 
 		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
+		valueTell := pos + int64(hdrSize)
 
-		if opts.DeferSize > 0 && uint32(length) > opts.DeferSize {
-			elem.Value = value
+		if shouldDeferElement(currentTag, length, opts.DeferSize) {
+			markElementDeferred(elem, valueTell, length, isImplicit, isLittleEndian)
 		} else {
-			raw := &RawDataElement{
-				Tag:            currentTag,
-				VR:             vr,
-				Length:         uint32(length),
-				Value:          value,
-				IsImplicitVR:   isImplicit,
-				IsLittleEndian: isLittleEndian,
-				IsRaw:          true,
-			}
-			converted, err := convertValue(raw)
-			if err != nil {
-				elem.Value = value
-			} else {
-				elem.Value = converted
-			}
+			assignElementBytes(elem, value, vr, isImplicit, isLittleEndian)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -314,6 +308,10 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		Preamble: preamble,
 		FileMeta: fileMeta,
 	}
+	if modTime != 0 {
+		fd.Timestamp = fmt.Sprintf("%d", modTime)
+	}
+	ds.readCtx = readCtx
 
 	return fd, nil
 }
@@ -344,13 +342,13 @@ func determineTransferSyntax(fileMeta *FileMetaDataset) UID {
 	return ImplicitVRLittleEndian
 }
 
-func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) (*Sequence, int64) {
-	seq, newPos := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, encoding, opts)
+func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
+	seq, newPos := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, encoding, opts, ctx)
 	seq.IsUndefinedLength = true
 	return seq, newPos
 }
 
-func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) (*Sequence, int64) {
+func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
 	return readSequenceItemsUntil(
 		data,
 		offset,
@@ -360,6 +358,7 @@ func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicit
 		isLittleEndian,
 		encoding,
 		opts,
+		ctx,
 	)
 }
 
@@ -372,6 +371,7 @@ func readSequenceItemsUntil(
 	isLittleEndian bool,
 	encoding string,
 	opts *ReadOptions,
+	ctx *readContext,
 ) (*Sequence, int64) {
 	seq := NewSequence(nil)
 	seq.IsUndefinedLength = undefinedLength
@@ -403,9 +403,11 @@ func readSequenceItemsUntil(
 
 		item := NewDataset()
 		item.parent = seq
+		item.readCtx = ctx
 
 		if itemLength == 0xFFFFFFFF {
-			readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts)
+			item.IsUndefinedLengthSequenceItem = true
+			readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
 			for pos+4 <= int64(len(data)) {
 				if readTagBytes(data, pos, isLittleEndian) == ItemDelimiterTag {
 					pos += 8
@@ -415,7 +417,7 @@ func readSequenceItemsUntil(
 			}
 		} else if itemLength > 0 {
 			itemEnd := pos + int64(itemLength)
-			readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts)
+			readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
 			pos += int64(itemLength)
 		} else {
 			pos += int64(itemLength)
@@ -427,7 +429,8 @@ func readSequenceItemsUntil(
 	return seq, pos
 }
 
-func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions) error {
+func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) error {
+	ds.readCtx = ctx
 	pos := offset
 
 	for pos+4 <= end && pos+4 <= int64(len(data)) {
@@ -513,6 +516,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				isLittleEndian,
 				encoding,
 				opts,
+				ctx,
 			)
 			elem.Value = seq
 			pos = newPos
@@ -525,7 +529,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicitVR, isLittleEndian, encoding, opts)
+				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicitVR, isLittleEndian, encoding, opts, ctx)
 				elem.Value = seq
 				pos = newPos
 			} else {
@@ -543,25 +547,12 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		}
 
 		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
+		valueTell := pos + int64(hdrSize)
 
-		if opts.DeferSize > 0 && uint32(length) > opts.DeferSize {
-			elem.Value = value
+		if shouldDeferElement(currentTag, length, opts.DeferSize) {
+			markElementDeferred(elem, valueTell, length, isImplicitVR, isLittleEndian)
 		} else {
-			raw := &RawDataElement{
-				Tag:            currentTag,
-				VR:             vr,
-				Length:         uint32(length),
-				Value:          value,
-				IsImplicitVR:   isImplicitVR,
-				IsLittleEndian: isLittleEndian,
-				IsRaw:          true,
-			}
-			converted, err := convertValue(raw)
-			if err != nil {
-				elem.Value = value
-			} else {
-				elem.Value = converted
-			}
+			assignElementBytes(elem, value, vr, isImplicitVR, isLittleEndian)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -588,6 +579,29 @@ func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, 
 		pos++
 	}
 	return pos
+}
+
+func cloneElementBytes(value []byte) []byte {
+	return append([]byte(nil), value...)
+}
+
+func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLittleEndian bool) {
+	elem.RawValue = cloneElementBytes(value)
+	raw := &RawDataElement{
+		Tag:            elem.Tag,
+		VR:             vr,
+		Length:         uint32(len(value)),
+		Value:          value,
+		IsImplicitVR:   isImplicit,
+		IsLittleEndian: isLittleEndian,
+		IsRaw:          true,
+	}
+	converted, err := convertValue(raw)
+	if err != nil {
+		elem.Value = value
+		return
+	}
+	elem.Value = converted
 }
 
 // ReadFile reads a DICOM file from filename.

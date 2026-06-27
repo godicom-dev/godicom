@@ -38,6 +38,12 @@ const (
 	VRUS VR = "US"
 	VRUT VR = "UT"
 	VRUV VR = "UV"
+
+	// Ambiguous VRs from DICOM PS3.6 Tables 6-1, 7-1 and 8-1
+	VRUsSS   VR = "US or SS"
+	VRObOw   VR = "OB or OW"
+	VRUsOw   VR = "US or OW"
+	VRUsSsOw VR = "US or SS or OW"
 )
 
 // StandardVRs contains all standard VRs.
@@ -126,3 +132,11 @@ func IsIntVR(vr VR) bool { return IntVR[vr] }
 
 // IsFloatVR returns true if the VR is a floating-point VR.
 func IsFloatVR(vr VR) bool { return FloatVR[vr] }
+
+// AmbiguousVRs are VRs that require context to resolve before explicit writing.
+var AmbiguousVRs = map[VR]bool{
+	VRUsSS: true, VRObOw: true, VRUsOw: true, VRUsSsOw: true,
+}
+
+// IsAmbiguousVR reports whether vr is an ambiguous VR from the DICOM dictionary.
+func IsAmbiguousVR(vr VR) bool { return AmbiguousVRs[vr] }

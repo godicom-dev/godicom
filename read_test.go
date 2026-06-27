@@ -453,8 +453,26 @@ func TestReadFileDeferSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Should still have all elements
 	if ds.Len() < 200 {
 		t.Errorf("too few elements: %d", ds.Len())
+	}
+
+	var pixelElem *DataElement
+	for _, elem := range ds.Iter() {
+		if elem.Tag == MustTag("PixelData") {
+			pixelElem = elem
+			break
+		}
+	}
+	if pixelElem == nil {
+		t.Fatal("PixelData missing")
+	}
+	if !pixelElem.Deferred {
+		t.Fatal("PixelData should be deferred with DeferSize=100")
+	}
+
+	pixel, ok := ds.GetBytes(MustTag("PixelData"))
+	if !ok || len(pixel) == 0 {
+		t.Fatal("deferred PixelData should load on access")
 	}
 }
