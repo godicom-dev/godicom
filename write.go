@@ -126,6 +126,9 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 	// Get encoded value
 	encoded := encodeValue(elem, isLittleEndian)
 
+	// Pad to even length per PS3.5
+	encoded = padToEven(elem.VR, encoded)
+
 	if isImplicit {
 		// Implicit VR: tag + 4-byte length + value
 		length := uint32(len(encoded))
@@ -206,6 +209,19 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 	}
 
 	return nil
+}
+
+func padToEven(vr VR, encoded []byte) []byte {
+	if len(encoded)%2 == 0 {
+		return encoded
+	}
+	var padByte byte
+	if vr == VRUI || BytesVR[vr] {
+		padByte = 0x00
+	} else {
+		padByte = 0x20
+	}
+	return append(encoded, padByte)
 }
 
 func encodeValue(elem *DataElement, le bool) []byte {

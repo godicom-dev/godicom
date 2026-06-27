@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -120,6 +121,65 @@ func TestWriteFileRejectsInvalidPreamble(t *testing.T) {
 		t.Fatal("SaveAs error = nil, want invalid preamble error")
 	}
 }
+func encodeElementImplicitLittle(elem *DataElement) []byte {
+	var buf bytes.Buffer
+	fp := newDicomWriter(&buf)
+	fp.SetByteOrder(true)
+	_ = writeElement(fp, elem, true, true)
+	return buf.Bytes()
+}
+
+func TestWriteElementASCIIVRWithPadding(t *testing.T) {
+	tests := []struct {
+		name     string
+		elem     *DataElement
+		expected []byte
+	}{
+		{
+			name:     "AE odd padded with space",
+			elem:     NewDataElement(MustTag(0x00080054), VRAE, "CONQUESTSRV"),
+			expected: []byte{0x08, 0x00, 0x54, 0x00, 0x0C, 0x00, 0x00, 0x00, 'C', 'O', 'N', 'Q', 'U', 'E', 'S', 'T', 'S', 'R', 'V', ' '},
+		},
+		{
+			name:     "UI odd padded with NUL",
+			elem:     NewDataElement(MustTag(0x00080062), VRUI, "1.2.3"),
+			expected: []byte{0x08, 0x00, 0x62, 0x00, 0x06, 0x00, 0x00, 0x00, '1', '.', '2', '.', '3', 0x00},
+		},
+		{
+			name:     "CS odd padded with space",
+			elem:     NewDataElement(MustTag(0x00080060), VRCS, "REG"),
+			expected: []byte{0x08, 0x00, 0x60, 0x00, 0x04, 0x00, 0x00, 0x00, 'R', 'E', 'G', ' '},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := encodeElementImplicitLittle(tt.elem)
+			if !bytes.Equal(got, tt.expected) {
+				t.Fatalf("got = % X, want % X", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWriteElementOBOdd(t *testing.T) {
+	value := []byte{0x00, 0x01, 0x02}
+	elem := NewDataElement(MustTag(0x7FE00010), VROB, value)
+	got := encodeElementImplicitLittle(elem)
+	expected := append([]byte{0xE0, 0x7F, 0x10, 0x00, 0x04, 0x00, 0x00, 0x00}, value...)
+	expected = append(expected, 0x00)
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("got = % X, want % X", got, expected)
+	}
+
+	elem.Value = []byte{}
+	got = encodeElementImplicitLittle(elem)
+	expected = []byte{0xE0, 0x7F, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if !bytes.Equal(got, expected) {
+		t.Fatalf("empty got = % X, want % X", got, expected)
+	}
+}
+
 func TestWriteFileImplicitVR(t *testing.T) {
 	src := testFilePath("CT_small.dcm")
 	ds, err := ReadFile(src, nil)
