@@ -131,11 +131,17 @@ func (d *Dataset) GetInt(tag Tag) (int, bool) {
 	switch v := e.Value.(type) {
 	case int:
 		return v, true
+	case int16:
+		return int(v), true
 	case uint16:
 		return int(v), true
 	case int32:
 		return int(v), true
 	case uint32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case uint64:
 		return int(v), true
 	}
 	return 0, false

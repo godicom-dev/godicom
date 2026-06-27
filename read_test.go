@@ -12,6 +12,61 @@ func testFilePath(name string) string {
 	return filepath.Join(testDataDir, name)
 }
 
+func TestReadFileCTValues(t *testing.T) {
+	ct, err := ReadFile(testFilePath("CT_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementationClassUID, ok := ct.FileMeta.Get(MustTag("ImplementationClassUID"))
+	if !ok {
+		t.Fatal("ImplementationClassUID missing")
+	}
+	if implementationClassUID.Value != UID("1.3.6.1.4.1.5962.2") {
+		t.Fatalf("ImplementationClassUID = %v, want 1.3.6.1.4.1.5962.2", implementationClassUID.Value)
+	}
+	rows, ok := ct.GetInt(MustTag("Rows"))
+	if !ok || rows != 128 {
+		t.Fatalf("Rows = %d, %t, want 128 true", rows, ok)
+	}
+	columns, ok := ct.GetInt(MustTag("Columns"))
+	if !ok || columns != 128 {
+		t.Fatalf("Columns = %d, %t, want 128 true", columns, ok)
+	}
+	bitsStored, ok := ct.GetInt(MustTag("BitsStored"))
+	if !ok || bitsStored != 16 {
+		t.Fatalf("BitsStored = %d, %t, want 16 true", bitsStored, ok)
+	}
+	pixelData, ok := ct.GetBytes(MustTag("PixelData"))
+	if !ok {
+		t.Fatal("PixelData missing")
+	}
+	if len(pixelData) != 128*128*2 {
+		t.Fatalf("PixelData length = %d, want %d", len(pixelData), 128*128*2)
+	}
+}
+
+func TestReadFileMRValues(t *testing.T) {
+	mr, err := ReadFile(testFilePath("MR_small.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, ok := mr.GetString(MustTag("PatientName"))
+	if !ok || name != "CompressedSamples^MR1" {
+		t.Fatalf("PatientName = %q, %t, want CompressedSamples^MR1 true", name, ok)
+	}
+	elem, ok := mr.Get(MustTag("PixelSpacing"))
+	if !ok {
+		t.Fatal("PixelSpacing missing")
+	}
+	spacing, ok := elem.Value.(*MultiValue[float64])
+	if !ok {
+		t.Fatalf("PixelSpacing type = %T, want *MultiValue[float64]", elem.Value)
+	}
+	if spacing.Len() != 2 || spacing.Get(0) != 0.3125 || spacing.Get(1) != 0.3125 {
+		t.Fatalf("PixelSpacing = %v, want [0.3125 0.3125]", spacing.Values())
+	}
+}
+
 func TestReadFileDeflatedExplicitVRLittleEndian(t *testing.T) {
 	ds, err := ReadFile(testFilePath("image_dfl.dcm"), nil)
 	if err != nil {
