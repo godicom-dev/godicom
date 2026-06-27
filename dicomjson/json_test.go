@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/godicom-dev/godicom"
@@ -490,6 +491,64 @@ func TestInlineBinaryUNKnownVRPadding(t *testing.T) {
 	elem, ok := parsed.Get(godicom.MustTag("PatientPosition"))
 	if !ok || elem.VR != godicom.VRCS {
 		t.Fatalf("PatientPosition VR = %s, %t", elem.VR, ok)
+	}
+}
+
+func TestMultiValueAndEmptyPersonName(t *testing.T) {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(
+		godicom.MustTag(0x0009, 0x1001),
+		godicom.VRPN,
+		godicom.NewMultiValue([]interface{}{
+			godicom.ParsePersonName("Buc^Jérôme"),
+			godicom.ParsePersonName("Διονυσιος"),
+			godicom.ParsePersonName("Люкceмбypг"),
+		}),
+	))
+	ds.Set(godicom.NewDataElement(godicom.MustTag(0x0009, 0x1002), godicom.VRPN, godicom.PersonName{}))
+
+	model, err := DatasetToMap(ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []map[string]string
+	if err := json.Unmarshal(wrapArray(model["00091001"].Value), &names); err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 3 || names[0]["Alphabetic"] != "Buc^Jérôme" || names[2]["Alphabetic"] != "Люкceмбypг" {
+		t.Fatalf("multi-value PN = %#v", names)
+	}
+	if len(model["00091002"].Value) != 0 {
+		t.Fatal("empty PN should omit Value")
+	}
+}
+
+func TestMarshalDatasetStringSortOrder(t *testing.T) {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientSex"), godicom.VRCS, "F"))
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientBirthDate"), godicom.VRDA, "20000101"))
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientID"), godicom.VRLO, "0017"))
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientName"), godicom.VRPN, godicom.ParsePersonName("Jane^Doe")))
+
+	jsonText, err := MarshalDatasetString(ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nameIndex := strings.Index(jsonText, "00100010")
+	idIndex := strings.Index(jsonText, "00100020")
+	birthDateIndex := strings.Index(jsonText, "00100030")
+	sexIndex := strings.Index(jsonText, "00100040")
+	if !(nameIndex < idIndex && idIndex < birthDateIndex && birthDateIndex < sexIndex) {
+		t.Fatalf("JSON keys not sorted: %s", jsonText)
+	}
+}
+
+func TestInvalidTagAndDuplicateValueKeys(t *testing.T) {
+	if _, err := ParseDataset([]byte(`{"000910AG":{"vr":"AT","Value":["00091000"]}}`)); err == nil {
+		t.Fatal("expected invalid JSON tag error")
+	}
+	if _, err := ParseDataset([]byte(`{"00091002":{"vr":"OB","Value":[],"InlineBinary":"AA=="}}`)); err == nil {
+		t.Fatal("expected duplicate value key error")
 	}
 }
 

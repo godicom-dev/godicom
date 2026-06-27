@@ -28,6 +28,31 @@ ds.Set(godicom.NewDataElement(godicom.MustTag(0x00100010), godicom.VRPN, "Anonym
 ds.SaveAs("output.dcm", nil)
 ```
 
+## DICOM JSON Model
+
+```go
+import (
+    "github.com/godicom-dev/godicom"
+    "github.com/godicom-dev/godicom/dicomjson"
+)
+
+ds, err := godicom.ReadFile("ct.dcm", nil)
+if err != nil {
+    return err
+}
+
+jsonData, err := dicomjson.MarshalDataset(ds.Dataset)
+if err != nil {
+    return err
+}
+
+parsed, err := dicomjson.ParseDataset(jsonData)
+if err != nil {
+    return err
+}
+_ = parsed
+```
+
 ## 功能
 
 | 功能 | 状态 |
@@ -49,7 +74,7 @@ ds.SaveAs("output.dcm", nil)
 | DICOM 标准字典 (5189 Tag + 88 Repeater) | ✅ |
 | Pixel Data 解码 (Native) | ❌ |
 | Pixel Data 解码 (JPEG/JPEG-LS/JPEG-2000/RLE) | ❌ |
-| JSON 序列化 | 🚧 |
+| JSON 序列化 | ✅ |
 | DICOMweb / WADO-RS | ❌ |
 
 当前聚焦 **metadata 读写子集**；完整路线图见 [TODO.md](TODO.md)。
@@ -85,6 +110,7 @@ godicom/
 ├── read.go                 # 文件读取
 ├── write.go                # 文件写入
 ├── godicom.go              # 包文档
+├── dicomjson/              # DICOM JSON Model (Part 18 Annex F)
 ├── generate_dict.py        # 字典生成脚本
 ├── cmd/godicom/            # CLI 工具 (read / readcopy)
 └── pydicom/                # pydicom submodule (参考 / 测试数据)

@@ -4,7 +4,7 @@
 
 godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadata 读写子集，但距离 pydicom 完整功能仍有较大差距。
 
-**当前阶段**：metadata 读写闭环基本完成；字典层（标准 / UID / 私有）已生成；下一步大块功能：DICOM JSON Model。
+**当前阶段**：metadata 读写闭环基本完成；字典层（标准 / UID / 私有）已生成；DICOM JSON Model 已有 `dicomjson` 子包基础实现。
 
 ## 暂缓项（当前阶段明确不做，保留记录）
 
@@ -59,6 +59,7 @@ rows, ok := ds.GetInt(tag.Rows)
 - [x] 字符集辅助函数：`DecodeString`、`EncodeString`、`DecodeBytes`
 - [x] 文件读取：Explicit/Implicit VR、Little/Big Endian、Deflated Explicit VR Little Endian、file meta 分离、`SpecificTags`、`Force`、`StopBeforePixels`、`DeferSize`
 - [x] 文件写入：Dataset/Element/Sequence 基础写入，Explicit/Implicit VR、Little/Big Endian 选项，保留 `FileDataset.FileMeta` 与 `Preamble`
+- [x] DICOM JSON Model 基础实现：`dicomjson.ParseDataset` / `DecodeDataset` / `MarshalDataset` / `DatasetToMap`，覆盖 PN/AT/SQ/binary/BulkDataURI/UN InlineBinary/fixture roundtrip
 - [x] 基础 CLI：`godicom read`、`godicom readcopy`
 
 ## 项目结构（Go 源码）
@@ -113,7 +114,7 @@ godicom/
 | File util | `pydicom/src/pydicom/fileutil.py`, `pydicom/src/pydicom/misc.py` | `pydicom/tests/test_fileutil.py`, `pydicom/tests/test_misc.py`, `pydicom/tests/test_util.py` | 部分实现；`buffer.go` + `buffer_test.go` 覆盖 buffer length/equality 等 |
 | File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础 transfer syntax 读取已实现；`DeferSize` 延迟加载已实现；**流式 rawread 暂缓**（见暂缓项） |
 | File writer | `pydicom/src/pydicom/filewriter.py` | `pydicom/tests/test_filewriter.py` | 基础写入器；已保留 FileDataset file meta/preamble；已补 string VR padding、OB odd padding、OD/OL/UC/UR/UN 字节布局；group length、ambiguous VR、undefined length、roundtrip 字节级仍需补 |
-| DICOM JSON Model | `pydicom/src/pydicom/jsonrep.py`, `pydicom/src/pydicom/dataset.py` | `pydicom/tests/test_json.py` | 骨架；缺 Part 18 Annex F 完整兼容和 from_json |
+| DICOM JSON Model | `pydicom/src/pydicom/jsonrep.py`, `pydicom/src/pydicom/dataset.py` | `pydicom/tests/test_json.py` | 基础实现；`dicomjson` 覆盖 PN/AT/SQ/binary/BulkDataURI/UN InlineBinary/fixtures；仍缺完整 Part 18 Annex F 边角 |
 | Encapsulated Pixel Data | `pydicom/src/pydicom/encaps.py` | `pydicom/tests/test_encaps.py` | 未实现 |
 | Pixel Data 通用工具 | `pydicom/src/pydicom/pixels/common.py`, `pydicom/src/pydicom/pixels/utils.py`, `pydicom/src/pydicom/pixel_data_handlers/util.py` | `pydicom/tests/pixels/test_common.py`, `pydicom/tests/pixels/test_utils.py`, `pydicom/tests/test_handler_util.py` | 未实现 |
 | Native Pixel Decode/Encode | `pydicom/src/pydicom/pixels/decoders/native.py`, `pydicom/src/pydicom/pixels/encoders/native.py`, `pydicom/src/pydicom/pixel_data_handlers/numpy_handler.py` | `pydicom/tests/pixels/test_decoder_native.py`, `pydicom/tests/pixels/test_encoder_pydicom.py`, `pydicom/tests/test_numpy_pixel_data.py` | 未实现 |
@@ -170,9 +171,10 @@ godicom/
 
 ### 仍待覆盖或弱覆盖
 
-- [ ] `Dataset.ToJSON()` / `writeJSONValue()` 覆盖率低，且仅为骨架实现
+- [x] DICOM JSON Model 基础路径已覆盖
   - pydicom 参照：`pydicom/tests/test_json.py`
-  - 重点测试：`test_to_json`, `test_from_json`, `test_json_from_dicom_file`, `test_roundtrip`, `InlineBinary`, `BulkDataURI`, PN JSON object, empty value handling
+  - 已覆盖：PN object、多值 PN、AT、InlineBinary、BulkDataURI、SQ、empty value、`test_PN.json`、`test1.json`、CT roundtrip、UN InlineBinary 已知 VR 替换
+  - 仍待补：Part 18 Annex F 全量边角、根包 legacy `Dataset.ToJSON()` 取舍/废弃策略
 - [ ] Reader rawread 流式 API（**暂缓**，见暂缓项）
 - [x] Reader deferred 机制（`DeferSize` uint32；字符串形式暂缓）
 - [ ] Reader compressed / encapsulated pixel data 未实现
@@ -194,7 +196,7 @@ godicom/
 - [ ] **Dataset API 完整性**
   - pydicom 覆盖约 209 个 dataset 测试定义
   - Go 当前只有基础 map-backed dataset + typed getters
-  - 缺少/待实现：walk/recursive iteration、copy/clone、validation、file meta 行为、pixel helper、JSON roundtrip、private creator 完整语义
+  - 缺少/待实现：walk/recursive iteration、copy/clone、validation、file meta 行为、pixel helper、private creator 完整语义
   - 不做：slice-like 行为（Python 特有）
 
 - [ ] **File Reader 完整性**
@@ -225,10 +227,11 @@ godicom/
   - Go 当前无等价实现
   - 缺少：Basic Offset Table、fragment/frame iterator、encapsulation generation、extended offset table
 
-- [ ] **DICOM JSON Model**
+- [x] **DICOM JSON Model 基础实现**
   - pydicom `test_json.py` 约 30 个测试定义
-  - Go 当前 `Dataset.ToJSON()` 是简单骨架
-  - 缺少：Part 18 Annex F 兼容、from_json、BulkDataURI、InlineBinary、PN object formatting、roundtrip
+  - Go 当前：`dicomjson` 子包实现 Parse/Decode/Marshal/DatasetToMap
+  - 已覆盖：PN/AT/SQ/binary/BulkDataURI/empty values/fixture roundtrip/UN InlineBinary 已知 VR 替换
+  - 仍缺：完整 Part 18 Annex F 边角、根包 legacy `Dataset.ToJSON()` 取舍/废弃策略
 
 - [x] **Private Dictionary**
   - 从 `_private_dict.py` 生成 449 creators / 10545 entries
@@ -284,7 +287,7 @@ godicom/
 | UID | 50 | 字典已实现/部分测试（生成器与私有 TS 注册暂缓） |
 | Tag | 51 | 部分实现/子包测试已补 |
 | Dictionary | 18 | 标准 + 私有字典已实现/已测试 |
-| JSON | 30 | 骨架 |
+| JSON | 30 | 基础实现/部分测试（`dicomjson`） |
 | CLI | 17 | 部分实现 |
 | SR/codes | 23 | 未实现 |
 | Sequence | 10 | 基础实现 |
@@ -335,6 +338,6 @@ godicom/
    - [ ] `defer_size` 字符串形式（**暂缓**，见暂缓项）
 
 5. **再进入大块功能** ⬅️ 当前
-   - [ ] DICOM JSON Model
+   - [x] DICOM JSON Model 基础实现（`dicomjson`）
    - [ ] Native Pixel Data
    - [ ] Encapsulated Pixel Data

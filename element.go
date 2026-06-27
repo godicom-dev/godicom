@@ -124,6 +124,11 @@ func (e *Element) VM() int {
 			return 0
 		}
 		return 1
+	case PersonName:
+		if v.Alphabetic == "" && v.Ideographic == "" && v.Phonetic == "" {
+			return 0
+		}
+		return 1
 	case *MultiValue[interface{}]:
 		return v.Len()
 	case *MultiValue[string]:
