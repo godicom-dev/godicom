@@ -212,8 +212,8 @@ func TestSequenceAndNumericRoundtrip(t *testing.T) {
 	if value, ok := parsed.GetInt(godicom.MustTag(0x0009, 0x1014)); !ok || value != 42 {
 		t.Fatalf("IS value = %d, %t", value, ok)
 	}
-	if value, ok := parsed.GetFloat(godicom.MustTag(0x0009, 0x1015)); !ok || value != 3.14159265 {
-		t.Fatalf("DS value = %g, %t", value, ok)
+	if value, ok := parsed.GetString(godicom.MustTag(0x0009, 0x1015)); !ok || value != "3.14159265" {
+		t.Fatalf("DS value = %q, %t", value, ok)
 	}
 }
 
@@ -442,7 +442,11 @@ func TestPydicomTest1JSONFixture(t *testing.T) {
 		t.Fatal("AcquisitionMatrix missing")
 	}
 	matrix, ok := matrixElem.Value.(*godicom.MultiValue[interface{}])
-	if !ok || matrix.Len() != 5 || matrix.Get(0) != int64(128) || matrix.Get(4) != nil {
+	if !ok || matrix.Len() != 5 {
+		t.Fatalf("AcquisitionMatrix = %#v", matrixElem.Value)
+	}
+	first := numericValue(matrix.Get(0))
+	if first != 128 || matrix.Get(4) != nil {
 		t.Fatalf("AcquisitionMatrix = %#v", matrixElem.Value)
 	}
 	seq, ok := ds.GetSequence(godicom.MustTag(0x0012, 0x0064))
@@ -559,4 +563,22 @@ func testDataFile(name string) string {
 func wrapArray(values []json.RawMessage) []byte {
 	data, _ := json.Marshal(values)
 	return data
+}
+
+func numericValue(v interface{}) int64 {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int16:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case int64:
+		return x
+	case uint16:
+		return int64(x)
+	case uint32:
+		return int64(x)
+	}
+	return -1
 }

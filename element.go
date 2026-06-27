@@ -137,6 +137,14 @@ func (e *Element) VM() int {
 		return v.Len()
 	case *MultiValue[float64]:
 		return v.Len()
+	case *MultiValue[PersonName]:
+		return v.Len()
+	case *MultiValue[uint16]:
+		return v.Len()
+	case *MultiValue[uint32]:
+		return v.Len()
+	case *MultiValue[Tag]:
+		return v.Len()
 	case *Sequence:
 		return v.Len()
 	default:

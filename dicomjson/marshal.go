@@ -155,6 +155,9 @@ func marshalValue(vr godicom.VR, value interface{}) (json.RawMessage, error) {
 	if isFloatVR(vr) {
 		return json.Marshal(floatJSONValue(value))
 	}
+	if b, ok := value.([]byte); ok && godicom.IsStringVR(vr) {
+		return json.Marshal(string(b))
+	}
 	return json.Marshal(value)
 }
 
@@ -228,6 +231,41 @@ func valueItems(value interface{}) []interface{} {
 			items = append(items, item)
 		}
 		return items
+	case *godicom.MultiValue[float32]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
+	case *godicom.MultiValue[int32]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
+	case *godicom.MultiValue[int16]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
+	case *godicom.MultiValue[uint16]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
+	case *godicom.MultiValue[uint32]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
 	}
 	return []interface{}{value}
 }
@@ -245,8 +283,6 @@ func integerJSONValue(value interface{}) interface{} {
 	case uint16:
 		return int64(v)
 	case uint32:
-		return int64(v)
-	case uint64:
 		return int64(v)
 	case string:
 		if v == "" {
@@ -274,4 +310,45 @@ func floatJSONValue(value interface{}) interface{} {
 		}
 	}
 	return value
+}
+
+func coerceParsedValue(vr godicom.VR, value interface{}) (interface{}, error) {
+	if value == nil {
+		return emptyJSONValue(vr), nil
+	}
+	switch vr {
+	case godicom.VRUL:
+		if i, ok := value.(int64); ok {
+			return uint32(i), nil
+		}
+	case godicom.VRSL:
+		if i, ok := value.(int64); ok {
+			return int32(i), nil
+		}
+	case godicom.VRUS:
+		if i, ok := value.(int64); ok {
+			return uint16(i), nil
+		}
+	case godicom.VRSS:
+		if i, ok := value.(int64); ok {
+			return int16(i), nil
+		}
+	case godicom.VRFL:
+		if f, ok := value.(float64); ok {
+			return float32(f), nil
+		}
+	case godicom.VRFD:
+		if f, ok := value.(float64); ok {
+			return f, nil
+		}
+	case godicom.VRIS:
+		if i, ok := value.(int64); ok {
+			return int(i), nil
+		}
+	case godicom.VRDS:
+		if f, ok := value.(float64); ok {
+			return strconv.FormatFloat(f, 'g', -1, 64), nil
+		}
+	}
+	return value, nil
 }

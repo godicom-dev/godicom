@@ -135,7 +135,11 @@ func parseRegularElement(
 		if err != nil {
 			return nil, err
 		}
-		parsed = append(parsed, value)
+		coerced, err := coerceParsedValue(vr, value)
+		if err != nil {
+			return nil, err
+		}
+		parsed = append(parsed, coerced)
 	}
 
 	if len(parsed) == 1 {
@@ -170,16 +174,24 @@ func parseValue(tag godicom.Tag, vr godicom.VR, data json.RawMessage) (interface
 		}
 		value, err := strconv.ParseUint(s, 16, 32)
 		if err != nil {
-			return nil, fmt.Errorf("dicomjson: invalid AT value %q for %s: %w", s, tag, err)
+			return nil, nil
 		}
 		return godicom.Tag(value), nil
 	}
 
 	if isIntegerVR(vr) {
-		return parseJSONInt(data)
+		v, err := parseJSONInt(data)
+		if err != nil {
+			return nil, err
+		}
+		return coerceParsedValue(vr, v)
 	}
 	if isFloatVR(vr) {
-		return parseJSONFloat(data)
+		v, err := parseJSONFloat(data)
+		if err != nil {
+			return nil, err
+		}
+		return coerceParsedValue(vr, v)
 	}
 
 	var s string
@@ -187,7 +199,7 @@ func parseValue(tag godicom.Tag, vr godicom.VR, data json.RawMessage) (interface
 		if s == "" {
 			return emptyJSONValue(vr), nil
 		}
-		return s, nil
+		return coerceParsedValue(vr, s)
 	}
 
 	var raw interface{}
