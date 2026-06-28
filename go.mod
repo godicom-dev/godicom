@@ -3,8 +3,8 @@ module github.com/godicom-dev/godicom
 go 1.26.4
 
 require (
-	github.com/godicom-dev/golibjpeg v1.1.0
-	github.com/godicom-dev/goopenjpeg v1.0.0
+	github.com/godicom-dev/golibjpeg v1.1.1
+	github.com/godicom-dev/goopenjpeg v1.0.1
 	github.com/godicom-dev/gorle v1.0.0
 	golang.org/x/text v0.38.0
 )
