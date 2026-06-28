@@ -42,6 +42,7 @@ rows, ok := ds.GetInt(tag.Rows)
 
 - Tag 定位：`tag` 子包提供 keyword 常量；根包 `MustTag("PatientName")` / `ParseTag` 作为便捷入口
 - 取值：`GetString` / `GetInt` / `GetFloat` / `GetBytes` / `GetSequence`（及 `*Value` 别名）
+- 文件 I/O：`ReadFile(path, opts)`、`WriteFile(path, ds, opts)`、`FileDataset.SaveAs(path, opts)`；`DcmRead` / `DcmReadFile` / `DcmWrite` 为已废弃别名
 - **不做**：`ds.PatientName`、字符串 keyword 下标 `ds["PatientName"]`、代码生成 accessor
 - 其他 Python 动态特性（Dataset 切片语义、config/hooks、pixel handler plugin）迁移前仍需单独确认
 
@@ -116,11 +117,11 @@ godicom/
 | File reader | `pydicom/src/pydicom/filereader.py` | `pydicom/tests/test_filereader.py`, `pydicom/tests/test_rawread.py` | 基础 transfer syntax 读取已实现；`DeferSize` 延迟加载已实现；**流式 rawread 暂缓**（见暂缓项） |
 | File writer | `pydicom/src/pydicom/filewriter.py` | `pydicom/tests/test_filewriter.py` | 基础写入器；已保留 FileDataset file meta/preamble；已补 string VR padding、OB odd padding、OD/OL/UC/UR/UN 字节布局；group length、ambiguous VR、undefined length、roundtrip 字节级仍需补 |
 | DICOM JSON Model | `pydicom/src/pydicom/jsonrep.py`, `pydicom/src/pydicom/dataset.py` | `pydicom/tests/test_json.py` | 已实现；`dicomjson` 对齐主测试路径；刻意不做：`dump_handler`、元素级 `from_json`、BulkDataURI warn |
-| Encapsulated Pixel Data | `pydicom/src/pydicom/encaps.py` | `pydicom/tests/test_encaps.py` | 未实现 |
+| Encapsulated Pixel Data | `pydicom/src/pydicom/encaps.py` | `pydicom/tests/test_encaps.py` | 部分实现；`encaps` 包覆盖 BOT/fragment/frame 拆分（核心路径 + 部分 pydicom 用例） |
 | Pixel Data 通用工具 | `pydicom/src/pydicom/pixels/common.py`, `pydicom/src/pydicom/pixels/utils.py`, `pydicom/src/pydicom/pixel_data_handlers/util.py` | `pydicom/tests/pixels/test_common.py`, `pydicom/tests/pixels/test_utils.py`, `pydicom/tests/test_handler_util.py` | 未实现 |
-| Native Pixel Decode/Encode | `pydicom/src/pydicom/pixels/decoders/native.py`, `pydicom/src/pydicom/pixels/encoders/native.py`, `pydicom/src/pydicom/pixel_data_handlers/numpy_handler.py` | `pydicom/tests/pixels/test_decoder_native.py`, `pydicom/tests/pixels/test_encoder_pydicom.py`, `pydicom/tests/test_numpy_pixel_data.py` | 未实现 |
-| RLE Pixel Data | `pydicom/src/pydicom/pixel_data_handlers/rle_handler.py` | `pydicom/tests/test_rle_pixel_data.py` | 未实现 |
-| JPEG/JPEG-LS/JPEG2000 handlers | `pydicom/src/pydicom/pixel_data_handlers/*.py`, `pydicom/src/pydicom/pixels/decoders/*.py`, `pydicom/src/pydicom/pixels/encoders/*.py` | `pydicom/tests/test_gdcm_pixel_data.py`, `test_pillow_pixel_data.py`, `test_pylibjpeg.py`, `test_jpeg_ls_pixel_data.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py` | 未实现 |
+| Native Pixel Decode/Encode | `pydicom/src/pydicom/pixels/decoders/native.py`, `pydicom/src/pydicom/pixels/encoders/native.py`, `pydicom/src/pydicom/pixel_data_handlers/numpy_handler.py` | `pydicom/tests/pixels/test_decoder_native.py`, `pydicom/tests/pixels/test_encoder_pydicom.py`, `pydicom/tests/test_numpy_pixel_data.py` | 部分实现；`pixels` 包 native 路径 + `FileDataset.PixelBytes` |
+| RLE Pixel Data | `pydicom/src/pydicom/pixel_data_handlers/rle_handler.py` | `pydicom/tests/test_rle_pixel_data.py` | 部分实现；经 `gorle` 解码（`MR_small_RLE.dcm` 回归） |
+| JPEG/JPEG-LS/JPEG2000 handlers | `pydicom/src/pydicom/pixel_data_handlers/*.py`, `pydicom/src/pydicom/pixels/decoders/*.py`, `pydicom/src/pydicom/pixels/encoders/*.py` | `pydicom/tests/test_gdcm_pixel_data.py`, `test_pillow_pixel_data.py`, `test_pylibjpeg.py`, `test_jpeg_ls_pixel_data.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py` | 部分实现；JPEG/J2K 经 `golibjpeg`/`goopenjpeg` 解码（`MR_small_jp2klossless.dcm` 回归）；JPEG-LS 待补 |
 | Pixel processing | `pydicom/src/pydicom/pixels/processing.py` | `pydicom/tests/pixels/test_processing.py` | 未实现 |
 | File-set / DICOMDIR | `pydicom/src/pydicom/fileset.py` | `pydicom/tests/test_fileset.py` | 未实现 |
 | SR / codes | `pydicom/src/pydicom/sr/codedict.py`, `coding.py`, `_cid_dict.py`, `_concepts_dict.py`, `_snomed_dict.py` | `pydicom/tests/test_codes.py` | 未实现 |
@@ -137,9 +138,9 @@ godicom/
 
 最新统计（`go test ./... -count=1`）：
 
-- Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`（共 4 个有测试的包）
-- Go 测试文件：21 个（见下表）
-- Go 测试用例：**340** 个（`go test ./... -count=1`）
+- Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`、`encaps`、`pixels`（共 6 个有测试的包）
+- Go 测试文件：23 个（见下表）
+- Go 测试用例：**349** 个（`go test ./... -count=1`）
 - pydicom 测试数据：78 个 `.dcm` 文件（`pydicom/src/pydicom/data/test_files/`）
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
@@ -181,8 +182,11 @@ godicom/
   - 刻意不做：Python `dump_handler`、元素级 `DataElement.from_json`、BulkDataURI 无 handler 时的 UserWarning（Go 静默）
 - [ ] Reader rawread 流式 API（**暂缓**，见暂缓项）
 - [x] Reader deferred 机制（`DeferSize` uint32；字符串形式暂缓）
-- [ ] Reader compressed / encapsulated pixel data 未实现
-  - pydicom 参照：`pydicom/tests/test_encaps.py` 及 pixel handler 相关测试
+- [x] Reader encapsulated pixel data 读取（undefined length OB/OW item 流）
+  - pydicom 参照：`pydicom/src/pydicom/fileutil.py` `_try_read_encapsulated_pixel_data`
+- [x] Pixel decode 基础路径（`encaps` + `pixels` + `FileDataset.PixelBytes`/`PixelFrames`）
+  - pydicom 参照：`pydicom/tests/test_encaps.py`（部分）、`MR_small_jp2klossless.dcm`、`MR_small_RLE.dcm`、`CT_small.dcm`
+  - 待补：完整 encaps 测试移植、JPEG/JPEG-LS 全覆盖、reshape/YBR→RGB、encode 路径
 - [ ] Writer group length、ambiguous VR、undefined length、roundtrip 字节级兼容
   - pydicom 参照：`pydicom/tests/test_filewriter.py`
 - [ ] ISO-2022 字符集完整行为与读写路径集成
@@ -206,8 +210,8 @@ godicom/
 - [ ] **File Reader 完整性**
   - pydicom 有 `test_filereader.py` + `test_rawread.py`，约 130 个测试定义
   - Go 当前完成：file meta 分离、SpecificTags、Big Endian、Deflated、CT/MR 值级断言、defined length SQ 基础读取、RTPlan 深层 sequence 断言、78 个测试文件 bulk read
-  - 缺少/待实现：read_partial/raw 流式 API（**暂缓**）、malformed file recovery、hooks/callbacks、compressed pixel/encapsulated 数据处理
-  - 已完成：deferred 机制（`DeferSize` uint32）
+  - 缺少/待实现：read_partial/raw 流式 API（**暂缓**）、malformed file recovery、hooks/callbacks
+  - 已完成：deferred 机制（`DeferSize` uint32）、encapsulated pixel data 读取
 
 - [ ] **File Writer 完整性**
   - pydicom `test_filewriter.py` 约 178 个测试定义
@@ -223,13 +227,13 @@ godicom/
 
 - [ ] **Pixel Data 解码/编码**
   - pydicom legacy pixel handlers + 新 `pydicom.pixels` 测试约 900+ 个测试定义
-  - Go 当前没有 `pixels` 包/handler pipeline
-  - 缺少：native pixel array、RLE、JPEG/JPEG-LS/JPEG2000、GDCM/Pillow/pylibjpeg 等等价策略
+  - Go 已有 `pixels` 包：native / RLE / JPEG / J2K 解码调度（`golibjpeg`、`goopenjpeg`、`gorle`）
+  - 待补：JPEG-LS、多帧/extended offset table 全覆盖、reshape、photometric 后处理、encode 路径
 
 - [ ] **Encapsulated Pixel Data**
   - pydicom `encaps.py` + `test_encaps.py` 约 164 个测试定义
-  - Go 当前无等价实现
-  - 缺少：Basic Offset Table、fragment/frame iterator、encapsulation generation、extended offset table
+  - Go 已有 `encaps` 包：BOT、fragment 拆分、frame 合并（核心路径 + 部分测试）
+  - 待补：完整测试移植、encapsulation generation、extended offset table 边界
 
 - [x] **DICOM JSON Model**
   - `dicomjson` 子包；对齐 `test_json.py` 主路径（全 VR roundtrip、CT_small 完整往返等）
