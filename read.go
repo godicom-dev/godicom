@@ -243,8 +243,17 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				elem.Value = seq
 				pos = newPos
 			} else {
-				newPos := skipUntilDelimiter(data, pos+int64(hdrSize), SequenceDelimiterTag, isImplicit, isLittleEndian)
-				pos = newPos
+				valueStart := pos + int64(hdrSize)
+				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
+					if shouldDeferElement(currentTag, len(encapsulated), opts.DeferSize) {
+						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian)
+					} else {
+						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian)
+					}
+					pos = endPos
+				} else {
+					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicit, isLittleEndian)
+				}
 			}
 			if shouldKeepElement(opts, elem.Tag) {
 				allElements = append(allElements, elem)
@@ -533,8 +542,17 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				elem.Value = seq
 				pos = newPos
 			} else {
-				newPos := skipUntilDelimiter(data, pos+int64(hdrSize), SequenceDelimiterTag, isImplicitVR, isLittleEndian)
-				pos = newPos
+				valueStart := pos + int64(hdrSize)
+				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
+					if shouldDeferElement(currentTag, len(encapsulated), opts.DeferSize) {
+						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian)
+					} else {
+						assignElementBytes(elem, encapsulated, vr, isImplicitVR, isLittleEndian)
+					}
+					pos = endPos
+				} else {
+					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicitVR, isLittleEndian)
+				}
 			}
 			if shouldKeepElement(opts, elem.Tag) {
 				ds.Set(elem)
@@ -579,6 +597,42 @@ func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, 
 		pos++
 	}
 	return pos
+}
+
+// readEncapsulatedPixelData reads undefined-length encapsulated pixel data
+// (PS3.5 A.4) as a contiguous item stream ending before the sequence delimiter.
+func readEncapsulatedPixelData(data []byte, offset int64, isLittleEndian bool) (value []byte, endPos int64, ok bool) {
+	start := offset
+	pos := offset
+	for pos+4 <= int64(len(data)) {
+		tag := readTagBytes(data, pos, isLittleEndian)
+		if tag == SequenceDelimiterTag {
+			if pos+8 > int64(len(data)) {
+				return nil, offset, false
+			}
+			return append([]byte(nil), data[start:pos]...), pos + 8, true
+		}
+		if tag != ItemTag {
+			return nil, offset, false
+		}
+		if pos+8 > int64(len(data)) {
+			return nil, offset, false
+		}
+		var itemLen uint32
+		if isLittleEndian {
+			itemLen = binary.LittleEndian.Uint32(data[pos+4 : pos+8])
+		} else {
+			itemLen = binary.BigEndian.Uint32(data[pos+4 : pos+8])
+		}
+		if itemLen == 0xFFFFFFFF {
+			return nil, offset, false
+		}
+		pos += 8 + int64(itemLen)
+		if pos > int64(len(data)) {
+			return nil, offset, false
+		}
+	}
+	return nil, offset, false
 }
 
 func cloneElementBytes(value []byte) []byte {

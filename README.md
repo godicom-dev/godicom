@@ -12,10 +12,14 @@
 ```go
 import "github.com/godicom-dev/godicom"
 
-// 读取 DICOM 文件
-ds, err := godicom.DcmReadFile("ct.dcm")
-// 或使用选项
-ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Force: true})
+// 读取 DICOM 文件（默认选项传 nil）
+ds, err := godicom.ReadFile("ct.dcm", nil)
+if err != nil {
+    return err
+}
+
+// 带读取选项
+ds, err = godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Force: true})
 
 // 访问元素
 name, _ := ds.GetString(godicom.MustTag(0x00100010))
@@ -25,8 +29,10 @@ id, _ := ds.GetString(godicom.MustTag(0x00100020))
 ds.Set(godicom.NewDataElement(godicom.MustTag(0x00100010), godicom.VRPN, "Anonymous"))
 
 // 写入文件
-ds.SaveAs("output.dcm", nil)
+err = ds.SaveAs("output.dcm", nil)
 ```
+
+I/O 入口：`ReadFile` / `WriteFile`（或 `FileDataset.SaveAs`）。`DcmRead`、`DcmReadFile`、`DcmWrite` 为兼容 pydicom 命名的已废弃别名，新代码请勿使用。
 
 ## DICOM JSON Model
 
@@ -85,7 +91,7 @@ _ = parsed
 go test -count=1 ./...
 ```
 
-- 17 个测试文件，282 个测试用例（含 subtest）
+- 23 个测试文件，**349** 个测试用例（含 subtest，8 个包）
 - 语句覆盖率约 **71%**
 - 使用 pydicom submodule 中 78 个真实 `.dcm` 测试文件
 
@@ -105,10 +111,15 @@ godicom/
 ├── charset.go              # DICOM 字符编码
 ├── dictionary.go           # 字典查询
 ├── dictionary_generated.go # 自动生成的 DICOM 字典
+├── private_dictionary.go   # 私有字典查询与运行时扩展
+├── private_dictionary_generated.go
 ├── io.go                   # I/O 基础
 ├── buffer.go               # 缓冲区工具
 ├── read.go                 # 文件读取
 ├── write.go                # 文件写入
+├── pixeldata.go            # FileDataset.PixelBytes / PixelFrames
+├── encaps/                 # 封装像素数据 (BOT / fragment / frame)
+├── pixels/                 # 像素解码调度 (native / RLE / JPEG / J2K)
 ├── godicom.go              # 包文档
 ├── dicomjson/              # DICOM JSON Model (Part 18 Annex F)
 ├── generate_dict.py        # 字典生成脚本
