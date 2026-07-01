@@ -121,7 +121,7 @@ godicom/
 | Pixel Data 通用工具 | `pydicom/src/pydicom/pixels/common.py`, `pydicom/src/pydicom/pixels/utils.py`, `pydicom/src/pydicom/pixel_data_handlers/util.py` | `pydicom/tests/pixels/test_common.py`, `pydicom/tests/pixels/test_utils.py`, `pydicom/tests/test_handler_util.py` | 未实现 |
 | Native Pixel Decode/Encode | `pydicom/src/pydicom/pixels/decoders/native.py`, `pydicom/src/pydicom/pixels/encoders/native.py`, `pydicom/src/pydicom/pixel_data_handlers/numpy_handler.py` | `pydicom/tests/pixels/test_decoder_native.py`, `pydicom/tests/pixels/test_encoder_pydicom.py`, `pydicom/tests/test_numpy_pixel_data.py` | 部分实现；`pixels` 包 native 路径 + `FileDataset.PixelBytes` |
 | RLE Pixel Data | `pydicom/src/pydicom/pixel_data_handlers/rle_handler.py` | `pydicom/tests/test_rle_pixel_data.py` | 部分实现；经 `gorle` 解码（`MR_small_RLE.dcm` 回归） |
-| JPEG/JPEG-LS/JPEG2000 handlers | `pydicom/src/pydicom/pixel_data_handlers/*.py`, `pydicom/src/pydicom/pixels/decoders/*.py`, `pydicom/src/pydicom/pixels/encoders/*.py` | `pydicom/tests/test_gdcm_pixel_data.py`, `test_pillow_pixel_data.py`, `test_pylibjpeg.py`, `test_jpeg_ls_pixel_data.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py` | 部分实现；JPEG/J2K 经 `golibjpeg`/`goopenjpeg` 解码（`MR_small_jp2klossless.dcm` 回归）；JPEG-LS 待补 |
+| JPEG/JPEG-LS/JPEG2000 handlers | `pydicom/src/pydicom/pixel_data_handlers/*.py`, `pydicom/src/pydicom/pixels/decoders/*.py`, `pydicom/src/pydicom/pixels/encoders/*.py` | `pydicom/tests/test_gdcm_pixel_data.py`, `test_pillow_pixel_data.py`, `test_pylibjpeg.py`, `test_jpeg_ls_pixel_data.py`, `pydicom/tests/pixels/test_decoder_*.py`, `pydicom/tests/pixels/test_encoder_*.py` | 部分实现；JPEG/JPEG-LS/J2K 经 `golibjpeg`/`goopenjpeg` 解码（baseline、lossless SV1、JPEG-LS、J2K 回归） |
 | Pixel processing | `pydicom/src/pydicom/pixels/processing.py` | `pydicom/tests/pixels/test_processing.py` | 未实现 |
 | File-set / DICOMDIR | `pydicom/src/pydicom/fileset.py` | `pydicom/tests/test_fileset.py` | 未实现 |
 | SR / codes | `pydicom/src/pydicom/sr/codedict.py`, `coding.py`, `_cid_dict.py`, `_concepts_dict.py`, `_snomed_dict.py` | `pydicom/tests/test_codes.py` | 未实现 |
@@ -140,7 +140,7 @@ godicom/
 
 - Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`、`encaps`、`pixels`（共 6 个有测试的包）
 - Go 测试文件：23 个（见下表）
-- Go 测试用例：**349** 个（`go test ./... -count=1`）
+- Go 测试用例：**355** 个（`go test ./... -count=1`）
 - pydicom 测试数据：78 个 `.dcm` 文件（`pydicom/src/pydicom/data/test_files/`）
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
@@ -228,7 +228,7 @@ godicom/
 - [ ] **Pixel Data 解码/编码**
   - pydicom legacy pixel handlers + 新 `pydicom.pixels` 测试约 900+ 个测试定义
   - Go 已有 `pixels` 包：native / RLE / JPEG / J2K 解码调度（`golibjpeg`、`goopenjpeg`、`gorle`）
-  - 待补：JPEG-LS、多帧/extended offset table 全覆盖、reshape、photometric 后处理、encode 路径
+  - 待补：JPEG-LS 16-bit RGB、多帧/extended offset table 全覆盖、reshape、photometric 后处理、encode 路径
 
 - [ ] **Encapsulated Pixel Data**
   - pydicom `encaps.py` + `test_encaps.py` 约 164 个测试定义
