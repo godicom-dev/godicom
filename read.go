@@ -416,18 +416,21 @@ func readSequenceItemsUntil(
 
 		if itemLength == 0xFFFFFFFF {
 			item.IsUndefinedLengthSequenceItem = true
-			readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
-			for pos+4 <= int64(len(data)) {
-				if readTagBytes(data, pos, isLittleEndian) == ItemDelimiterTag {
-					pos += 8
-					break
-				}
-				pos++
+			var err error
+			pos, err = readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
+			if err != nil {
+				return seq, pos
 			}
 		} else if itemLength > 0 {
 			itemEnd := pos + int64(itemLength)
-			readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
-			pos += int64(itemLength)
+			var err error
+			pos, err = readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
+			if err != nil {
+				return seq, pos
+			}
+			if pos < itemEnd {
+				pos = itemEnd
+			}
 		} else {
 			pos += int64(itemLength)
 		}
@@ -438,7 +441,7 @@ func readSequenceItemsUntil(
 	return seq, pos
 }
 
-func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) error {
+func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (int64, error) {
 	ds.readCtx = ctx
 	pos := offset
 
@@ -446,12 +449,11 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 
 		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
-			pos += 8
-			break
+			return pos + 8, nil
 		}
 
 		if opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
-			break
+			return pos, nil
 		}
 
 		var vr VR
@@ -585,7 +587,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		}
 	}
 
-	return nil
+	return pos, nil
 }
 
 func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, isLittleEndian bool) int64 {

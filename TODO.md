@@ -140,7 +140,7 @@ godicom/
 
 - Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`、`encaps`、`pixels`（共 6 个有测试的包）
 - Go 测试文件：23 个（见下表）
-- Go 测试用例：**355** 个（`go test ./... -count=1`）
+- Go 测试用例：**358** 个（`go test ./... -count=1`）
 - pydicom 测试数据：78 个 `.dcm` 文件（`pydicom/src/pydicom/data/test_files/`）
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
@@ -211,7 +211,7 @@ godicom/
   - pydicom 有 `test_filereader.py` + `test_rawread.py`，约 130 个测试定义
   - Go 当前完成：file meta 分离、SpecificTags、Big Endian、Deflated、CT/MR 值级断言、defined length SQ 基础读取、RTPlan 深层 sequence 断言、78 个测试文件 bulk read
   - 缺少/待实现：read_partial/raw 流式 API（**暂缓**）、malformed file recovery、hooks/callbacks
-  - 已完成：deferred 机制（`DeferSize` uint32）、encapsulated pixel data 读取
+  - 已完成：deferred 机制（`DeferSize` uint32）、encapsulated pixel data 读取、undefined-length SQ 嵌套 item 解析
 
 - [ ] **File Writer 完整性**
   - pydicom `test_filewriter.py` 约 178 个测试定义

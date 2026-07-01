@@ -190,3 +190,24 @@ func TestPixelFrames_singleIndex(t *testing.T) {
 		t.Fatalf("unexpected frames: %d lengths", len(frames))
 	}
 }
+
+func TestPixelBytes_JPEG_extended_JPGExtended(t *testing.T) {
+	ds, err := godicom.ReadFile(testFilePath("JPGExtended.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 1024*256*2 {
+		t.Fatalf("len = %d, want %d", len(raw), 1024*256*2)
+	}
+	// pydicom pixels_reference JPGE_16_12_1_0_1F_M2
+	if got := int16(binary.LittleEndian.Uint16(raw[(420*256+140)*2:])); got != 244 {
+		t.Fatalf("arr[420,140] = %d, want 244", got)
+	}
+	if got := int16(binary.LittleEndian.Uint16(raw[(230*256+120)*2:])); got != 95 {
+		t.Fatalf("arr[230,120] = %d, want 95", got)
+	}
+}

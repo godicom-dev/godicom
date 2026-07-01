@@ -91,7 +91,7 @@ _ = parsed
 go test -count=1 ./...
 ```
 
-- 23 个测试文件，**355** 个测试用例（含 subtest，8 个包）
+- 23 个测试文件，**358** 个测试用例（含 subtest，8 个包）
 - 语句覆盖率约 **71%**
 - 使用 pydicom submodule 中 78 个真实 `.dcm` 测试文件
 

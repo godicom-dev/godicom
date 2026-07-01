@@ -119,6 +119,23 @@ func TestGenerateFrames_stopsAtSequenceDelimiter(t *testing.T) {
 	}
 }
 
+func TestParseBasicOffsets_singleFrame(t *testing.T) {
+	// pydicom test_encaps parse_basic_offsets single-frame BOT
+	stream := itemHeader(4)
+	stream = append(stream, 0x00, 0x00, 0x00, 0x00)
+	stream = append(stream, 0xFE, 0xFF, 0x00, 0xE0)
+	offsets, rest, err := encaps.ParseBasicOffsets(stream, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offsets) != 1 || offsets[0] != 0 {
+		t.Fatalf("offsets = %v, want [0]", offsets)
+	}
+	if len(rest) != 4 {
+		t.Fatalf("rest len = %d, want 4", len(rest))
+	}
+}
+
 func TestParseBasicOffsets_multiFrame(t *testing.T) {
 	// pydicom test_encaps parse_basic_offsets multi-frame BOT (little endian)
 	stream := itemHeader(16)
