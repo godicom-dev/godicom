@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -34,40 +33,6 @@ func printUsage() {
 	fmt.Println("  show <file>          - Display DICOM file (file meta + dataset)")
 	fmt.Println("  read <file>          - Alias for show")
 	fmt.Println("  readcopy <src> <dst> - Read then write DICOM file")
-}
-
-func runShow(args []string) {
-	fs := flag.NewFlagSet("show", flag.ExitOnError)
-	noMeta := fs.Bool("no-meta", false, "skip file meta information")
-	fs.Parse(args)
-	rest := fs.Args()
-	if len(rest) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: godicom show [-no-meta] <file>")
-		os.Exit(1)
-	}
-	filename := rest[0]
-
-	ds, err := godicom.ReadFile(filename, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("File: %s\n", ds.Filename)
-	if !*noMeta && ds.FileMeta != nil && ds.FileMeta.Len() > 0 {
-		fmt.Println("--- File Meta ---")
-		for _, elem := range ds.FileMeta.Iter() {
-			fmt.Println(elem)
-		}
-		if ts, ok := ds.FileMeta.GetString(godicom.MustTag("TransferSyntaxUID")); ok {
-			fmt.Printf("Transfer Syntax: %s\n", ts)
-		}
-		fmt.Println("--- Dataset ---")
-	}
-	fmt.Printf("Elements: %d\n", ds.Len())
-	for _, elem := range ds.Iter() {
-		fmt.Println(elem)
-	}
 }
 
 func runReadCopy(args []string) {
