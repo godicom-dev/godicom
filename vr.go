@@ -89,7 +89,7 @@ var (
 	}()
 )
 
-// VRs that use 2-byte length fields for Explicit VR (Table 7.1-2, Part 5)
+// ExplicitVRLength16 lists VRs that use 2-byte length fields for Explicit VR (Table 7.1-2, Part 5).
 var ExplicitVRLength16 = map[VR]bool{
 	VRAE: true, VRAS: true, VRAT: true, VRCS: true,
 	VRDA: true, VRDS: true, VRDT: true, VRFL: true,
@@ -99,7 +99,7 @@ var ExplicitVRLength16 = map[VR]bool{
 	VRUS: true,
 }
 
-// VRs that use 4-byte length fields for Explicit VR
+// ExplicitVRLength32 lists VRs that use 4-byte length fields for Explicit VR.
 var ExplicitVRLength32 = func() map[VR]bool {
 	m := make(map[VR]bool)
 	for vr := range StandardVRs {

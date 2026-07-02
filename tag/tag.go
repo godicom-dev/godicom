@@ -1,3 +1,4 @@
+// Package tag provides DICOM tag constants and keyword lookup.
 package tag
 
 import (

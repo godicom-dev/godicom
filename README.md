@@ -3,9 +3,12 @@
 **Go 实现的 DICOM 文件读写库** — pydicom 的 Go 移植版。
 
 [![CI](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/godicom-dev/godicom/branch/main/graph/badge.svg)](https://codecov.io/gh/godicom-dev/godicom)
+[![Lint](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg?job=lint)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
 ![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)
+[![Go Report Card](https://goreportcard.com/badge/github.com/godicom-dev/godicom)](https://goreportcard.com/report/github.com/godicom-dev/godicom)
 [![GoDoc](https://pkg.go.dev/badge/github.com/godicom-dev/godicom)](https://pkg.go.dev/github.com/godicom-dev/godicom)
-[![License](https://img.shields.io/github/license/godicom-dev/godicom)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## 快速开始
 
@@ -32,7 +35,7 @@ ds.Set(godicom.NewDataElement(godicom.MustTag(0x00100010), godicom.VRPN, "Anonym
 err = ds.SaveAs("output.dcm", nil)
 ```
 
-I/O 入口：`ReadFile` / `WriteFile`（或 `FileDataset.SaveAs`）。`DcmRead`、`DcmReadFile`、`DcmWrite` 为兼容 pydicom 命名的已废弃别名，新代码请勿使用。
+I/O 入口：`ReadFile` / `WriteFile`（或 `FileDataset.SaveAs`）。
 
 ## 像素数据解码
 
@@ -158,8 +161,8 @@ bash scripts/fetch-testdata.sh   # 多帧 emri_small 样例（首次或 CI）
 go test -count=1 ./...
 ```
 
-- 24 个测试文件，**378** 个测试用例（含 subtest，8 个包）
-- 语句覆盖率约 **71%**
+- 24 个测试文件，**385** 个测试用例（含 subtest，8 个包）
+- 语句覆盖率见 [Codecov](https://codecov.io/gh/godicom-dev/godicom) badge
 - pydicom submodule 78 个 `.dcm` + `testdata/dcm/` 5 个 `emri_small*`
 
 ## 项目结构

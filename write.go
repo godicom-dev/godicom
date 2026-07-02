@@ -96,7 +96,6 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 			} else if !isImplicit && !isLittleEndian {
 				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRBigEndian))
 			}
-			ts, _ = transferSyntaxUID(fileMeta)
 		}
 
 		if sopClass, ok := source.dataset.GetString(MustTag("SOPClassUID")); ok {
@@ -748,13 +747,6 @@ func encodeBytes(elem *DataElement) []byte {
 // WriteFile writes a Dataset to a DICOM file.
 func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	return writeFile(filename, writeSource{dataset: ds}, opts)
-}
-
-// DcmWrite writes a Dataset to a DICOM file.
-//
-// Deprecated: use WriteFile.
-func DcmWrite(filename string, ds *Dataset, opts *WriteOptions) error {
-	return WriteFile(filename, ds, opts)
 }
 
 // Ensure binary is used

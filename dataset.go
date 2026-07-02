@@ -10,8 +10,6 @@ import (
 type Dataset struct {
 	elements                      map[Tag]*DataElement
 	privateBlocks                 map[[2]interface{}]*PrivateBlock // key: (group, creator)
-	fileMeta                      *FileMetaDataset
-	preamble                      []byte
 	originalEnc                   EncodingInfo
 	parent                        *Sequence
 	IsUndefinedLengthSequenceItem bool

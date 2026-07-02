@@ -190,12 +190,7 @@ func valueItems(value interface{}) []interface{} {
 	case nil:
 		return []interface{}{}
 	case *godicom.MultiValue[interface{}]:
-		vals := v.Values()
-		items := make([]interface{}, 0, len(vals))
-		for _, item := range vals {
-			items = append(items, item)
-		}
-		return items
+		return v.Values()
 	case *godicom.MultiValue[int]:
 		vals := v.Values()
 		items := make([]interface{}, 0, len(vals))

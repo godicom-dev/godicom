@@ -10,6 +10,4 @@
 //
 //	ds.Set(godicom.NewElement(godicom.MustTag(0x00100010), godicom.VRPN, "Test^Patient"))
 //	ds.SaveAs("output.dcm", nil)
-//
-// DcmRead, DcmReadFile, and DcmWrite are deprecated aliases; use ReadFile and WriteFile.
 package godicom

@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	itemTag     uint32 = 0xFFFEE000
-	seqDelimTag uint32 = 0xFFFEE0DD
-	undefinedLen uint32 = 0xFFFFFFFF
-	eoiMarkerByte       = 0xFF
-	eoiMarkerSecond     = 0xD9
+	itemTag         uint32 = 0xFFFEE000
+	seqDelimTag     uint32 = 0xFFFEE0DD
+	undefinedLen    uint32 = 0xFFFFFFFF
+	eoiMarkerByte          = 0xFF
+	eoiMarkerSecond        = 0xD9
 )
 
 func readTag(buf []byte, pos int, order binary.ByteOrder) uint32 {
@@ -33,13 +33,6 @@ type FramesOptions struct {
 	NumberOfFrames  int
 	ExtendedOffsets *ExtendedOffsetTable
 	LittleEndian    bool // encapsulated item tags use little endian (DICOM default)
-}
-
-func (o FramesOptions) endian() binary.ByteOrder {
-	if o.LittleEndian {
-		return binary.LittleEndian
-	}
-	return binary.BigEndian
 }
 
 // ParseBasicOffsets reads the Basic Offset Table at the start of encapsulated pixel data.
@@ -266,20 +259,15 @@ func framesWithoutOffsetTable(rest []byte, opts FramesOptions) ([][][]byte, erro
 func framesByEOIMarker(fragments [][]byte, nrFrames int) ([][][]byte, error) {
 	var out [][][]byte
 	var frame [][]byte
-	frameNr := 0
 	for _, fragment := range fragments {
 		frame = append(frame, fragment)
 		if hasEOIMarker(fragment) {
 			out = append(out, frame)
-			frameNr++
 			frame = nil
 		}
 	}
 	if len(frame) > 0 {
 		out = append(out, frame)
-	}
-	if frameNr < nrFrames && len(out) < nrFrames {
-		// allow excess frames per pydicom when EOI heuristic finds more
 	}
 	return out, nil
 }

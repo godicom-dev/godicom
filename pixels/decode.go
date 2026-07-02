@@ -1,3 +1,4 @@
+// Package pixels decodes DICOM native and encapsulated pixel data.
 package pixels
 
 import (
@@ -6,11 +7,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/godicom-dev/goopenjpeg"
 	"github.com/godicom-dev/godicom/encaps"
 	"github.com/godicom-dev/godicom/tag"
 	"github.com/godicom-dev/godicom/uid"
 	"github.com/godicom-dev/golibjpeg"
+	"github.com/godicom-dev/goopenjpeg"
 	"github.com/godicom-dev/gorle"
 )
 

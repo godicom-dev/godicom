@@ -49,7 +49,7 @@ rows, ok := ds.GetInt(tag.Rows)
 
 - Tag 定位：`tag` 子包提供 keyword 常量；根包 `MustTag("PatientName")` / `ParseTag` 作为便捷入口
 - 取值：`GetString` / `GetInt` / `GetFloat` / `GetBytes` / `GetSequence`（及 `*Value` 别名）
-- 文件 I/O：`ReadFile(path, opts)`、`WriteFile(path, ds, opts)`、`FileDataset.SaveAs(path, opts)`；`DcmRead` / `DcmReadFile` / `DcmWrite` 为已废弃别名
+- 文件 I/O：`ReadFile(path, opts)`、`WriteFile(path, ds, opts)`、`FileDataset.SaveAs(path, opts)`
 - **不做**：`ds.PatientName`、字符串 keyword 下标 `ds["PatientName"]`、代码生成 accessor
 - 其他 Python 动态特性（Dataset 切片语义、config/hooks、pixel handler plugin）迁移前仍需单独确认
 
@@ -152,7 +152,7 @@ godicom/
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
 - `go test ./...`：**通过**
-- 语句覆盖率：**71.3%**
+- 语句覆盖率：**~68%**（CI 上传 [Codecov](https://codecov.io/gh/godicom-dev/godicom)）
 
 ### Go 测试覆盖现状
 
