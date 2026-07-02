@@ -108,6 +108,29 @@ func TestReadFileCTValues(t *testing.T) {
 	}
 }
 
+func TestReadFileJPGExtendedAfterNestedSequence(t *testing.T) {
+	// Regression: undefined-length SQ items with nested SQ must not stop at inner item delimiter.
+	ds, err := ReadFile(testFilePath("JPGExtended.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds.Len() < 100 {
+		t.Fatalf("dataset elements = %d, want at least 100", ds.Len())
+	}
+	rows, ok := ds.GetInt(MustTag("Rows"))
+	if !ok || rows != 1024 {
+		t.Fatalf("Rows = %d, %t, want 1024 true", rows, ok)
+	}
+	columns, ok := ds.GetInt(MustTag("Columns"))
+	if !ok || columns != 256 {
+		t.Fatalf("Columns = %d, %t, want 256 true", columns, ok)
+	}
+	_, ok = ds.GetBytes(MustTag("PixelData"))
+	if !ok {
+		t.Fatal("PixelData missing")
+	}
+}
+
 func TestReadFileMRValues(t *testing.T) {
 	mr, err := ReadFile(testFilePath("MR_small.dcm"), nil)
 	if err != nil {
@@ -301,8 +324,8 @@ func TestReadFileRTStruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Len() != 31 {
-		t.Errorf("expected ~31 elements, got %d", ds.Len())
+	if ds.Len() != 34 {
+		t.Errorf("expected 34 elements, got %d", ds.Len())
 	}
 }
 
