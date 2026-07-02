@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 )
 
 var (
@@ -571,6 +572,10 @@ func encodeString(elem *DataElement) []byte {
 	switch v := elem.Value.(type) {
 	case string:
 		return []byte(v)
+	case []byte:
+		return v
+	case []string:
+		return []byte(strings.Join(v, "\\"))
 	case UID:
 		return []byte(string(v))
 	case PersonName:
@@ -585,10 +590,33 @@ func encodeString(elem *DataElement) []byte {
 		return []byte(v.String())
 	case IS:
 		return []byte(v.String())
+	case []DA:
+		return []byte(joinStringParts(len(v), func(i int) string { return v[i].String() }))
+	case []TM:
+		return []byte(joinStringParts(len(v), func(i int) string { return v[i].String() }))
+	case []DT:
+		return []byte(joinStringParts(len(v), func(i int) string { return v[i].String() }))
+	case *MultiValue[DA]:
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
+	case *MultiValue[TM]:
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
+	case *MultiValue[DT]:
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
 	case fmt.Stringer:
 		return []byte(v.String())
 	}
 	return []byte(fmt.Sprintf("%v", elem.Value))
+}
+
+func joinStringParts(n int, part func(int) string) string {
+	if n == 0 {
+		return ""
+	}
+	s := part(0)
+	for i := 1; i < n; i++ {
+		s += "\\" + part(i)
+	}
+	return s
 }
 
 func encodeNumberString(elem *DataElement) []byte {
