@@ -266,6 +266,18 @@ func normalizeJSONValue(vr godicom.VR, value interface{}) interface{} {
 		if pn, ok := value.(godicom.PersonName); ok {
 			return pn.String()
 		}
+	case godicom.VRDA:
+		if da, ok := value.(godicom.DA); ok {
+			return da.String()
+		}
+	case godicom.VRTM:
+		if tm, ok := value.(godicom.TM); ok {
+			return tm.String()
+		}
+	case godicom.VRDT:
+		if dt, ok := value.(godicom.DT); ok {
+			return dt.String()
+		}
 	case godicom.VRAT:
 		return tagsToStrings(value)
 	case godicom.VRIS, godicom.VRDS:

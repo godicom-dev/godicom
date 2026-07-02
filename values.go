@@ -99,16 +99,70 @@ func convertAEString(b []byte) (string, error) {
 	return strings.Join(parts, "\\"), nil
 }
 
-func convertDAString(b []byte) (string, error) {
-	return strings.TrimRight(string(b), " \x00"), nil
+func convertDAString(b []byte) (interface{}, error) {
+	s := strings.TrimRight(string(b), " \x00")
+	if s == "" {
+		return "", nil
+	}
+	parts := strings.Split(s, "\\")
+	if len(parts) == 1 {
+		return parseDAValue(parts[0])
+	}
+	vals := make([]DA, len(parts))
+	for i, p := range parts {
+		v, err := parseDAValue(p)
+		if err != nil {
+			return nil, err
+		}
+		if d, ok := v.(DA); ok {
+			vals[i] = d
+		}
+	}
+	return NewMultiValue(vals), nil
 }
 
-func convertDTString(b []byte) (string, error) {
-	return strings.TrimRight(string(b), " \x00"), nil
+func convertDTString(b []byte) (interface{}, error) {
+	s := strings.TrimRight(string(b), " \x00")
+	if s == "" {
+		return "", nil
+	}
+	parts := strings.Split(s, "\\")
+	if len(parts) == 1 {
+		return parseDTValue(parts[0])
+	}
+	vals := make([]DT, len(parts))
+	for i, p := range parts {
+		v, err := parseDTValue(p)
+		if err != nil {
+			return nil, err
+		}
+		if d, ok := v.(DT); ok {
+			vals[i] = d
+		}
+	}
+	return NewMultiValue(vals), nil
 }
 
-func convertTMString(b []byte) (string, error) {
-	return strings.TrimRight(string(b), " \x00"), nil
+func convertTMString(b []byte) (interface{}, error) {
+	s := strings.TrimRight(string(b), " \x00")
+	if s == "" {
+		return "", nil
+	}
+	parts := strings.Split(s, "\\")
+	if len(parts) == 1 {
+		return parseTMValue(parts[0])
+	}
+	vals := make([]TM, len(parts))
+	for i, p := range parts {
+		v, err := parseTMValue(p)
+		if err != nil {
+			return nil, err
+		}
+		if t, ok := v.(TM); ok {
+			vals[i] = t
+		}
+	}
+	return NewMultiValue(vals), nil
 }
 
 func convertDSString(b []byte) (interface{}, error) {

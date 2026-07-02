@@ -575,6 +575,12 @@ func encodeString(elem *DataElement) []byte {
 		return []byte(string(v))
 	case PersonName:
 		return []byte(v.String())
+	case DA:
+		return []byte(v.String())
+	case TM:
+		return []byte(v.String())
+	case DT:
+		return []byte(v.String())
 	case fmt.Stringer:
 		return []byte(v.String())
 	}

@@ -148,6 +148,12 @@ func (d *Dataset) GetString(tag Tag) (string, bool) {
 		return v, true
 	case PersonName:
 		return v.String(), true
+	case DA:
+		return v.String(), true
+	case TM:
+		return v.String(), true
+	case DT:
+		return v.String(), true
 	case UID:
 		return string(v), true
 	default:
@@ -180,6 +186,69 @@ func (d *Dataset) GetInt(tag Tag) (int, bool) {
 		return int(v), true
 	}
 	return 0, false
+}
+
+func (d *Dataset) GetDA(tag Tag) (DA, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return DA{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return DA{}, false
+	}
+	switch v := e.Value.(type) {
+	case DA:
+		return v, true
+	case string:
+		da, err := ParseDA(v)
+		if err != nil {
+			return DA{}, false
+		}
+		return da, true
+	}
+	return DA{}, false
+}
+
+func (d *Dataset) GetTM(tag Tag) (TM, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return TM{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return TM{}, false
+	}
+	switch v := e.Value.(type) {
+	case TM:
+		return v, true
+	case string:
+		tm, err := ParseTM(v)
+		if err != nil {
+			return TM{}, false
+		}
+		return tm, true
+	}
+	return TM{}, false
+}
+
+func (d *Dataset) GetDT(tag Tag) (DT, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return DT{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return DT{}, false
+	}
+	switch v := e.Value.(type) {
+	case DT:
+		return v, true
+	case string:
+		dt, err := ParseDT(v)
+		if err != nil {
+			return DT{}, false
+		}
+		return dt, true
+	}
+	return DT{}, false
 }
 
 func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
