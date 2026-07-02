@@ -296,6 +296,40 @@ func (d *Dataset) String() string {
 	return b.String()
 }
 
+// WalkFunc is called for each element in a Dataset during Walk.
+type WalkFunc func(ds *Dataset, elem *Element)
+
+// Walk visits each element in tag order, optionally recursing into sequences.
+// Mirrors pydicom Dataset.walk.
+func (d *Dataset) Walk(fn WalkFunc, recursive bool) {
+	d.walk(fn, recursive)
+}
+
+func (d *Dataset) walk(fn WalkFunc, recursive bool) {
+	for _, tag := range d.SortedTags() {
+		elem, ok := d.Get(tag)
+		if !ok {
+			continue
+		}
+		fn(d, elem)
+		if !recursive || elem.VR != VRSQ {
+			continue
+		}
+		seq, ok := elem.Value.(*Sequence)
+		if !ok {
+			continue
+		}
+		for _, item := range seq.Items() {
+			item.walk(fn, recursive)
+		}
+	}
+}
+
+// Clone returns a deep copy of the dataset, including sequence items.
+func (d *Dataset) Clone() *Dataset {
+	return cloneDataset(d)
+}
+
 // --- Save ---
 
 func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {

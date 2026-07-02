@@ -234,3 +234,44 @@ func TestDatasetPrivateBlock(t *testing.T) {
 		t.Errorf("value = %v", elem.Value)
 	}
 }
+
+func TestDatasetWalkRecursive(t *testing.T) {
+	ds := NewDataset()
+	item := NewDataset()
+	item.Set(NewDataElement(MustTag(0x00100010), VRPN, "Nested"))
+	ds.Set(NewDataElement(MustTag(0x00321060), VRSQ, NewSequence([]*Dataset{item})))
+
+	var tags []Tag
+	ds.Walk(func(_ *Dataset, elem *Element) {
+		tags = append(tags, elem.Tag)
+	}, true)
+
+	want := []Tag{MustTag(0x00321060), MustTag(0x00100010)}
+	if len(tags) != len(want) {
+		t.Fatalf("walk tags = %v, want %v", tags, want)
+	}
+	for i := range want {
+		if tags[i] != want[i] {
+			t.Fatalf("walk tags = %v, want %v", tags, want)
+		}
+	}
+}
+
+func TestDatasetCloneDeepSequence(t *testing.T) {
+	ds := NewDataset()
+	item := NewDataset()
+	item.Set(NewDataElement(MustTag(0x00100010), VRPN, "Nested"))
+	ds.Set(NewDataElement(MustTag(0x00321060), VRSQ, NewSequence([]*Dataset{item})))
+
+	clone := ds.Clone()
+	item.Set(NewDataElement(MustTag(0x00100010), VRPN, "Changed"))
+
+	seq, ok := clone.GetSequence(MustTag(0x00321060))
+	if !ok {
+		t.Fatal("sequence missing on clone")
+	}
+	name, ok := seq.Get(0).GetString(MustTag(0x00100010))
+	if !ok || name != "Nested" {
+		t.Fatalf("cloned nested name = %q, want Nested", name)
+	}
+}

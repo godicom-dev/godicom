@@ -78,7 +78,7 @@ func cloneElement(elem *Element) *Element {
 	copied := &Element{
 		Tag:               elem.Tag,
 		VR:                elem.VR,
-		Value:             elem.Value,
+		Value:             cloneElementValue(elem.Value),
 		FileTell:          elem.FileTell,
 		ValueTell:         elem.ValueTell,
 		ValueLength:       elem.ValueLength,
@@ -92,6 +92,21 @@ func cloneElement(elem *Element) *Element {
 		copied.RawValue = append([]byte(nil), elem.RawValue...)
 	}
 	return copied
+}
+
+func cloneElementValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case *Sequence:
+		items := make([]*Dataset, len(v.items))
+		for i, item := range v.items {
+			items[i] = cloneDataset(item)
+		}
+		return &Sequence{items: items, IsUndefinedLength: v.IsUndefinedLength}
+	case []byte:
+		return append([]byte(nil), v...)
+	default:
+		return value
+	}
 }
 
 func cloneDataset(ds *Dataset) *Dataset {

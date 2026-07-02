@@ -283,7 +283,7 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 		}
 	}
 
-	if !isUndefinedLength && len(elem.RawValue) > 0 {
+	if len(elem.RawValue) > 0 {
 		if _, err := fp.Write(elem.RawValue); err != nil {
 			return err
 		}
