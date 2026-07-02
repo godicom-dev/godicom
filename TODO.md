@@ -68,7 +68,7 @@ rows, ok := ds.GetInt(tag.Rows)
 - [x] 文件读取：Explicit/Implicit VR、Little/Big Endian、Deflated Explicit VR Little Endian、file meta 分离、`SpecificTags`、`Force`、`StopBeforePixels`、`DeferSize`
 - [x] 文件写入：Dataset/Element/Sequence 基础写入，Explicit/Implicit VR、Little/Big Endian 选项，保留 `FileDataset.FileMeta` 与 `Preamble`
 - [x] DICOM JSON Model：`dicomjson` 子包；对齐 `test_json.py` 主路径（全 VR roundtrip、CT_small 完整往返、PN/AT/数值/空值/BulkDataURI/UN InlineBinary、fixture roundtrip）
-- [x] 基础 CLI：`godicom read`、`godicom readcopy`
+- [x] 基础 CLI：`godicom show`/`read`、`godicom readcopy`；`-t` tag 过滤、`--top` 顶层
 
 ## 项目结构（Go 源码）
 
@@ -280,7 +280,7 @@ godicom/
 
 - [ ] **CLI parity**
   - pydicom CLI 有 show/codify 等
-  - Go 当前只有 read/readcopy
+  - Go 当前：`show`/`read`（`-t` tag 过滤、`--top`、`--no-meta`）、`readcopy`
 
 ## pydicom 测试规模参考
 
