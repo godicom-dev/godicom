@@ -250,7 +250,8 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 }
 
 func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) error {
-	if isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian {
+	encodingChanged := isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
+	if !isImplicit || encodingChanged {
 		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
 			return err
 		}
@@ -272,6 +273,12 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) err
 }
 
 func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
+	if !isImplicit && IsAmbiguousVR(elem.VR) {
+		return fmt.Errorf(
+			"godicom: cannot write ambiguous VR %q for tag %s; set the correct VR or use implicit VR transfer syntax",
+			elem.VR, elem.Tag,
+		)
+	}
 	if err := fp.WriteTag(elem.Tag); err != nil {
 		return err
 	}
@@ -338,6 +345,13 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
 	if elem.RawValue != nil && elem.VR != VRSQ {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
+	}
+
+	if !isImplicit && IsAmbiguousVR(elem.VR) {
+		return fmt.Errorf(
+			"godicom: cannot write ambiguous VR %q for tag %s; set the correct VR or use implicit VR transfer syntax",
+			elem.VR, elem.Tag,
+		)
 	}
 
 	fp.SetByteOrder(isLittleEndian)
