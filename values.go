@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -172,15 +171,17 @@ func convertDSString(b []byte) (interface{}, error) {
 	}
 	parts := strings.Split(s, "\\")
 	if len(parts) == 1 {
-		return strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		return parseDSValue(parts[0])
 	}
-	vals := make([]float64, len(parts))
+	vals := make([]DS, len(parts))
 	for i, p := range parts {
-		v, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		v, err := parseDSValue(p)
 		if err != nil {
 			return nil, err
 		}
-		vals[i] = v
+		if d, ok := v.(DS); ok {
+			vals[i] = d
+		}
 	}
 	return NewMultiValue(vals), nil
 }
@@ -192,15 +193,17 @@ func convertISString(b []byte) (interface{}, error) {
 	}
 	parts := strings.Split(s, "\\")
 	if len(parts) == 1 {
-		return strconv.Atoi(strings.TrimSpace(parts[0]))
+		return parseISValue(parts[0])
 	}
-	vals := make([]int, len(parts))
+	vals := make([]IS, len(parts))
 	for i, p := range parts {
-		v, err := strconv.Atoi(strings.TrimSpace(p))
+		v, err := parseISValue(p)
 		if err != nil {
 			return nil, err
 		}
-		vals[i] = v
+		if is, ok := v.(IS); ok {
+			vals[i] = is
+		}
 	}
 	return NewMultiValue(vals), nil
 }

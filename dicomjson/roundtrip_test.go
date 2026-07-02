@@ -281,6 +281,12 @@ func normalizeJSONValue(vr godicom.VR, value interface{}) interface{} {
 	case godicom.VRAT:
 		return tagsToStrings(value)
 	case godicom.VRIS, godicom.VRDS:
+		if is, ok := value.(godicom.IS); ok {
+			return float64(is.Value)
+		}
+		if ds, ok := value.(godicom.DS); ok {
+			return ds.Value
+		}
 		if f, ok := toFloat64(value); ok {
 			return f
 		}
