@@ -21,6 +21,9 @@ func emptyJSONValue(vr godicom.VR) interface{} {
 	if vr == godicom.VRPN {
 		return godicom.PersonName{}
 	}
+	if vr == godicom.VRDA || vr == godicom.VRTM || vr == godicom.VRDT {
+		return ""
+	}
 	if godicom.IsStringVR(vr) && vr != godicom.VRDS && vr != godicom.VRIS {
 		return ""
 	}

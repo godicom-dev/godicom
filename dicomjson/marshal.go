@@ -137,6 +137,27 @@ func marshalValue(vr godicom.VR, value interface{}) (json.RawMessage, error) {
 			pn = godicom.ParsePersonName(fmt.Sprint(value))
 		}
 		return json.Marshal(personNameComponents(pn))
+	case godicom.VRDA:
+		if da, ok := value.(godicom.DA); ok {
+			return json.Marshal(da.String())
+		}
+		if s, ok := value.(string); ok {
+			return json.Marshal(s)
+		}
+	case godicom.VRTM:
+		if tm, ok := value.(godicom.TM); ok {
+			return json.Marshal(tm.String())
+		}
+		if s, ok := value.(string); ok {
+			return json.Marshal(s)
+		}
+	case godicom.VRDT:
+		if dt, ok := value.(godicom.DT); ok {
+			return json.Marshal(dt.String())
+		}
+		if s, ok := value.(string); ok {
+			return json.Marshal(s)
+		}
 	case godicom.VRAT:
 		t, ok := value.(godicom.Tag)
 		if !ok {
@@ -343,6 +364,18 @@ func coerceParsedValue(vr godicom.VR, value interface{}) (interface{}, error) {
 	case godicom.VRDS:
 		if f, ok := value.(float64); ok {
 			return strconv.FormatFloat(f, 'g', -1, 64), nil
+		}
+	case godicom.VRDA:
+		if s, ok := value.(string); ok {
+			return godicom.ParseDA(s)
+		}
+	case godicom.VRTM:
+		if s, ok := value.(string); ok {
+			return godicom.ParseTM(s)
+		}
+	case godicom.VRDT:
+		if s, ok := value.(string); ok {
+			return godicom.ParseDT(s)
 		}
 	}
 	return value, nil
