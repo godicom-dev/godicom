@@ -2,9 +2,9 @@
 
 ## 项目状态
 
-godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadata 读写子集，但距离 pydicom 完整功能仍有较大差距。
+godicom 是 **pydicom 的 Go 翻版**（文件/数据集/像素/JSON 等 pydicom 核心库职责）。当前已具备 metadata 读写与压缩像素**读**（v0.1.0）；与 pydicom 完整功能仍有差距。
 
-**当前阶段**：metadata 读写闭环基本完成；字典层与 DICOM JSON Model 已对齐 pydicom 主路径；下一步大块功能：Native Pixel Data。
+**不在本库范围**：DICOMweb / WADO-RS / 网络服务 → 计划独立库 **gonetdicom**（依赖 godicom，不对标 pydicom 单体）。
 
 ## 暂缓项（当前阶段明确不做，保留记录）
 
@@ -16,6 +16,13 @@ godicom 是 pydicom 的 Go 移植版本。当前实现覆盖核心 DICOM metadat
 | `defer_size` 字符串形式（`"2 kB"`） | Go 仅有 `ReadOptions.DeferSize uint32` | 需要与 pydicom 测试完全一致的字符串 API |
 | `generate_uid()` | pydicom UID 生成器未移植 | 需要运行时生成 DICOM UID |
 | `register_transfer_syntax()` | 私有传输语法运行时注册未移植 | 需要自定义私有 TS + 编码声明 |
+
+### 明确不在 godicom 范围（独立库）
+
+| 项 | 说明 |
+|----|------|
+| **gonetdicom** | DICOMweb（WADO-RS、QIDO-RS、STOW-RS 等）与网络层；**不是 pydicom 翻版的一部分**，作为上层库依赖 godicom |
+| HTTP 服务 / PACS 集成 | 同上 |
 
 ## 迁移原则
 

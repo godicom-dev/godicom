@@ -123,7 +123,7 @@ _ = parsed
 | Pixel Data 解码 (Native) | ✅ |
 | Pixel Data 解码 (JPEG / JPEG-LS / JPEG 2000 / RLE) | ✅ |
 | JSON 序列化 | ✅ |
-| DICOMweb / WADO-RS | ❌ |
+| DICOMweb / WADO-RS | → **gonetdicom**（计划中独立库，非 godicom 范围） |
 
 **v0.1.0** 起提供稳定的像素**读**能力；metadata 读写与 JSON 仍在持续对齐 pydicom。完整路线图见 [TODO.md](TODO.md)。
 
