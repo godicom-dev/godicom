@@ -365,8 +365,8 @@ godicom/
 | 原生多帧拆分 | ✅ | `pixels.decodeNativeFrames` 按 `NumberOfFrames` 切分未压缩像素 |
 | 多帧像素回归 | ✅ | native / RLE / JPEG-LS / J2K 10 帧 `emri_small` |
 | encaps 测试移植 | ✅ | EOI 分帧、Extended Offset Table、GetFrame |
-| encaps 完整移植 | ⬜ | 其余 `test_encaps.py` 用例 |
+| encaps 完整移植 | ✅ | BOT 多帧、错误路径；encode/generation 不在范围 |
 | reshape / photometric | ⬜ | 可选基础 helper（`WithRaw(false)` 路径） |
-| 业务验证文档 | ⬜ | README 列出已验证 TS + 样例文件 |
+| 业务验证文档 | ✅ | README 已验证 TS + 样例文件表 |
 
 **不在 v0.2.0**：像素 encode、DICOMweb（gonetdicom）、ISO-2022 完整集成。
