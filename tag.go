@@ -91,10 +91,3 @@ func toInt(v interface{}) int {
 	return 0
 }
 
-// LUT descriptor tags where first and third values are always US
-var lutDescriptorTags = map[Tag]bool{
-	MustTag(0x00281101): true,
-	MustTag(0x00281102): true,
-	MustTag(0x00281103): true,
-	MustTag(0x00283002): true,
-}

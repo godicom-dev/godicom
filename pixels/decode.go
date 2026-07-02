@@ -1,3 +1,4 @@
+// Package pixels decodes DICOM native and encapsulated pixel data.
 package pixels
 
 import (

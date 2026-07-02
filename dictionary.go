@@ -76,11 +76,6 @@ func dictionaryIsRetired(tag Tag) bool {
 	return false
 }
 
-// repeaterHasTag returns true if the tag matches a repeater pattern.
-func repeaterHasTag(tag Tag) bool {
-	return maskMatch(tag) != ""
-}
-
 // Repeater masks: precomputed from the RepeatersDictionaryGo keys
 type repeaterMask struct {
 	maskStr string
@@ -122,15 +117,6 @@ func maskMatch(tag Tag) string {
 		}
 	}
 	return ""
-}
-
-// dictionaryVRFromKeyword returns the VR for a given keyword.
-func dictionaryVRFromKeyword(keyword string) (VR, error) {
-	tag, ok := tagForKeyword(keyword)
-	if !ok {
-		return "", fmt.Errorf("godicom: unknown keyword %q", keyword)
-	}
-	return dictionaryVR(tag)
 }
 
 // TagFromKeyword returns the tag for a given keyword.

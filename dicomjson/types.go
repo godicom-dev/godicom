@@ -1,3 +1,4 @@
+// Package dicomjson converts DICOM datasets to and from JSON.
 package dicomjson
 
 import (

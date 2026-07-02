@@ -42,8 +42,6 @@ var dicomEncodings = map[string]encoding.Encoding{
 	"ISO 2022 IR 192":                encoding.Nop,
 }
 
-const defaultEncoding = "ISO_IR 6"
-
 var DefaultCharacterSet = "ISO_IR 6"
 
 func DecodeString(b []byte, encodingName string) (string, error) {

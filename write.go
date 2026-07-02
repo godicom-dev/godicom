@@ -96,7 +96,6 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 			} else if !isImplicit && !isLittleEndian {
 				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRBigEndian))
 			}
-			ts, _ = transferSyntaxUID(fileMeta)
 		}
 
 		if sopClass, ok := source.dataset.GetString(MustTag("SOPClassUID")); ok {

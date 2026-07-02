@@ -1,3 +1,4 @@
+// Package uid provides DICOM UID constants and lookup.
 package uid
 
 import (

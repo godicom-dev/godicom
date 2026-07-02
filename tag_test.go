@@ -62,7 +62,8 @@ func TestTagComparison(t *testing.T) {
 	if b <= a {
 		t.Error("b should be > a")
 	}
-	if a != a {
+	aCopy := a
+	if a != aCopy {
 		t.Error("a should equal itself")
 	}
 }

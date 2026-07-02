@@ -35,13 +35,6 @@ type FramesOptions struct {
 	LittleEndian    bool // encapsulated item tags use little endian (DICOM default)
 }
 
-func (o FramesOptions) endian() binary.ByteOrder {
-	if o.LittleEndian {
-		return binary.LittleEndian
-	}
-	return binary.BigEndian
-}
-
 // ParseBasicOffsets reads the Basic Offset Table at the start of encapsulated pixel data.
 // The buffer is consumed through the end of the BOT item; remaining data begins at the first fragment item tag.
 func ParseBasicOffsets(buf []byte, littleEndian bool) (offsets []uint32, rest []byte, err error) {
@@ -266,20 +259,15 @@ func framesWithoutOffsetTable(rest []byte, opts FramesOptions) ([][][]byte, erro
 func framesByEOIMarker(fragments [][]byte, nrFrames int) ([][][]byte, error) {
 	var out [][][]byte
 	var frame [][]byte
-	frameNr := 0
 	for _, fragment := range fragments {
 		frame = append(frame, fragment)
 		if hasEOIMarker(fragment) {
 			out = append(out, frame)
-			frameNr++
 			frame = nil
 		}
 	}
 	if len(frame) > 0 {
 		out = append(out, frame)
-	}
-	if frameNr < nrFrames && len(out) < nrFrames {
-		// allow excess frames per pydicom when EOI heuristic finds more
 	}
 	return out, nil
 }

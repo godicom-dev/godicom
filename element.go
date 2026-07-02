@@ -21,9 +21,7 @@ type Element struct {
 	PrivateCreator    string
 }
 
-// DataElement holds a single DICOM data element.
-//
-// Deprecated: use Element.
+// DataElement is an alias for Element.
 type DataElement = Element
 
 func NewElement(tag Tag, vr VR, value interface{}) *Element {
@@ -35,8 +33,6 @@ func NewElement(tag Tag, vr VR, value interface{}) *Element {
 }
 
 // NewDataElement creates a DICOM data element.
-//
-// Deprecated: use NewElement.
 func NewDataElement(tag Tag, vr VR, value interface{}) *DataElement {
 	return NewElement(tag, vr, value)
 }

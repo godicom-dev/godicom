@@ -90,7 +90,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 		}
 		bits, ok := ds.GetInt(MustTag(0x00280100))
 		if !ok {
-			return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: missing 'BitsAllocated'", elem.Tag)
+			return fmt.Errorf("failed to resolve ambiguous VR for tag %s: missing 'BitsAllocated'", elem.Tag)
 		}
 		if bits > 8 {
 			elem.VR = VROW
@@ -102,7 +102,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 		pixelRep, hasRep := pixelRepresentationFromAncestors(ancestors)
 		if !hasRep {
 			if ds.Has(MustTag(0x7FE00010)) {
-				return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: missing 'PixelRepresentation'", elem.Tag)
+				return fmt.Errorf("failed to resolve ambiguous VR for tag %s: missing 'PixelRepresentation'", elem.Tag)
 			}
 			if repElem, ok := ds.Get(MustTag(0x00280103)); ok {
 				if v, ok := repElem.Value.(int); ok && v == 0 {
@@ -131,7 +131,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 			}
 			converted, err := convertInts(raw, isLittleEndian, 2, pixelRep != 0)
 			if err != nil {
-				return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: %w", elem.Tag, err)
+				return fmt.Errorf("failed to resolve ambiguous VR for tag %s: %w", elem.Tag, err)
 			}
 			elem.Value = converted
 			elem.RawValue = nil
@@ -144,7 +144,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 		}
 		bits, ok := ds.GetInt(MustTag(0x003A021A))
 		if !ok {
-			return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: missing 'WaveformBitsAllocated'", elem.Tag)
+			return fmt.Errorf("failed to resolve ambiguous VR for tag %s: missing 'WaveformBitsAllocated'", elem.Tag)
 		}
 		if bits > 8 {
 			elem.VR = VROW
@@ -155,7 +155,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 	case elem.Tag == MustTag(0x00283006):
 		lutDescriptor, ok := ds.Get(MustTag(0x00283002))
 		if !ok {
-			return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: missing 'LUTDescriptor'", elem.Tag)
+			return fmt.Errorf("failed to resolve ambiguous VR for tag %s: missing 'LUTDescriptor'", elem.Tag)
 		}
 		first := lutDescriptorFirstValue(lutDescriptor)
 		if first == 1 {
@@ -170,7 +170,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 				}
 				converted, err := convertInts(raw, isLittleEndian, 2, false)
 				if err != nil {
-					return fmt.Errorf("Failed to resolve ambiguous VR for tag %s: %w", elem.Tag, err)
+					return fmt.Errorf("failed to resolve ambiguous VR for tag %s: %w", elem.Tag, err)
 				}
 				elem.Value = converted
 				elem.RawValue = nil
