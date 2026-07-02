@@ -581,6 +581,10 @@ func encodeString(elem *DataElement) []byte {
 		return []byte(v.String())
 	case DT:
 		return []byte(v.String())
+	case DS:
+		return []byte(v.String())
+	case IS:
+		return []byte(v.String())
 	case fmt.Stringer:
 		return []byte(v.String())
 	}
@@ -598,6 +602,10 @@ func encodeNumberString(elem *DataElement) []byte {
 		return []byte(fmt.Sprintf("%d", v))
 	case float64:
 		return []byte(fmt.Sprintf("%g", v))
+	case DS:
+		return []byte(v.String())
+	case IS:
+		return []byte(v.String())
 	case *MultiValue[int]:
 		s := ""
 		for i, val := range v.Values() {
@@ -614,6 +622,24 @@ func encodeNumberString(elem *DataElement) []byte {
 				s += "\\"
 			}
 			s += fmt.Sprintf("%g", val)
+		}
+		return []byte(s)
+	case *MultiValue[DS]:
+		s := ""
+		for i, val := range v.Values() {
+			if i > 0 {
+				s += "\\"
+			}
+			s += val.String()
+		}
+		return []byte(s)
+	case *MultiValue[IS]:
+		s := ""
+		for i, val := range v.Values() {
+			if i > 0 {
+				s += "\\"
+			}
+			s += val.String()
 		}
 		return []byte(s)
 	case *MultiValue[interface{}]:

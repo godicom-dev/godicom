@@ -240,6 +240,20 @@ func valueItems(value interface{}) []interface{} {
 			items = append(items, item)
 		}
 		return items
+	case *godicom.MultiValue[godicom.DS]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
+	case *godicom.MultiValue[godicom.IS]:
+		vals := v.Values()
+		items := make([]interface{}, 0, len(vals))
+		for _, item := range vals {
+			items = append(items, item)
+		}
+		return items
 	case *godicom.MultiValue[godicom.Tag]:
 		vals := v.Values()
 		items := make([]interface{}, 0, len(vals))
@@ -300,6 +314,8 @@ func integerJSONValue(value interface{}) interface{} {
 		return int64(v)
 	case uint32:
 		return int64(v)
+	case godicom.IS:
+		return v.Value
 	case string:
 		if v == "" {
 			return nil
@@ -317,6 +333,8 @@ func floatJSONValue(value interface{}) interface{} {
 		return float64(v)
 	case float64:
 		return v
+	case godicom.DS:
+		return v.Value
 	case string:
 		if v == "" {
 			return nil
@@ -359,11 +377,21 @@ func coerceParsedValue(vr godicom.VR, value interface{}) (interface{}, error) {
 		}
 	case godicom.VRIS:
 		if i, ok := value.(int64); ok {
-			return int(i), nil
+			return godicom.IS{Value: i, Original: strconv.FormatInt(i, 10)}, nil
+		}
+		if i, ok := value.(int); ok {
+			return godicom.IS{Value: int64(i), Original: strconv.FormatInt(int64(i), 10)}, nil
+		}
+		if s, ok := value.(string); ok {
+			return godicom.ParseIS(s)
 		}
 	case godicom.VRDS:
 		if f, ok := value.(float64); ok {
-			return strconv.FormatFloat(f, 'g', -1, 64), nil
+			ds := godicom.DS{Value: f, Original: strconv.FormatFloat(f, 'g', -1, 64)}
+			return ds, nil
+		}
+		if s, ok := value.(string); ok {
+			return godicom.ParseDS(s)
 		}
 	case godicom.VRDA:
 		if s, ok := value.(string); ok {

@@ -84,8 +84,8 @@ func TestConvertDSString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, ok := v.(float64)
-	if !ok || f != 3.14 {
+	f, ok := v.(DS)
+	if !ok || f.Value != 3.14 {
 		t.Errorf("got %v", v)
 	}
 }
@@ -95,8 +95,8 @@ func TestConvertISString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i, ok := v.(int)
-	if !ok || i != 42 {
+	i, ok := v.(IS)
+	if !ok || i.Value != 42 {
 		t.Errorf("got %v", v)
 	}
 }

@@ -247,3 +247,87 @@ func parseDTValue(s string) (interface{}, error) {
 	}
 	return dt, nil
 }
+
+// DS holds a DICOM Decimal String (VR=DS) value.
+type DS struct {
+	Value    float64
+	Original string
+}
+
+// IS holds a DICOM Integer String (VR=IS) value.
+type IS struct {
+	Value    int64
+	Original string
+}
+
+// ParseDS parses a DICOM DS string.
+func ParseDS(s string) (DS, error) {
+	raw := strings.TrimRight(s, " \x00")
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return DS{}, nil
+	}
+	f, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return DS{}, fmt.Errorf("godicom: invalid DS %q", s)
+	}
+	return DS{Value: f, Original: raw}, nil
+}
+
+func (d DS) String() string {
+	if d.Original != "" {
+		return d.Original
+	}
+	return strconv.FormatFloat(d.Value, 'g', -1, 64)
+}
+
+func (d DS) IsZero() bool {
+	return d.Original == "" && d.Value == 0
+}
+
+// ParseIS parses a DICOM IS string.
+func ParseIS(s string) (IS, error) {
+	raw := strings.TrimRight(s, " \x00")
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return IS{}, nil
+	}
+	i, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		return IS{}, fmt.Errorf("godicom: invalid IS %q", s)
+	}
+	return IS{Value: i, Original: raw}, nil
+}
+
+func (i IS) String() string {
+	if i.Original != "" {
+		return i.Original
+	}
+	return strconv.FormatInt(i.Value, 10)
+}
+
+func (i IS) IsZero() bool {
+	return i.Original == "" && i.Value == 0
+}
+
+func parseDSValue(s string) (interface{}, error) {
+	ds, err := ParseDS(s)
+	if err != nil {
+		return nil, err
+	}
+	if ds.IsZero() {
+		return nil, nil
+	}
+	return ds, nil
+}
+
+func parseISValue(s string) (interface{}, error) {
+	is, err := ParseIS(s)
+	if err != nil {
+		return nil, err
+	}
+	if is.IsZero() {
+		return nil, nil
+	}
+	return is, nil
+}

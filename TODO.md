@@ -227,8 +227,8 @@ godicom/
 
 - [ ] **Value Representation / valuerep**
   - pydicom `test_valuerep.py` 约 117 个测试定义
-  - Go 当前：`DA`/`TM`/`DT` 类型 + `GetDA`/`GetTM`/`GetDT`；`DS`/`IS` 仍为 float/int
-  - 缺少：DSfloat/DSdecimal 设计、PersonName 完整行为、validation mode、original string preservation（部分 DA/TM/DT 已保留 Original）
+  - Go 当前：`DA`/`TM`/`DT` 类型 + `GetDA`/`GetTM`/`GetDT`；`DS`/`IS` 强类型 + `GetDS`/`GetIS`（保留 Original）
+  - 缺少：DSfloat/DSdecimal 设计、PersonName 完整行为、validation mode
 
 ### 高优先级缺口
 

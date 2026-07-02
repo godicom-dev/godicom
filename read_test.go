@@ -66,11 +66,11 @@ func TestReadFileRTPlanSequence(t *testing.T) {
 	if !ok {
 		t.Fatal("LeafJawPositions missing")
 	}
-	leafJawPositions, ok := leafElem.Value.(*MultiValue[float64])
+	leafJawPositions, ok := leafElem.Value.(*MultiValue[DS])
 	if !ok {
-		t.Fatalf("LeafJawPositions type = %T, want *MultiValue[float64]", leafElem.Value)
+		t.Fatalf("LeafJawPositions type = %T, want *MultiValue[DS]", leafElem.Value)
 	}
-	if leafJawPositions.Len() != 2 || leafJawPositions.Get(0) != -100 || leafJawPositions.Get(1) != 100 {
+	if leafJawPositions.Len() != 2 || leafJawPositions.Get(0).Value != -100 || leafJawPositions.Get(1).Value != 100 {
 		t.Fatalf("LeafJawPositions = %v, want [-100 100]", leafJawPositions.Values())
 	}
 }
@@ -144,11 +144,11 @@ func TestReadFileMRValues(t *testing.T) {
 	if !ok {
 		t.Fatal("PixelSpacing missing")
 	}
-	spacing, ok := elem.Value.(*MultiValue[float64])
+	spacing, ok := elem.Value.(*MultiValue[DS])
 	if !ok {
-		t.Fatalf("PixelSpacing type = %T, want *MultiValue[float64]", elem.Value)
+		t.Fatalf("PixelSpacing type = %T, want *MultiValue[DS]", elem.Value)
 	}
-	if spacing.Len() != 2 || spacing.Get(0) != 0.3125 || spacing.Get(1) != 0.3125 {
+	if spacing.Len() != 2 || spacing.Get(0).Value != 0.3125 || spacing.Get(1).Value != 0.3125 {
 		t.Fatalf("PixelSpacing = %v, want [0.3125 0.3125]", spacing.Values())
 	}
 }

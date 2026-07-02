@@ -3,6 +3,7 @@ package godicom
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -154,6 +155,10 @@ func (d *Dataset) GetString(tag Tag) (string, bool) {
 		return v.String(), true
 	case DT:
 		return v.String(), true
+	case DS:
+		return v.String(), true
+	case IS:
+		return v.String(), true
 	case UID:
 		return string(v), true
 	default:
@@ -184,6 +189,14 @@ func (d *Dataset) GetInt(tag Tag) (int, bool) {
 		return int(v), true
 	case uint64:
 		return int(v), true
+	case IS:
+		return int(v.Value), true
+	case string:
+		is, err := ParseIS(v)
+		if err != nil {
+			return 0, false
+		}
+		return int(is.Value), true
 	}
 	return 0, false
 }
@@ -251,6 +264,54 @@ func (d *Dataset) GetDT(tag Tag) (DT, bool) {
 	return DT{}, false
 }
 
+func (d *Dataset) GetDS(tag Tag) (DS, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return DS{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return DS{}, false
+	}
+	switch v := e.Value.(type) {
+	case DS:
+		return v, true
+	case float64:
+		return DS{Value: v, Original: strconv.FormatFloat(v, 'g', -1, 64)}, true
+	case string:
+		ds, err := ParseDS(v)
+		if err != nil {
+			return DS{}, false
+		}
+		return ds, true
+	}
+	return DS{}, false
+}
+
+func (d *Dataset) GetIS(tag Tag) (IS, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return IS{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return IS{}, false
+	}
+	switch v := e.Value.(type) {
+	case IS:
+		return v, true
+	case int:
+		return IS{Value: int64(v), Original: strconv.FormatInt(int64(v), 10)}, true
+	case int64:
+		return IS{Value: v, Original: strconv.FormatInt(v, 10)}, true
+	case string:
+		is, err := ParseIS(v)
+		if err != nil {
+			return IS{}, false
+		}
+		return is, true
+	}
+	return IS{}, false
+}
+
 func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
 	if err := d.loadDeferred(tag); err != nil {
 		return 0, false
@@ -259,8 +320,19 @@ func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
 	if !ok || e.Value == nil {
 		return 0, false
 	}
-	f, ok := e.Value.(float64)
-	return f, ok
+	switch v := e.Value.(type) {
+	case float64:
+		return v, true
+	case DS:
+		return v.Value, true
+	case string:
+		ds, err := ParseDS(v)
+		if err != nil {
+			return 0, false
+		}
+		return ds.Value, true
+	}
+	return 0, false
 }
 
 func (d *Dataset) GetBytes(tag Tag) ([]byte, bool) {
