@@ -43,11 +43,7 @@ func DecodePixelData(fd FileSource, opts ...DecodeOption) ([][]byte, error) {
 	}
 
 	if !desc.TransferSyntaxUID.IsCompressed() {
-		raw, err := decodeNative(pixelData, desc, o)
-		if err != nil {
-			return nil, err
-		}
-		return [][]byte{raw}, nil
+		return decodeNativeFrames(pixelData, desc, o)
 	}
 
 	encOpts := encaps.FramesOptions{
@@ -104,14 +100,34 @@ func DecodeAllFrames(fd FileSource, opts ...DecodeOption) ([]byte, error) {
 	return out, nil
 }
 
-func decodeNative(pixelData []byte, desc Descriptor, opts DecodeOptions) ([]byte, error) {
-	_ = opts
-	want := desc.UnpackedFrameBytes() * desc.NumberOfFrames
+func decodeNativeFrames(pixelData []byte, desc Descriptor, opts DecodeOptions) ([][]byte, error) {
+	frameBytes := desc.UnpackedFrameBytes()
+	want := frameBytes * desc.NumberOfFrames
 	if len(pixelData) != want {
 		return nil, fmt.Errorf("pixels: native pixel data length %d, want %d", len(pixelData), want)
 	}
-	out := make([]byte, len(pixelData))
-	copy(out, pixelData)
+	if opts.FrameIndex != nil {
+		idx := *opts.FrameIndex
+		if idx < 0 || idx >= desc.NumberOfFrames {
+			return nil, fmt.Errorf("pixels: frame index %d out of range (have %d)", idx, desc.NumberOfFrames)
+		}
+		start := idx * frameBytes
+		out := make([]byte, frameBytes)
+		copy(out, pixelData[start:start+frameBytes])
+		return [][]byte{out}, nil
+	}
+	if desc.NumberOfFrames == 1 {
+		out := make([]byte, frameBytes)
+		copy(out, pixelData)
+		return [][]byte{out}, nil
+	}
+	out := make([][]byte, desc.NumberOfFrames)
+	for i := 0; i < desc.NumberOfFrames; i++ {
+		start := i * frameBytes
+		frame := make([]byte, frameBytes)
+		copy(frame, pixelData[start:start+frameBytes])
+		out[i] = frame
+	}
 	return out, nil
 }
 

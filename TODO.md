@@ -147,8 +147,8 @@ godicom/
 
 - Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`、`encaps`、`pixels`（共 6 个有测试的包）
 - Go 测试文件：23 个（见下表）
-- Go 测试用例：**358** 个（`go test ./... -count=1`）
-- pydicom 测试数据：78 个 `.dcm` 文件（`pydicom/src/pydicom/data/test_files/`）
+- Go 测试用例：**372** 个（`go test ./... -count=1`）
+- pydicom 测试数据：78 个 `.dcm` 文件（submodule）+ **5** 个 `emri_small*`（`scripts/fetch-testdata.sh`）
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
 - `go test ./...`：**通过**
@@ -352,5 +352,21 @@ godicom/
 
 5. **再进入大块功能** ⬅️ 当前
    - [x] DICOM JSON Model（`dicomjson`，对齐 `test_json.py` 主路径）
-   - [ ] Native Pixel Data
-   - [ ] Encapsulated Pixel Data
+   - [x] Pixel decode v0.1.0（单帧 + 核心 TS 回归）
+   - [ ] **v0.2.0：像素读可投产**（见下节）⬅️ 进行中
+
+## v0.2.0 目标：像素读可投产
+
+**范围**：`ReadFile → PixelBytes` / `PixelFrames` 多帧与 encaps 边界可靠；**不含** encode、gonetdicom、全量 900+ pydicom pixel 测试。
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| 多帧测试数据 | ✅ | `scripts/fetch-testdata.sh` 拉取 `emri_small*.dcm`（pydicom-data） |
+| 原生多帧拆分 | ✅ | `pixels.decodeNativeFrames` 按 `NumberOfFrames` 切分未压缩像素 |
+| 多帧像素回归 | ✅ | native / RLE / JPEG-LS / J2K 10 帧 `emri_small` |
+| encaps 测试移植 | ✅ | EOI 分帧、Extended Offset Table、GetFrame |
+| encaps 完整移植 | ⬜ | 其余 `test_encaps.py` 用例 |
+| reshape / photometric | ⬜ | 可选基础 helper（`WithRaw(false)` 路径） |
+| 业务验证文档 | ⬜ | README 列出已验证 TS + 样例文件 |
+
+**不在 v0.2.0**：像素 encode、DICOMweb（gonetdicom）、ISO-2022 完整集成。

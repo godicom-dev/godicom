@@ -162,3 +162,125 @@ func TestParseBasicOffsets_multiFrame(t *testing.T) {
 		t.Fatalf("rest len = %d, want 0", len(rest))
 	}
 }
+
+func TestGenerateFrames_EOIMarker_multiFragmentPerFrame(t *testing.T) {
+	// pydicom test_encaps test_empty_bot_multi_fragments_per_frame
+	stream := itemHeader(0)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0xFF, 0xD9, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0xFF, 0xD9)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0xFF, 0xD9, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0xFF, 0xD9, 0x00)
+
+	frames, err := encaps.GenerateFrames(stream, encaps.FramesOptions{
+		NumberOfFrames: 4,
+		LittleEndian:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 4 {
+		t.Fatalf("frames = %d, want 4", len(frames))
+	}
+}
+
+func TestGenerateFrames_extendedOffsetTable_singleFrame(t *testing.T) {
+	// pydicom test_encaps TestGenerateFragmentedFrames.test_eot_single_fragment
+	stream := itemHeader(4)
+	stream = append(stream, 0x00, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+
+	frames, err := encaps.GenerateFrames(stream, encaps.FramesOptions{
+		LittleEndian: true,
+		ExtendedOffsets: &encaps.ExtendedOffsetTable{
+			Offsets: []uint64{0},
+			Lengths: []uint64{4},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 1 || !bytes.Equal(frames[0], []byte{0x01, 0x00, 0x00, 0x00}) {
+		t.Fatalf("frame = %v", frames[0])
+	}
+}
+
+func TestGenerateFrames_extendedOffsetTable_multiFrame(t *testing.T) {
+	// pydicom test_encaps TestGenerateFragmentedFrames.test_eot_multi_frame
+	stream := itemHeader(12)
+	stream = append(stream,
+		0x00, 0x00, 0x00, 0x00,
+		0x0C, 0x00, 0x00, 0x00,
+		0x18, 0x00, 0x00, 0x00,
+	)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x02, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x03, 0x00, 0x00, 0x00)
+
+	frames, err := encaps.GenerateFrames(stream, encaps.FramesOptions{
+		LittleEndian: true,
+		ExtendedOffsets: &encaps.ExtendedOffsetTable{
+			Offsets: []uint64{0, 12, 24},
+			Lengths: []uint64{4, 4, 4},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 3 {
+		t.Fatalf("frames = %d, want 3", len(frames))
+	}
+	want := [][]byte{{0x01, 0x00, 0x00, 0x00}, {0x02, 0x00, 0x00, 0x00}, {0x03, 0x00, 0x00, 0x00}}
+	for i := range want {
+		if !bytes.Equal(frames[i], want[i]) {
+			t.Fatalf("frame[%d] = %v, want %v", i, frames[i], want[i])
+		}
+	}
+}
+
+func TestGetFrame_extendedOffsetTable(t *testing.T) {
+	stream := itemHeader(12)
+	stream = append(stream,
+		0x00, 0x00, 0x00, 0x00,
+		0x0C, 0x00, 0x00, 0x00,
+		0x18, 0x00, 0x00, 0x00,
+	)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x02, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x03, 0x00, 0x00, 0x00)
+
+	opts := encaps.FramesOptions{
+		LittleEndian: true,
+		ExtendedOffsets: &encaps.ExtendedOffsetTable{
+			Offsets: []uint64{0, 12, 24},
+			Lengths: []uint64{4, 4, 4},
+		},
+	}
+	for i, want := range [][]byte{{0x01}, {0x02}, {0x03}} {
+		got, err := encaps.GetFrame(stream, i, opts)
+		if err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		if got[0] != want[0] {
+			t.Fatalf("frame[%d][0] = %02x, want %02x", i, got[0], want[0])
+		}
+	}
+	_, err := encaps.GetFrame(stream, 3, opts)
+	if err == nil {
+		t.Fatal("expected error for out-of-range frame index")
+	}
+}

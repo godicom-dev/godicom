@@ -26,5 +26,8 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Fetch multi-frame test data
+        run: bash scripts/fetch-testdata.sh
+
       - name: Test
         run: go test -count=1 -p 4 ./...
