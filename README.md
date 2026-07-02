@@ -6,7 +6,6 @@
 [![Coverage](https://codecov.io/gh/godicom-dev/godicom/branch/main/graph/badge.svg)](https://codecov.io/gh/godicom-dev/godicom)
 [![Lint](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg?job=lint)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
 ![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)
-[![Go Report Card](https://goreportcard.com/badge/github.com/godicom-dev/godicom)](https://goreportcard.com/report/github.com/godicom-dev/godicom)
 [![GoDoc](https://pkg.go.dev/badge/github.com/godicom-dev/godicom)](https://pkg.go.dev/github.com/godicom-dev/godicom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -143,6 +142,8 @@ _ = parsed
 | `ReadOptions.SpecificTags` | ✅ |
 | 写入 Explicit VR Little Endian | ✅ |
 | 写入 Implicit VR Little Endian | ✅ |
+| 写入 Explicit VR Big Endian | ✅ |
+| 写入 Deflated Explicit VR Little Endian | ✅ |
 | 写入序列 | ✅ |
 | 基础 VR 值转换 | ✅ |
 | DICOM 字符集 (ASCII/Latin-1/Greek 等) | 🚧 |

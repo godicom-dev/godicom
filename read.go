@@ -217,25 +217,6 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			continue
 		}
 
-		if vr == VRSQ {
-			seq, newPos := readDefinedLengthSequence(
-				data,
-				pos+int64(hdrSize),
-				length,
-				isImplicit,
-				isLittleEndian,
-				encoding,
-				opts,
-				readCtx,
-			)
-			elem.Value = seq
-			pos = newPos
-			if shouldKeepElement(opts, elem.Tag) {
-				allElements = append(allElements, elem)
-			}
-			continue
-		}
-
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
@@ -255,6 +236,25 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicit, isLittleEndian)
 				}
 			}
+			if shouldKeepElement(opts, elem.Tag) {
+				allElements = append(allElements, elem)
+			}
+			continue
+		}
+
+		if vr == VRSQ {
+			seq, newPos := readDefinedLengthSequence(
+				data,
+				pos+int64(hdrSize),
+				length,
+				isImplicit,
+				isLittleEndian,
+				encoding,
+				opts,
+				readCtx,
+			)
+			elem.Value = seq
+			pos = newPos
 			if shouldKeepElement(opts, elem.Tag) {
 				allElements = append(allElements, elem)
 			}
@@ -518,25 +518,6 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			continue
 		}
 
-		if vr == VRSQ {
-			seq, newPos := readDefinedLengthSequence(
-				data,
-				pos+int64(hdrSize),
-				length,
-				isImplicitVR,
-				isLittleEndian,
-				encoding,
-				opts,
-				ctx,
-			)
-			elem.Value = seq
-			pos = newPos
-			if shouldKeepElement(opts, elem.Tag) {
-				ds.Set(elem)
-			}
-			continue
-		}
-
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
@@ -556,6 +537,25 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicitVR, isLittleEndian)
 				}
 			}
+			if shouldKeepElement(opts, elem.Tag) {
+				ds.Set(elem)
+			}
+			continue
+		}
+
+		if vr == VRSQ {
+			seq, newPos := readDefinedLengthSequence(
+				data,
+				pos+int64(hdrSize),
+				length,
+				isImplicitVR,
+				isLittleEndian,
+				encoding,
+				opts,
+				ctx,
+			)
+			elem.Value = seq
+			pos = newPos
 			if shouldKeepElement(opts, elem.Tag) {
 				ds.Set(elem)
 			}

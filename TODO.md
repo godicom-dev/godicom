@@ -353,7 +353,7 @@ godicom/
 5. **再进入大块功能**
    - [x] DICOM JSON Model（`dicomjson`，对齐 `test_json.py` 主路径）
    - [x] Pixel decode v0.2.0（多帧像素读）
-   - [ ] **v0.3.0：metadata 读写可投产**（见下节）⬅️ 进行中
+   - [ ] **v0.3.x：metadata 读写可投产**（见下节）✅
 
 ## v0.2.0 目标：像素读可投产 ✅
 
@@ -382,5 +382,5 @@ godicom/
 | File meta group length | ✅ | `writeFileMetaInfo` 更新 (0002,0000) |
 | Dataset Walk / Clone | ✅ | 对齐 pydicom `walk` / 深拷贝 |
 | 非标准 file meta | ✅ | `meta_missing_tsyntax.dcm` 值级 roundtrip |
-| 压缩像素字节级一致 | ⬜ | JPEG2000 尾部 48 字节差异待查 |
-| Big Endian / Deflated roundtrip | ⬜ | 待补 |
+| 压缩像素字节级一致 | ✅ | `JPEG2000.dcm` roundtrip |
+| Big Endian / Deflated roundtrip | ✅ | `MR_small_bigendian.dcm` 字节级；`image_dfl.dcm` 值级 + 解压后 dataset 一致 |

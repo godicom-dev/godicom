@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"bytes"
+	"compress/flate"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -152,6 +153,39 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 
 	// Write dataset
 	fp.SetByteOrder(isLittleEndian)
+
+	tsUID := ""
+	if fileMeta != nil {
+		tsUID, _ = transferSyntaxUID(fileMeta)
+	}
+
+	if UID(tsUID).IsDeflated() {
+		var datasetBuf bytes.Buffer
+		dsWriter := newDicomWriter(&datasetBuf)
+		dsWriter.SetByteOrder(isLittleEndian)
+		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian); err != nil {
+			return fmt.Errorf("godicom: error writing dataset: %w", err)
+		}
+		var deflated bytes.Buffer
+		fw, err := flate.NewWriter(&deflated, flate.DefaultCompression)
+		if err != nil {
+			return fmt.Errorf("godicom: error creating deflater: %w", err)
+		}
+		if _, err := fw.Write(datasetBuf.Bytes()); err != nil {
+			return fmt.Errorf("godicom: error deflating dataset: %w", err)
+		}
+		if err := fw.Close(); err != nil {
+			return fmt.Errorf("godicom: error closing deflater: %w", err)
+		}
+		payload := deflated.Bytes()
+		if len(payload)%2 == 1 {
+			payload = append(payload, 0)
+		}
+		if _, err := fp.Write(payload); err != nil {
+			return fmt.Errorf("godicom: error writing deflated dataset: %w", err)
+		}
+		return nil
+	}
 
 	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
@@ -308,6 +342,12 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 	fp.SetByteOrder(isLittleEndian)
 
 	isSQ := elem.VR == VRSQ
+	undefinedSQ := elem.IsUndefinedLength
+	if isSQ && !undefinedSQ {
+		if seq, ok := elem.Value.(*Sequence); ok && seq != nil {
+			undefinedSQ = seq.IsUndefinedLength
+		}
+	}
 
 	// Cycle detection: check if this SQ tag is already in the ancestor stack
 	isCircular := false
@@ -323,7 +363,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 
 	// For defined-length SQs with items (and not circular), pre-compute content
 	var sqBuf *bytes.Buffer
-	if isSQ && !isCircular && !elem.IsUndefinedLength {
+	if isSQ && !isCircular && !undefinedSQ {
 		seq, ok := elem.Value.(*Sequence)
 		if ok && seq != nil && !seq.IsEmpty() {
 			sqBuf = new(bytes.Buffer)
@@ -366,7 +406,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 		length := uint32(len(encoded))
 		if sqBuf != nil {
 			length = uint32(sqBuf.Len())
-		} else if isSQ && elem.IsUndefinedLength {
+		} else if isSQ && undefinedSQ {
 			length = 0xFFFFFFFF
 		}
 		if err := fp.WriteUint32(length); err != nil {
@@ -380,7 +420,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 		length := uint32(len(encoded))
 		if sqBuf != nil {
 			length = uint32(sqBuf.Len())
-		} else if isSQ && elem.IsUndefinedLength {
+		} else if isSQ && undefinedSQ {
 			length = 0xFFFFFFFF
 		}
 
