@@ -291,13 +291,13 @@ func bytesIdentical(a, b []byte) (bool, int) {
 }
 
 func TestWriteFileBytesIdentical(t *testing.T) {
-	// pydicom.tests.test_filewriter.TestWriteFile.test_read_write_identical (subset)
 	files := []string{
 		"CT_small.dcm",
 		"MR_small.dcm",
 		"rtplan.dcm",
 		"rtdose.dcm",
-		// JPEG2000.dcm: value roundtrip passes; 48-byte file-meta tail differs from source.
+		"MR_small_bigendian.dcm",
+		"JPEG2000.dcm",
 	}
 
 	for _, file := range files {
@@ -333,6 +333,75 @@ func assertWriteBytesIdentical(t *testing.T, file string) {
 	same, pos := bytesIdentical(original, written)
 	if !same {
 		t.Fatalf("bytes differ at %d (orig=%d written=%d)", pos, len(original), len(written))
+	}
+}
+
+func TestWriteFileDeflatedInflatedIdentical(t *testing.T) {
+	// pydicom.tests.test_filewriter.TestWriteFile.test_write_deflated_deflates_post_file_meta
+	const postMetaOffset = 0x14E
+	path := testFilePath("image_dfl.dcm")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ds, err := ReadFile(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "image_dfl.dcm")
+	if err := ds.SaveAs(outPath, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	written, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origInflated, err := inflateRaw(original[postMetaOffset:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	writInflated, err := inflateRaw(written[postMetaOffset:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(origInflated, writInflated) {
+		t.Fatalf("inflated dataset differs (orig=%d written=%d)", len(origInflated), len(writInflated))
+	}
+}
+
+func TestWriteFileDeflatedRetainsElements(t *testing.T) {
+	// pydicom.tests.test_filewriter.TestWriteFile.test_write_deflated_retains_elements
+	original, err := ReadFile(testFilePath("image_dfl.dcm"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "image_dfl.dcm")
+	if err := original.SaveAs(outPath, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	reread, err := ReadFile(outPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if original.Len() != reread.Len() {
+		t.Fatalf("element count: original=%d reread=%d", original.Len(), reread.Len())
+	}
+	for _, tag := range original.SortedTags() {
+		origElem, _ := original.Get(tag)
+		rereadElem, ok := reread.Get(tag)
+		if !ok {
+			t.Fatalf("tag %s missing on reread", tag)
+		}
+		if err := elementsEqual(origElem, rereadElem); err != nil {
+			t.Fatalf("tag %s: %v", tag, err)
+		}
 	}
 }
 
