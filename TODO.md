@@ -361,7 +361,7 @@ godicom/
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 多帧测试数据 | ✅ | `scripts/fetch-testdata.sh` → `testdata/dcm/`（`scripts/emri_testdata.json`） |
+| 多帧测试数据 | ✅ | `scripts/fetch-testdata.sh` → `testdata/dcm/` |
 | 原生多帧拆分 | ✅ | `pixels.decodeNativeFrames` 按 `NumberOfFrames` 切分未压缩像素 |
 | 多帧像素回归 | ✅ | native / RLE / JPEG-LS / J2K 10 帧 `emri_small` |
 | encaps 测试移植 | ✅ | EOI 分帧、Extended Offset Table、GetFrame |
