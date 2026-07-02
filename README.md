@@ -3,7 +3,7 @@
 **Go 实现的 DICOM 文件读写库** — pydicom 的 Go 移植版。
 
 [![CI](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
-![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.22-%23007d9c)
+![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)
 [![GoDoc](https://pkg.go.dev/badge/github.com/godicom-dev/godicom)](https://pkg.go.dev/github.com/godicom-dev/godicom)
 [![License](https://img.shields.io/github/license/godicom-dev/godicom)](LICENSE)
 
@@ -33,6 +33,48 @@ err = ds.SaveAs("output.dcm", nil)
 ```
 
 I/O 入口：`ReadFile` / `WriteFile`（或 `FileDataset.SaveAs`）。`DcmRead`、`DcmReadFile`、`DcmWrite` 为兼容 pydicom 命名的已废弃别名，新代码请勿使用。
+
+## 像素数据解码
+
+封装像素经 `encaps` 拆帧后，由 `pixels` 按 Transfer Syntax 调度解码（依赖 [golibjpeg](https://github.com/godicom-dev/golibjpeg)、[goopenjpeg](https://github.com/godicom-dev/goopenjpeg)、[gorle](https://github.com/godicom-dev/gorle)）：
+
+```go
+import (
+    "github.com/godicom-dev/godicom"
+    "github.com/godicom-dev/godicom/pixels"
+)
+
+ds, err := godicom.ReadFile("mr_j2k.dcm", nil)
+if err != nil {
+    return err
+}
+
+// 所有帧拼成一块 buffer（native 字节布局）
+raw, err := ds.PixelBytes(pixels.WithRaw(true))
+if err != nil {
+    return err
+}
+
+// 或按帧解码
+frames, err := ds.PixelFrames(pixels.WithRaw(true), pixels.WithFrameIndex(0))
+if err != nil {
+    return err
+}
+_ = raw
+_ = frames
+```
+
+**v0.1.0 已支持的压缩格式（读）**
+
+| 类别 | Transfer Syntax（示例 UID） |
+|------|----------------------------|
+| Native | Explicit/Implicit VR Little/Big Endian、Deflated |
+| RLE Lossless | `1.2.840.10008.1.2.5` |
+| JPEG Baseline / Extended / Lossless / Lossless SV1 | `1.2.840.10008.1.2.4.50` 等 |
+| JPEG-LS Lossless / Near-Lossless | `1.2.840.10008.1.2.4.80` / `.81` |
+| JPEG 2000 / HTJ2K | `1.2.840.10008.1.2.4.90` 等 |
+
+**已知限制**：仅解码路径（无压缩写入）；`WithRaw(true)` 返回编解码库原始字节布局，不含 pydicom 式 reshape / YBR→RGB 后处理；多帧与 Extended Offset Table 覆盖仍在扩展中。细节见 [TODO.md](TODO.md)。
 
 ## DICOM JSON Model
 
@@ -78,12 +120,12 @@ _ = parsed
 | 基础 VR 值转换 | ✅ |
 | DICOM 字符集 (ASCII/Latin-1/Greek 等) | 🚧 |
 | DICOM 标准字典 (5189 Tag + 88 Repeater) | ✅ |
-| Pixel Data 解码 (Native) | ❌ |
-| Pixel Data 解码 (JPEG/JPEG-LS/JPEG-2000/RLE) | ❌ |
+| Pixel Data 解码 (Native) | ✅ |
+| Pixel Data 解码 (JPEG / JPEG-LS / JPEG 2000 / RLE) | ✅ |
 | JSON 序列化 | ✅ |
 | DICOMweb / WADO-RS | ❌ |
 
-当前聚焦 **metadata 读写子集**；完整路线图见 [TODO.md](TODO.md)。
+**v0.1.0** 起提供稳定的像素**读**能力；metadata 读写与 JSON 仍在持续对齐 pydicom。完整路线图见 [TODO.md](TODO.md)。
 
 ## 测试
 
