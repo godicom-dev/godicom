@@ -64,7 +64,15 @@ _ = raw
 _ = frames
 ```
 
-**v0.1.0 已支持的压缩格式（读）**
+**v0.2.0 像素读能力**
+
+| 能力 | 说明 |
+|------|------|
+| 单帧 / 多帧 | `PixelFrames` 按 `NumberOfFrames` 拆分；`WithFrameIndex(n)` 取单帧 |
+| 封装分帧 | Basic / Extended Offset Table、无 BOT + EOI 启发式 |
+| 未压缩多帧 | 原生像素按帧切分（无需 encaps） |
+
+**已支持的压缩格式（读）**
 
 | 类别 | Transfer Syntax（示例 UID） |
 |------|----------------------------|
@@ -74,7 +82,23 @@ _ = frames
 | JPEG-LS Lossless / Near-Lossless | `1.2.840.10008.1.2.4.80` / `.81` |
 | JPEG 2000 / HTJ2K | `1.2.840.10008.1.2.4.90` 等 |
 
-**已知限制**：仅解码路径（无压缩写入）；`WithRaw(true)` 返回编解码库原始字节布局，不含 pydicom 式 reshape / YBR→RGB 后处理；多帧与 Extended Offset Table 覆盖仍在扩展中。细节见 [TODO.md](TODO.md)。
+**回归验证样例**（pydicom `pixels_reference` 采样点）
+
+| 样例文件 | 内容 |
+|----------|------|
+| `CT_small.dcm` | Native 16-bit 单帧 |
+| `MR_small*.dcm` | J2K / RLE / JPEG-LS 单帧 |
+| `emri_small*.dcm` | 10 帧 native / RLE / JPEG-LS / J2K（`scripts/fetch-testdata.sh`） |
+| `SC_rgb_jpeg_*.dcm` | JPEG baseline / lossless SV1 RGB |
+| `JPGExtended.dcm` | JPEG extended 16-bit |
+
+多帧测试数据不在 pydicom submodule 内，CI 与本地需先执行：
+
+```bash
+bash scripts/fetch-testdata.sh
+```
+
+**已知限制**：仅解码路径（无压缩写入）；`WithRaw(true)` 返回编解码库原始字节布局，不含 pydicom 式 reshape / YBR→RGB 后处理；像素 encode 与完整 encaps 生成未实现。细节见 [TODO.md](TODO.md)。
 
 ## DICOM JSON Model
 
@@ -125,17 +149,18 @@ _ = parsed
 | JSON 序列化 | ✅ |
 | DICOMweb / WADO-RS | → **gonetdicom**（计划中独立库，非 godicom 范围） |
 
-**v0.1.0** 起提供稳定的像素**读**能力；metadata 读写与 JSON 仍在持续对齐 pydicom。完整路线图见 [TODO.md](TODO.md)。
+**v0.2.0** 起提供稳定的多帧像素**读**能力；metadata 读写与 JSON 仍在持续对齐 pydicom。完整路线图见 [TODO.md](TODO.md)。
 
 ## 测试
 
-```
+```bash
+bash scripts/fetch-testdata.sh   # 多帧 emri_small 样例（首次或 CI）
 go test -count=1 ./...
 ```
 
-- 23 个测试文件，**358** 个测试用例（含 subtest，8 个包）
+- 24 个测试文件，**378** 个测试用例（含 subtest，8 个包）
 - 语句覆盖率约 **71%**
-- 使用 pydicom submodule 中 78 个真实 `.dcm` 测试文件
+- pydicom submodule 78 个 `.dcm` + `testdata/dcm/` 5 个 `emri_small*`
 
 ## 项目结构
 

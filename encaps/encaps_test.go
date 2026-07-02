@@ -284,3 +284,125 @@ func TestGetFrame_extendedOffsetTable(t *testing.T) {
 		t.Fatal("expected error for out-of-range frame index")
 	}
 }
+
+func TestParseBasicOffsets_badLengthNotMultipleOf4(t *testing.T) {
+	stream := itemHeader(6)
+	stream = append(stream, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+	_, _, err := encaps.ParseBasicOffsets(stream, true)
+	if err == nil {
+		t.Fatal("expected error for BOT length not multiple of 4")
+	}
+}
+
+func TestParseBasicOffsets_notLittleEndian(t *testing.T) {
+	stream := itemHeader(0)
+	_, _, err := encaps.ParseBasicOffsets(stream, false)
+	if err == nil {
+		t.Fatal("expected error for big endian encapsulated pixel data")
+	}
+}
+
+func TestGenerateFrames_BOT_multiFrameOneToOne(t *testing.T) {
+	// pydicom test_encaps test_multi_frame_one_to_one
+	stream := itemHeader(12)
+	stream = append(stream,
+		0x00, 0x00, 0x00, 0x00,
+		0x0C, 0x00, 0x00, 0x00,
+		0x18, 0x00, 0x00, 0x00,
+	)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x02, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x03, 0x00, 0x00, 0x00)
+
+	frames, err := encaps.GenerateFrames(stream, encaps.FramesOptions{LittleEndian: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]byte{{0x01}, {0x02}, {0x03}}
+	if len(frames) != len(want) {
+		t.Fatalf("frames = %d, want %d", len(frames), len(want))
+	}
+	for i := range want {
+		if !bytes.Equal(frames[i], append(want[i], 0x00, 0x00, 0x00)) {
+			t.Fatalf("frame[%d] = %v, want %v", i, frames[i], want[i])
+		}
+	}
+}
+
+func TestGenerateFrames_BOT_multiFrameThreeToOne(t *testing.T) {
+	// pydicom test_encaps test_multi_frame_three_to_one (2 frames, 3 fragments each)
+	stream := itemHeader(12)
+	stream = append(stream,
+		0x00, 0x00, 0x00, 0x00,
+		0x24, 0x00, 0x00, 0x00,
+		0x48, 0x00, 0x00, 0x00,
+	)
+	fragments := [][]byte{
+		{0x01, 0x00, 0x00, 0x00},
+		{0x02, 0x00, 0x00, 0x00},
+		{0x03, 0x00, 0x00, 0x00},
+		{0x02, 0x00, 0x00, 0x00},
+		{0x02, 0x00, 0x00, 0x00},
+		{0x03, 0x00, 0x00, 0x00},
+		{0x03, 0x00, 0x00, 0x00},
+		{0x02, 0x00, 0x00, 0x00},
+		{0x03, 0x00, 0x00, 0x00},
+	}
+	for _, frag := range fragments {
+		stream = append(stream, itemHeader(uint32(len(frag)))...)
+		stream = append(stream, frag...)
+	}
+
+	fragmented, err := encaps.GenerateFragmentedFrames(stream, encaps.FramesOptions{LittleEndian: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fragmented) != 3 {
+		t.Fatalf("frames = %d, want 3", len(fragmented))
+	}
+	want0 := [][]byte{fragments[0], fragments[1], fragments[2]}
+	want1 := [][]byte{fragments[3], fragments[4], fragments[5]}
+	want2 := [][]byte{fragments[6], fragments[7], fragments[8]}
+	for i, want := range [][][]byte{want0, want1, want2} {
+		if len(fragmented[i]) != len(want) {
+			t.Fatalf("frame %d fragments = %d, want %d", i, len(fragmented[i]), len(want))
+		}
+		for j := range want {
+			if !bytes.Equal(fragmented[i][j], want[j]) {
+				t.Fatalf("frame[%d][%d] = %v, want %v", i, j, fragmented[i][j], want[j])
+			}
+		}
+	}
+}
+
+func TestGenerateFrames_emptyBOT_requiresNumberOfFrames(t *testing.T) {
+	stream := itemHeader(0)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x02, 0x00, 0x00, 0x00)
+
+	_, err := encaps.GenerateFrames(stream, encaps.FramesOptions{LittleEndian: true})
+	if err == nil {
+		t.Fatal("expected error when NumberOfFrames unset with multiple fragments")
+	}
+}
+
+func TestGenerateFrames_emptyBOT_tooFewFragments(t *testing.T) {
+	stream := itemHeader(0)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x01, 0x00, 0x00, 0x00)
+	stream = append(stream, itemHeader(4)...)
+	stream = append(stream, 0x02, 0x00, 0x00, 0x00)
+
+	_, err := encaps.GenerateFrames(stream, encaps.FramesOptions{
+		NumberOfFrames: 10,
+		LittleEndian:   true,
+	})
+	if err == nil {
+		t.Fatal("expected error when fragments fewer than frames")
+	}
+}
