@@ -148,7 +148,7 @@ godicom/
 - Go 测试包：`godicom`（根包）、`tag`、`uid`、`dicomjson`、`encaps`、`pixels`（共 6 个有测试的包）
 - Go 测试文件：23 个（见下表）
 - Go 测试用例：**372** 个（`go test ./... -count=1`）
-- pydicom 测试数据：78 个 `.dcm` 文件（submodule）+ **5** 个 `emri_small*`（`scripts/fetch-testdata.sh`）
+- pydicom 测试数据：78 个 `.dcm` 文件（submodule）+ **5** 个 `emri_small*`（`scripts/fetch-testdata.sh` → `testdata/dcm/`）
 - pydicom pytest 测试定义：约 2392 个
 - pydicom pytest 文件：约 55 个
 - `go test ./...`：**通过**
@@ -361,7 +361,7 @@ godicom/
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 多帧测试数据 | ✅ | `scripts/fetch-testdata.sh` 拉取 `emri_small*.dcm`（pydicom-data） |
+| 多帧测试数据 | ✅ | `scripts/fetch-testdata.sh` → `testdata/dcm/`（`scripts/emri_testdata.json`） |
 | 原生多帧拆分 | ✅ | `pixels.decodeNativeFrames` 按 `NumberOfFrames` 切分未压缩像素 |
 | 多帧像素回归 | ✅ | native / RLE / JPEG-LS / J2K 10 帧 `emri_small` |
 | encaps 测试移植 | ✅ | EOI 分帧、Extended Offset Table、GetFrame |

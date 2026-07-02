@@ -3,6 +3,7 @@ package godicom_test
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -11,9 +12,18 @@ import (
 )
 
 var testDataDir = filepath.Join("pydicom", "src", "pydicom", "data", "test_files")
+var fetchedDataDir = filepath.Join("testdata", "dcm")
 
 func testFilePath(name string) string {
+	if p := filepath.Join(fetchedDataDir, name); fileExists(p) {
+		return p
+	}
 	return filepath.Join(testDataDir, name)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // rgbAt returns three 8-bit samples at (row, col) in interleaved RGB layout.
