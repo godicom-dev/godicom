@@ -1,6 +1,6 @@
 module github.com/godicom-dev/godicom
 
-go 1.26.4
+go 1.26
 
 require (
 	github.com/godicom-dev/golibjpeg v1.1.1

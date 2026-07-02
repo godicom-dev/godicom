@@ -25,10 +25,10 @@ const (
 
 // Backward-compatible aliases for earlier godicom constant names.
 const (
-	JPEGBaseline           = JPEGBaseline8Bit
-	JPEGExtended           = JPEGExtended12Bit
-	JPEGLSLossy            = JPEGLSNearLossless
-	VerificationSOPClass   = Verification
+	JPEGBaseline         = JPEGBaseline8Bit
+	JPEGExtended         = JPEGExtended12Bit
+	JPEGLSLossy          = JPEGLSNearLossless
+	VerificationSOPClass = Verification
 )
 
 // Info holds metadata about a UID (legacy shape for KnownUIDs consumers).

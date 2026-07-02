@@ -750,13 +750,6 @@ func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	return writeFile(filename, writeSource{dataset: ds}, opts)
 }
 
-// DcmWrite writes a Dataset to a DICOM file.
-//
-// Deprecated: use WriteFile.
-func DcmWrite(filename string, ds *Dataset, opts *WriteOptions) error {
-	return WriteFile(filename, ds, opts)
-}
-
 // Ensure binary is used
 var _ = binary.BigEndian
 var _ = io.Discard

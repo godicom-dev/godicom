@@ -664,17 +664,3 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLi
 func ReadFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	return readFile(filename, opts)
 }
-
-// DcmRead reads a DICOM file from filename.
-//
-// Deprecated: use ReadFile.
-func DcmRead(filename string, opts *ReadOptions) (*FileDataset, error) {
-	return ReadFile(filename, opts)
-}
-
-// DcmReadFile reads a DICOM file from filename with default options.
-//
-// Deprecated: use ReadFile with nil options.
-func DcmReadFile(filename string) (*FileDataset, error) {
-	return ReadFile(filename, nil)
-}

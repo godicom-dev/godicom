@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	itemTag     uint32 = 0xFFFEE000
-	seqDelimTag uint32 = 0xFFFEE0DD
-	undefinedLen uint32 = 0xFFFFFFFF
-	eoiMarkerByte       = 0xFF
-	eoiMarkerSecond     = 0xD9
+	itemTag         uint32 = 0xFFFEE000
+	seqDelimTag     uint32 = 0xFFFEE0DD
+	undefinedLen    uint32 = 0xFFFFFFFF
+	eoiMarkerByte          = 0xFF
+	eoiMarkerSecond        = 0xD9
 )
 
 func readTag(buf []byte, pos int, order binary.ByteOrder) uint32 {
