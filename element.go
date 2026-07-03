@@ -2,7 +2,6 @@ package godicom
 
 import (
 	"fmt"
-	"strings"
 )
 
 // Element holds a single DICOM data element.
@@ -173,36 +172,4 @@ type RawDataElement struct {
 	IsImplicitVR   bool
 	IsLittleEndian bool
 	IsRaw          bool
-}
-
-// PersonName holds a DICOM Person Name (PN) value.
-type PersonName struct {
-	Alphabetic  string
-	Ideographic string
-	Phonetic    string
-}
-
-func ParsePersonName(s string) PersonName {
-	parts := strings.Split(s, "=")
-	pn := PersonName{}
-	if len(parts) > 0 {
-		pn.Alphabetic = parts[0]
-	}
-	if len(parts) > 1 {
-		pn.Ideographic = parts[1]
-	}
-	if len(parts) > 2 {
-		pn.Phonetic = parts[2]
-	}
-	return pn
-}
-
-func (pn PersonName) String() string {
-	if pn.Phonetic != "" {
-		return strings.Join([]string{pn.Alphabetic, pn.Ideographic, pn.Phonetic}, "=")
-	}
-	if pn.Ideographic != "" {
-		return strings.Join([]string{pn.Alphabetic, pn.Ideographic}, "=")
-	}
-	return pn.Alphabetic
 }

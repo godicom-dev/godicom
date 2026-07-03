@@ -241,16 +241,3 @@ func TestDataElementEqual(t *testing.T) {
 		t.Fatal("Equal with different value = true, want false")
 	}
 }
-func TestPersonName(t *testing.T) {
-	pn := ParsePersonName("Smith^John")
-	if pn.Alphabetic != "Smith^John" {
-		t.Errorf("Alphabetic = %q", pn.Alphabetic)
-	}
-	pn2 := ParsePersonName("Smith^John=Doe^Jane")
-	if pn2.Alphabetic != "Smith^John" {
-		t.Errorf("Alphabetic = %q", pn2.Alphabetic)
-	}
-	if pn2.Ideographic != "Doe^Jane" {
-		t.Errorf("Ideographic = %q", pn2.Ideographic)
-	}
-}
