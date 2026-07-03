@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -9,6 +10,10 @@ import (
 
 // convertValue converts raw bytes to a Go value based on VR.
 func convertValue(raw *RawDataElement) (interface{}, error) {
+	return convertValueWithCharsets(raw, nil)
+}
+
+func convertValueWithCharsets(raw *RawDataElement, charsets []string) (interface{}, error) {
 	if raw.Value == nil {
 		return emptyValueForVR(raw.VR), nil
 	}
@@ -35,13 +40,13 @@ func convertValue(raw *RawDataElement) (interface{}, error) {
 	case VRIS:
 		return convertISString(raw.Value)
 	case VRLO, VRSH, VRST, VRUC, VRUT:
-		return convertText(raw.Value)
+		return convertTextWithCharsets(raw.Value, charsets)
 	case VRLT:
-		return convertText(raw.Value)
+		return convertTextWithCharsets(raw.Value, charsets)
 	case VROB, VROD, VROF, VROL, VROW, VROV, VRUN:
 		return raw.Value, nil
 	case VRPN:
-		return convertPN(raw.Value)
+		return convertPNWithCharsets(raw.Value, charsets)
 	case VRSL:
 		return convertInts(raw.Value, raw.IsLittleEndian, 4, true)
 	case VRSS:
@@ -83,7 +88,48 @@ func convertString(b []byte) (string, error) {
 }
 
 func convertText(b []byte) (string, error) {
-	return strings.TrimRight(string(b), " \x00"), nil
+	v, err := convertTextWithCharsets(b, nil)
+	if err != nil {
+		return "", err
+	}
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	return fmt.Sprintf("%v", v), nil
+}
+
+func convertTextWithCharsets(b []byte, charsets []string) (interface{}, error) {
+	b = trimRightNullSpaceBytes(b)
+	if len(charsets) == 0 || !needsCharsetDecode(b, charsets) {
+		return strings.TrimRight(string(b), " \x00"), nil
+	}
+	if !bytes.Contains(b, []byte{'\\'}) {
+		return DecodeBytesWithDelimiters(b, charsets, textVRDelims), nil
+	}
+	rawParts := bytes.Split(b, []byte{'\\'})
+	vals := make([]string, len(rawParts))
+	for i, part := range rawParts {
+		vals[i] = DecodeBytesWithDelimiters(part, charsets, textVRDelims)
+	}
+	if len(vals) == 1 {
+		return vals[0], nil
+	}
+	return NewMultiValue(vals), nil
+}
+
+func needsCharsetDecode(b []byte, charsets []string) bool {
+	if bytes.Contains(b, []byte{esc}) {
+		return true
+	}
+	normalized := ConvertCharacterSets(charsets)
+	if len(normalized) > 1 {
+		return true
+	}
+	if len(normalized) == 0 {
+		return false
+	}
+	first := normalized[0]
+	return first != DefaultCharacterSet && first != "ISO_IR 6" && first != "" && first != "ISO 2022 IR 6"
 }
 
 func convertAEString(b []byte) (string, error) {
@@ -214,10 +260,76 @@ func convertUI(b []byte) (UID, error) {
 }
 
 func convertPN(b []byte) (PersonName, error) {
-	s := strings.TrimRight(string(b), " \x00")
-	pn := ParsePersonName(s)
-	pn.Original = s
+	v, err := convertPNWithCharsets(b, nil)
+	if err != nil {
+		return PersonName{}, err
+	}
+	if pn, ok := v.(PersonName); ok {
+		return pn, nil
+	}
+	return PersonName{}, fmt.Errorf("godicom: unexpected PN value type %T", v)
+}
+
+func convertPNWithCharsets(b []byte, charsets []string) (interface{}, error) {
+	b = trimRightNullSpaceBytes(b)
+	if len(charsets) == 0 || !needsCharsetDecode(b, charsets) {
+		s := strings.TrimRight(string(b), " \x00")
+		pn := ParsePersonName(s)
+		pn.Original = s
+		return pn, nil
+	}
+	if bytes.Contains(b, []byte{'\\'}) {
+		rawParts := bytes.Split(b, []byte{'\\'})
+		pns := make([]PersonName, len(rawParts))
+		for i, part := range rawParts {
+			pn, err := decodePersonNameBytes(part, charsets)
+			if err != nil {
+				return nil, err
+			}
+			pns[i] = pn
+		}
+		if len(pns) == 1 {
+			return pns[0], nil
+		}
+		return NewMultiValue(pns), nil
+	}
+	return decodePersonNameBytes(b, charsets)
+}
+
+func decodePersonNameBytes(b []byte, charsets []string) (PersonName, error) {
+	groups := bytes.Split(b, []byte{'='})
+	parts := make([]string, 0, len(groups))
+	for _, group := range groups {
+		parts = append(parts, DecodeBytesWithDelimiters(group, charsets, pnDelims))
+	}
+	for len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	pn := PersonName{}
+	if len(parts) > 0 {
+		pn.Alphabetic = parts[0]
+	}
+	if len(parts) > 1 {
+		pn.Ideographic = parts[1]
+	}
+	if len(parts) > 2 {
+		pn.Phonetic = parts[2]
+	}
+	pn.Original = personNameStringFromParts(parts)
 	return pn, nil
+}
+
+func personNameStringFromParts(parts []string) string {
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + "=" + parts[1]
+	default:
+		return parts[0] + "=" + parts[1] + "=" + parts[2]
+	}
 }
 
 func convertATValue(b []byte, le bool) (interface{}, error) {

@@ -15,6 +15,7 @@ type Element struct {
 	Deferred          bool   // value not yet loaded from source
 	IsImplicitVR      bool   // encoding at read time; for deferred load
 	IsLittleEndian    bool
+	readCharsets      []string // charset active when element was read (deferred decode)
 	FileTell          int64
 	IsUndefinedLength bool
 	PrivateCreator    string

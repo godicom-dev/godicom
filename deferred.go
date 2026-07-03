@@ -31,12 +31,14 @@ func markElementDeferred(
 	valueTell int64,
 	length int,
 	isImplicit, isLittleEndian bool,
+	charsets []string,
 ) {
 	elem.Deferred = true
 	elem.ValueTell = valueTell
 	elem.ValueLength = uint32(length)
 	elem.IsImplicitVR = isImplicit
 	elem.IsLittleEndian = isLittleEndian
+	elem.readCharsets = append([]string(nil), charsets...)
 	elem.Value = nil
 	elem.RawValue = nil
 }
@@ -66,7 +68,7 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 		return fmt.Errorf("godicom: deferred read VR %s does not match original %s", raw.VR, elem.VR)
 	}
 
-	assignElementBytes(elem, raw.Value, raw.VR, raw.IsImplicitVR, raw.IsLittleEndian)
+	assignElementBytes(elem, raw.Value, raw.VR, raw.IsImplicitVR, raw.IsLittleEndian, elem.readCharsets)
 	elem.Deferred = false
 	elem.ValueLength = 0
 	elem.ValueTell = 0

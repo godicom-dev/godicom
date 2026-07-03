@@ -55,6 +55,13 @@ func shouldKeepElement(opts *ReadOptions, tag Tag) bool {
 	return false
 }
 
+func readDeferSize(opts *ReadOptions) uint32 {
+	if opts == nil {
+		return 0
+	}
+	return opts.DeferSize
+}
+
 func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -101,7 +108,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
-	encoding := DefaultCharacterSet
+	charsets := []string{DefaultCharacterSet}
 	readCtx := &readContext{data: data, filename: filename, modTime: modTime}
 
 	for pos+4 <= int64(len(data)) {
@@ -149,7 +156,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			break
 		}
 
-		if opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
+		if opts != nil && opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
 			break
 		}
 
@@ -220,16 +227,16 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicit, isLittleEndian, encoding, opts, readCtx)
+				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicit, isLittleEndian, charsets, opts, readCtx)
 				elem.Value = seq
 				pos = newPos
 			} else {
 				valueStart := pos + int64(hdrSize)
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
-					if shouldDeferElement(currentTag, len(encapsulated), opts.DeferSize) {
-						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian)
+					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
 					} else {
-						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian)
+						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian, charsets)
 					}
 					pos = endPos
 				} else {
@@ -249,7 +256,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				length,
 				isImplicit,
 				isLittleEndian,
-				encoding,
+				charsets,
 				opts,
 				readCtx,
 			)
@@ -268,10 +275,10 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
 		valueTell := pos + int64(hdrSize)
 
-		if shouldDeferElement(currentTag, length, opts.DeferSize) {
-			markElementDeferred(elem, valueTell, length, isImplicit, isLittleEndian)
+		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+			markElementDeferred(elem, valueTell, length, isImplicit, isLittleEndian, charsets)
 		} else {
-			assignElementBytes(elem, value, vr, isImplicit, isLittleEndian)
+			assignElementBytes(elem, value, vr, isImplicit, isLittleEndian, charsets)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -280,9 +287,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		pos += int64(hdrSize + length)
 
 		if currentTag == TagCharset {
-			if s, ok := elem.Value.(string); ok && s != "" {
-				encoding = s
-			}
+			charsets = ParseCharacterSets(elem.Value)
 		}
 	}
 
@@ -351,13 +356,13 @@ func determineTransferSyntax(fileMeta *FileMetaDataset) UID {
 	return ImplicitVRLittleEndian
 }
 
-func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
-	seq, newPos := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, encoding, opts, ctx)
+func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
+	seq, newPos := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, charsets, opts, ctx)
 	seq.IsUndefinedLength = true
 	return seq, newPos
 }
 
-func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
+func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (*Sequence, int64) {
 	return readSequenceItemsUntil(
 		data,
 		offset,
@@ -365,7 +370,7 @@ func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicit
 		false,
 		isImplicitVR,
 		isLittleEndian,
-		encoding,
+		charsets,
 		opts,
 		ctx,
 	)
@@ -378,7 +383,7 @@ func readSequenceItemsUntil(
 	undefinedLength bool,
 	isImplicitVR bool,
 	isLittleEndian bool,
-	encoding string,
+	charsets []string,
 	opts *ReadOptions,
 	ctx *readContext,
 ) (*Sequence, int64) {
@@ -417,14 +422,14 @@ func readSequenceItemsUntil(
 		if itemLength == 0xFFFFFFFF {
 			item.IsUndefinedLengthSequenceItem = true
 			var err error
-			pos, err = readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
+			pos, err = readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, charsets, opts, ctx)
 			if err != nil {
 				return seq, pos
 			}
 		} else if itemLength > 0 {
 			itemEnd := pos + int64(itemLength)
 			var err error
-			pos, err = readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, encoding, opts, ctx)
+			pos, err = readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, charsets, opts, ctx)
 			if err != nil {
 				return seq, pos
 			}
@@ -441,8 +446,11 @@ func readSequenceItemsUntil(
 	return seq, pos
 }
 
-func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, encoding string, opts *ReadOptions, ctx *readContext) (int64, error) {
+func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (int64, error) {
 	ds.readCtx = ctx
+	if len(charsets) == 0 {
+		charsets = []string{DefaultCharacterSet}
+	}
 	pos := offset
 
 	for pos+4 <= end && pos+4 <= int64(len(data)) {
@@ -452,7 +460,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			return pos + 8, nil
 		}
 
-		if opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
+		if opts != nil && opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
 			return pos, nil
 		}
 
@@ -521,16 +529,16 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
 			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicitVR, isLittleEndian, encoding, opts, ctx)
+				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicitVR, isLittleEndian, charsets, opts, ctx)
 				elem.Value = seq
 				pos = newPos
 			} else {
 				valueStart := pos + int64(hdrSize)
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
-					if shouldDeferElement(currentTag, len(encapsulated), opts.DeferSize) {
-						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian)
+					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian, charsets)
 					} else {
-						assignElementBytes(elem, encapsulated, vr, isImplicitVR, isLittleEndian)
+						assignElementBytes(elem, encapsulated, vr, isImplicitVR, isLittleEndian, charsets)
 					}
 					pos = endPos
 				} else {
@@ -550,7 +558,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				length,
 				isImplicitVR,
 				isLittleEndian,
-				encoding,
+				charsets,
 				opts,
 				ctx,
 			)
@@ -569,10 +577,10 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
 		valueTell := pos + int64(hdrSize)
 
-		if shouldDeferElement(currentTag, length, opts.DeferSize) {
-			markElementDeferred(elem, valueTell, length, isImplicitVR, isLittleEndian)
+		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+			markElementDeferred(elem, valueTell, length, isImplicitVR, isLittleEndian, charsets)
 		} else {
-			assignElementBytes(elem, value, vr, isImplicitVR, isLittleEndian)
+			assignElementBytes(elem, value, vr, isImplicitVR, isLittleEndian, charsets)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -581,9 +589,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		pos += int64(hdrSize + length)
 
 		if currentTag == TagCharset {
-			if s, ok := elem.Value.(string); ok && s != "" {
-				encoding = s
-			}
+			charsets = ParseCharacterSets(elem.Value)
 		}
 	}
 
@@ -641,8 +647,12 @@ func cloneElementBytes(value []byte) []byte {
 	return append([]byte(nil), value...)
 }
 
-func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLittleEndian bool) {
+func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLittleEndian bool, charsets []string) {
 	elem.RawValue = cloneElementBytes(value)
+	var decodeCharsets []string
+	if vrUsesCharacterSet(vr) {
+		decodeCharsets = charsets
+	}
 	raw := &RawDataElement{
 		Tag:            elem.Tag,
 		VR:             vr,
@@ -652,7 +662,7 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLi
 		IsLittleEndian: isLittleEndian,
 		IsRaw:          true,
 	}
-	converted, err := convertValue(raw)
+	converted, err := convertValueWithCharsets(raw, decodeCharsets)
 	if err != nil {
 		elem.Value = value
 		return
