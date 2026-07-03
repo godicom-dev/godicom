@@ -52,7 +52,7 @@ func TestReadCharsetFilesPatientName(t *testing.T) {
 }
 
 func TestCharsetFileWriteRoundtrip(t *testing.T) {
-	for _, file := range []string{"chrFren.dcm", "chrRuss.dcm", "chrGreek.dcm"} {
+	for _, file := range []string{"chrFren.dcm", "chrRuss.dcm", "chrGreek.dcm", "chrX1.dcm"} {
 		t.Run(file, func(t *testing.T) {
 			src := requireCharsetFile(t, file)
 			ds, err := ReadFile(src, nil)

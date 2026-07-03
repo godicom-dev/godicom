@@ -7,20 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-04
+
 ### Added
-- ISO-2022 charset decode on read path (`SpecificCharacterSet` → PN / text VRs)
-- ISO-2022 charset encode on write path with read/write roundtrip tests
-- `PersonName` component helpers (`FamilyName`, `GivenName`, `Formatted`, …) and `Dataset.GetPN`
-- `encaps.CountFragments` and expanded encaps unit / file integration tests
-- Charset integration tests against pydicom `charset_files` samples (via `scripts/fetch-testdata.sh`)
+- **Charset**: ISO-2022 decode on read and encode on write for PN / LO / LT / SH / ST / UT / UC
+- **Charset**: multi-charset code extensions, SQ item charset inheritance
+- **Charset**: integration tests on pydicom `charset_files` (Latin, Greek, Russian, UTF-8, Japanese SQ)
+- **Charset**: UTF-8 (`ISO_IR 192`) write/read roundtrip (`chrX1.dcm`)
+- **PersonName**: component helpers (`FamilyName`, `GivenName`, `Formatted`, …) and `Dataset.GetPN`
+- **Encaps**: `CountFragments` and expanded unit / real-DICOM integration tests
+- **Docs**: `CHANGELOG.md`
 
 ### Changed
 - Nested sequence ambiguous VR handling and `convertInts` odd-length validation
 
-### Planned for v0.5.0
-- UTF-8 (`ISO_IR 192`) write roundtrip verification
-- Full Japanese ISO-2022 multi-byte encode coverage
-- Broader `chr*.dcm` regression matrix
+### Known limitations
+- Japanese ISO-2022 multi-byte **encode** not fully covered (read works, e.g. `chrSQEncoding.dcm`)
+- Broader `chr*.dcm` matrix not exhaustive
+
+**Tests**: 503 passed (v0.4.0: 429)
 
 ## [0.4.0] - 2026-07-03
 
@@ -64,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/godicom-dev/godicom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/godicom-dev/godicom/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/godicom-dev/godicom/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/godicom-dev/godicom/compare/v0.2.0...v0.3.0
