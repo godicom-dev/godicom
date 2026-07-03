@@ -201,3 +201,7 @@ godicom/
 ## 许可
 
 MIT
+
+## 变更记录
+
+See [CHANGELOG.md](CHANGELOG.md).
