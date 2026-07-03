@@ -42,17 +42,43 @@ sha256_file() {
   fi
 }
 
-for i in "${!names[@]}"; do
-  name="${names[$i]}"
-  url="${urls[$i]}"
-  want="${hashes[$i]}"
-  path="$out_dir/$name"
+PYDICOM_DATA_REF="fb1f24e4f0418008757766d8e79ec92dc2ab9855"
+charset_base="https://raw.githubusercontent.com/pydicom/pydicom/${PYDICOM_DATA_REF}/src/pydicom/data/charset_files"
+
+declare -a charset_names=(
+  chrRuss.dcm
+  chrFren.dcm
+  chrGreek.dcm
+  chrX1.dcm
+  chrSQEncoding.dcm
+)
+declare -a charset_urls=(
+  "${charset_base}/chrRuss.dcm"
+  "${charset_base}/chrFren.dcm"
+  "${charset_base}/chrGreek.dcm"
+  "${charset_base}/chrX1.dcm"
+  "${charset_base}/chrSQEncoding.dcm"
+)
+declare -a charset_hashes=(
+  e82d8856b7d9fb407a80a2824dc7adf8daf7ced265450d698955f754a9af1730
+  8363f3d2e55b448a688ed7863675bf9645e77a919486ddfb8faa12227e28b097
+  cdbdf7820642c13c26b49e496d571f390418d3078e75b2c070e5c668861ed49b
+  133232a666587ee884804cb07aaa4becf36f720bc5919a0781732ce691f5dedc
+  b124a74bcf2f258ee8c99c354208eb7ceb3969e7f2e827d9dd6e41905facaa7e
+)
+
+fetch_verified() {
+  local name="$1"
+  local url="$2"
+  local want="$3"
+  local dir="$4"
+  local path="$dir/$name"
 
   if [[ -f "$path" ]]; then
     got=$(sha256_file "$path")
     if [[ "$got" == "$want" ]]; then
       echo "ok $name"
-      continue
+      return 0
     fi
   fi
 
@@ -64,6 +90,16 @@ for i in "${!names[@]}"; do
     exit 1
   fi
   echo "wrote $path"
+}
+
+for i in "${!names[@]}"; do
+  fetch_verified "${names[$i]}" "${urls[$i]}" "${hashes[$i]}" "$out_dir"
 done
 
-echo "testdata ready under $out_dir"
+charset_dir="testdata/charset"
+mkdir -p "$charset_dir"
+for i in "${!charset_names[@]}"; do
+  fetch_verified "${charset_names[$i]}" "${charset_urls[$i]}" "${charset_hashes[$i]}" "$charset_dir"
+done
+
+echo "testdata ready under $out_dir and $charset_dir"
