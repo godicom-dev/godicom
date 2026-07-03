@@ -34,7 +34,7 @@ var dicomEncodings = map[string]encoding.Encoding{
 	"ISO 2022 IR 109":                charmap.ISO8859_3,
 	"ISO 2022 IR 110":                charmap.ISO8859_4,
 	"ISO 2022 IR 126":                charmap.ISO8859_7,
-	"ISO 2022 IR 127":                 charmap.ISO8859_6,
+	"ISO 2022 IR 127":                charmap.ISO8859_6,
 	"ISO 2022 IR 138":                charmap.ISO8859_8,
 	"ISO 2022 IR 144":                charmap.ISO8859_5,
 	"ISO 2022 IR 148":                charmap.ISO8859_9,
