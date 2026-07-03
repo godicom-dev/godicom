@@ -71,9 +71,9 @@ func TestCorrectAmbiguousVRNestedBeamSequence(t *testing.T) {
 func TestCorrectAmbiguousVRModalityLUTSequenceExplicit(t *testing.T) {
 	// pydicom.tests.test_filewriter.TestCorrectAmbiguousVR.test_ambiguous_element_in_sequence_explicit_using_attribute
 	tests := []struct {
-		name       string
-		pixelRepr  int
-		wantLUTVR  VR
+		name      string
+		pixelRepr int
+		wantLUTVR VR
 	}{
 		{"unsigned", 0, VRUS},
 		{"signed", 1, VRSS},
