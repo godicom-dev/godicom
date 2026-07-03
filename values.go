@@ -215,7 +215,9 @@ func convertUI(b []byte) (UID, error) {
 
 func convertPN(b []byte) (PersonName, error) {
 	s := strings.TrimRight(string(b), " \x00")
-	return ParsePersonName(s), nil
+	pn := ParsePersonName(s)
+	pn.Original = s
+	return pn, nil
 }
 
 func convertATValue(b []byte, le bool) (interface{}, error) {

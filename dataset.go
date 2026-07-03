@@ -264,6 +264,23 @@ func (d *Dataset) GetDT(tag Tag) (DT, bool) {
 	return DT{}, false
 }
 
+func (d *Dataset) GetPN(tag Tag) (PersonName, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return PersonName{}, false
+	}
+	e, ok := d.elements[tag]
+	if !ok || e.Value == nil {
+		return PersonName{}, false
+	}
+	switch v := e.Value.(type) {
+	case PersonName:
+		return v, true
+	case string:
+		return ParsePersonName(v), true
+	}
+	return PersonName{}, false
+}
+
 func (d *Dataset) GetDS(tag Tag) (DS, bool) {
 	if err := d.loadDeferred(tag); err != nil {
 		return DS{}, false
