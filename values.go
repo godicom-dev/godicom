@@ -8,11 +8,7 @@ import (
 	"strings"
 )
 
-// convertValue converts raw bytes to a Go value based on VR.
-func convertValue(raw *RawDataElement) (interface{}, error) {
-	return convertValueWithCharsets(raw, nil)
-}
-
+// convertValueWithCharsets converts raw bytes to a Go value based on VR.
 func convertValueWithCharsets(raw *RawDataElement, charsets []string) (interface{}, error) {
 	if raw.Value == nil {
 		return emptyValueForVR(raw.VR), nil
@@ -85,17 +81,6 @@ func emptyValueForVR(vr VR) interface{} {
 
 func convertString(b []byte) (string, error) {
 	return strings.TrimRight(string(b), " \x00"), nil
-}
-
-func convertText(b []byte) (string, error) {
-	v, err := convertTextWithCharsets(b, nil)
-	if err != nil {
-		return "", err
-	}
-	if s, ok := v.(string); ok {
-		return s, nil
-	}
-	return fmt.Sprintf("%v", v), nil
 }
 
 func convertTextWithCharsets(b []byte, charsets []string) (interface{}, error) {
