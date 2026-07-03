@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -86,6 +87,21 @@ var iso2022HandledEncodings = map[string]bool{
 	"ISO 2022 IR 159": true,
 	"ISO 2022 IR 58":  true,
 	"ISO 2022 IR 149": true,
+}
+
+var characterSetToEscape map[string]string
+
+func init() {
+	characterSetToEscape = make(map[string]string)
+	for escSeq, cs := range escapeToCharacterSet {
+		if _, exists := characterSetToEscape[cs]; !exists {
+			characterSetToEscape[cs] = escSeq
+		}
+		key := characterSetKey(cs)
+		if _, exists := characterSetToEscape[key]; !exists {
+			characterSetToEscape[key] = escSeq
+		}
+	}
 }
 
 var iso2022FragmentRe = regexp.MustCompile(`(?s)(^[^\x1b]+|[\x1b][^\x1b]*)`)
@@ -347,4 +363,142 @@ func vrUsesCharacterSet(vr VR) bool {
 	default:
 		return false
 	}
+}
+
+func needsCharsetEncode(encodings []string) bool {
+	normalized := ConvertCharacterSets(encodings)
+	if len(normalized) > 1 {
+		return true
+	}
+	if len(normalized) == 0 {
+		return false
+	}
+	return !isDefaultCharacterSet(normalized[0])
+}
+
+func escapeForCharacterSet(cs string) []byte {
+	cs = resolveCharacterSetName(cs)
+	if escSeq, ok := characterSetToEscape[cs]; ok {
+		return []byte(escSeq)
+	}
+	if escSeq, ok := characterSetToEscape[characterSetKey(cs)]; ok {
+		return []byte(escSeq)
+	}
+	return nil
+}
+
+func isISO2022HandledEncoding(cs string) bool {
+	cs = resolveCharacterSetName(cs)
+	return iso2022HandledEncodings[cs] || iso2022HandledEncodings[characterSetKey(cs)]
+}
+
+// EncodeBytesWithCharsets encodes a Unicode string for DICOM text VRs.
+func EncodeBytesWithCharsets(s string, encodings []string) []byte {
+	encodings = ConvertCharacterSets(encodings)
+	if s == "" {
+		return nil
+	}
+	if !needsCharsetEncode(encodings) {
+		return []byte(s)
+	}
+	if len(encodings) == 1 || standaloneCharacterSets[encodings[0]] {
+		b, err := EncodeString(s, encodings[0])
+		if err != nil {
+			return []byte(s)
+		}
+		return b
+	}
+	for i, enc := range encodings {
+		b, err := EncodeString(s, enc)
+		if err == nil {
+			if i > 0 && !isISO2022HandledEncoding(enc) {
+				if esc := escapeForCharacterSet(enc); len(esc) > 0 {
+					b = append(append([]byte(nil), esc...), b...)
+				}
+			}
+			return b
+		}
+	}
+	return encodeStringParts(s, encodings)
+}
+
+func encodeStringParts(value string, encodings []string) []byte {
+	encodings = ConvertCharacterSets(encodings)
+	var out []byte
+	remaining := value
+
+	for remaining != "" {
+		bestPrefix := ""
+		bestEnc := encodings[0]
+		for _, enc := range encodings {
+			prefix := longestEncodablePrefix(remaining, enc)
+			if len([]rune(prefix)) > len([]rune(bestPrefix)) {
+				bestPrefix = prefix
+				bestEnc = enc
+			}
+		}
+		if bestPrefix == "" {
+			r, size := utf8.DecodeRuneInString(remaining)
+			if r == utf8.RuneError && size == 0 {
+				break
+			}
+			repl, _ := EncodeString(string(r), encodings[0])
+			out = append(out, repl...)
+			remaining = remaining[size:]
+			continue
+		}
+		chunk, err := EncodeString(bestPrefix, bestEnc)
+		if err != nil {
+			break
+		}
+		if bestEnc != encodings[0] && !isISO2022HandledEncoding(bestEnc) {
+			if esc := escapeForCharacterSet(bestEnc); len(esc) > 0 {
+				out = append(out, esc...)
+			}
+		}
+		out = append(out, chunk...)
+		remaining = remaining[len(bestPrefix):]
+	}
+	return out
+}
+
+func longestEncodablePrefix(s, encName string) string {
+	var b strings.Builder
+	for _, r := range s {
+		trial := b.String() + string(r)
+		if _, err := EncodeString(trial, encName); err != nil {
+			return b.String()
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// EncodePersonNameWithCharsets encodes a PersonName for writing.
+func EncodePersonNameWithCharsets(pn PersonName, encodings []string) []byte {
+	if pn.IsZero() {
+		return nil
+	}
+	if !needsCharsetEncode(encodings) {
+		return []byte(strings.TrimRight(pn.String(), " \x00"))
+	}
+
+	groups := []string{pn.Alphabetic, pn.Ideographic, pn.Phonetic}
+	for len(groups) > 0 && groups[len(groups)-1] == "" {
+		groups = groups[:len(groups)-1]
+	}
+	if len(groups) == 0 && pn.Original != "" {
+		return EncodeBytesWithCharsets(strings.TrimRight(pn.Original, " \x00"), encodings)
+	}
+
+	parts := make([][]byte, len(groups))
+	for i, comp := range groups {
+		hatParts := strings.Split(comp, "^")
+		encodedHat := make([][]byte, len(hatParts))
+		for j, hp := range hatParts {
+			encodedHat[j] = EncodeBytesWithCharsets(hp, encodings)
+		}
+		parts[i] = bytes.Join(encodedHat, []byte{'^'})
+	}
+	return bytes.Join(parts, []byte{'='})
 }

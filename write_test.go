@@ -127,7 +127,7 @@ func encodeElementImplicitLittle(elem *DataElement) []byte {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	_ = writeElement(fp, elem, true, true)
+	_ = writeElement(fp, elem, true, true, nil)
 	return buf.Bytes()
 }
 
@@ -135,7 +135,7 @@ func encodeElementExplicitLittle(elem *DataElement) []byte {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	_ = writeElement(fp, elem, false, true)
+	_ = writeElement(fp, elem, false, true, nil)
 	return buf.Bytes()
 }
 
@@ -441,7 +441,7 @@ func TestWriteElementRawUndefinedExplicitLongVR(t *testing.T) {
 	elem.RawValue = []byte{0x01, 0x02}
 	elem.IsUndefinedLength = true
 
-	if err := writeElement(fp, elem, false, true); err != nil {
+	if err := writeElement(fp, elem, false, true, nil); err != nil {
 		t.Fatal(err)
 	}
 

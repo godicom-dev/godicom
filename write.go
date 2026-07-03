@@ -164,7 +164,7 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
 		dsWriter.SetByteOrder(isLittleEndian)
-		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian); err != nil {
+		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian, nil); err != nil {
 			return fmt.Errorf("godicom: error writing dataset: %w", err)
 		}
 		var deflated bytes.Buffer
@@ -188,7 +188,7 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		return nil
 	}
 
-	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian); err != nil {
+	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian, nil); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
@@ -220,7 +220,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 		if elem.Tag.Group() != 0x0002 {
 			continue
 		}
-		if err := writeElement(metaWriter, elem, false, true); err != nil {
+		if err := writeElement(metaWriter, elem, false, true, nil); err != nil {
 			return err
 		}
 	}
@@ -236,7 +236,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 				if e.Tag.Group() != 0x0002 {
 					continue
 				}
-				if err := writeElement(metaWriter, e, false, true); err != nil {
+				if err := writeElement(metaWriter, e, false, true, nil); err != nil {
 					return err
 				}
 			}
@@ -249,7 +249,12 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 	return nil
 }
 
-func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) error {
+func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string) error {
+	if len(charsets) == 0 {
+		charsets = []string{DefaultCharacterSet}
+	}
+	localCharsets := append([]string(nil), charsets...)
+
 	encodingChanged := isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
 	if !isImplicit || encodingChanged {
 		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
@@ -265,8 +270,11 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool) err
 		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
 			continue
 		}
-		if err := writeElement(fp, elem, isImplicit, isLittleEndian); err != nil {
+		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets); err != nil {
 			return err
+		}
+		if elem.Tag == TagCharset {
+			localCharsets = ParseCharacterSets(elem.Value)
 		}
 	}
 	return nil
@@ -342,7 +350,7 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 	return nil
 }
 
-func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
+func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string) error {
 	if elem.RawValue != nil && elem.VR != VRSQ {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
 	}
@@ -392,7 +400,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 				var itemBuf bytes.Buffer
 				itemFp := newDicomWriter(&itemBuf)
 				itemFp.SetByteOrder(isLittleEndian)
-				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian); err != nil {
+				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets); err != nil {
 					return err
 				}
 				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
@@ -411,7 +419,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 	}
 
 	// Get encoded value (nil for SQ)
-	encoded := encodeValue(elem, isLittleEndian)
+	encoded := encodeValue(elem, isLittleEndian, charsets)
 
 	// Pad to even length per PS3.5
 	encoded = padToEven(elem.VR, encoded)
@@ -476,7 +484,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
 					itemFp.SetByteOrder(isLittleEndian)
-					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian); err != nil {
+					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets); err != nil {
 						return err
 					}
 					if err := fp.WriteTag(ItemTag); err != nil {
@@ -536,22 +544,22 @@ func padToEven(vr VR, encoded []byte) []byte {
 	return append(encoded, padByte)
 }
 
-func encodeValue(elem *DataElement, le bool) []byte {
+func encodeValue(elem *DataElement, le bool, charsets []string) []byte {
 	if elem.Value == nil {
 		return nil
 	}
 
 	switch elem.VR {
 	case VRAE, VRAS, VRCS, VRDA, VRDT, VRLO, VRLT, VRSH, VRST, VRTM, VRUC, VRUR, VRUT:
-		return encodeString(elem)
+		return encodeStringWithCharsets(elem, charsets)
 	case VRDS:
 		return encodeNumberString(elem)
 	case VRIS:
 		return encodeNumberString(elem)
 	case VRUI:
-		return encodeString(elem)
+		return encodeStringWithCharsets(elem, charsets)
 	case VRPN:
-		return encodePN(elem)
+		return encodePNWithCharsets(elem, charsets)
 	case VRFD:
 		return encodeFloats(elem, le, 8)
 	case VRFL:
@@ -575,24 +583,39 @@ func encodeValue(elem *DataElement, le bool) []byte {
 	case VRSQ:
 		return nil // Handled separately
 	default:
-		return encodeString(elem)
+		return encodeStringWithCharsets(elem, charsets)
 	}
 }
 
-func encodeString(elem *DataElement) []byte {
+func encodeStringWithCharsets(elem *DataElement, charsets []string) []byte {
 	if elem.Value == nil {
 		return nil
 	}
+	useCharsets := vrUsesCharacterSet(elem.VR) && needsCharsetEncode(charsets)
+
 	switch v := elem.Value.(type) {
 	case string:
+		if useCharsets {
+			return EncodeBytesWithCharsets(v, charsets)
+		}
 		return []byte(v)
 	case []byte:
 		return v
 	case []string:
+		if useCharsets {
+			parts := make([][]byte, len(v))
+			for i, part := range v {
+				parts[i] = EncodeBytesWithCharsets(part, charsets)
+			}
+			return bytes.Join(parts, []byte{'\\'})
+		}
 		return []byte(strings.Join(v, "\\"))
 	case UID:
 		return []byte(string(v))
 	case PersonName:
+		if useCharsets {
+			return EncodePersonNameWithCharsets(v, charsets)
+		}
 		return []byte(v.String())
 	case DA:
 		return []byte(v.String())
@@ -616,7 +639,28 @@ func encodeString(elem *DataElement) []byte {
 		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
 	case *MultiValue[DT]:
 		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
+	case *MultiValue[string]:
+		if useCharsets {
+			parts := make([][]byte, v.Len())
+			for i, part := range v.Values() {
+				parts[i] = EncodeBytesWithCharsets(part, charsets)
+			}
+			return bytes.Join(parts, []byte{'\\'})
+		}
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i] }))
+	case *MultiValue[PersonName]:
+		if useCharsets {
+			parts := make([][]byte, v.Len())
+			for i, pn := range v.Values() {
+				parts[i] = EncodePersonNameWithCharsets(pn, charsets)
+			}
+			return bytes.Join(parts, []byte{'\\'})
+		}
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
 	case fmt.Stringer:
+		if useCharsets {
+			return EncodeBytesWithCharsets(v.String(), charsets)
+		}
 		return []byte(v.String())
 	}
 	return []byte(fmt.Sprintf("%v", elem.Value))
@@ -697,15 +741,31 @@ func encodeNumberString(elem *DataElement) []byte {
 	return []byte(fmt.Sprintf("%v", elem.Value))
 }
 
-func encodePN(elem *DataElement) []byte {
+func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {
 	if elem.Value == nil {
 		return nil
 	}
+	useCharsets := needsCharsetEncode(charsets)
 	switch v := elem.Value.(type) {
 	case PersonName:
+		if useCharsets {
+			return EncodePersonNameWithCharsets(v, charsets)
+		}
 		return []byte(v.String())
 	case string:
+		if useCharsets {
+			return EncodeBytesWithCharsets(v, charsets)
+		}
 		return []byte(v)
+	case *MultiValue[PersonName]:
+		if useCharsets {
+			parts := make([][]byte, v.Len())
+			for i, pn := range v.Values() {
+				parts[i] = EncodePersonNameWithCharsets(pn, charsets)
+			}
+			return bytes.Join(parts, []byte{'\\'})
+		}
+		return []byte(joinStringParts(v.Len(), func(i int) string { return v.Values()[i].String() }))
 	}
 	return []byte(fmt.Sprintf("%v", elem.Value))
 }

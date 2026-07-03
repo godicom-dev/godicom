@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -283,6 +284,111 @@ func TestMultiCharsetMultiValueText(t *testing.T) {
 		if mv.Get(i) != expected {
 			t.Fatalf("[%d] = %q, want %q", i, mv.Get(i), expected)
 		}
+	}
+}
+
+func TestEncodeDecodeRoundtrip(t *testing.T) {
+	for _, tt := range encodedNames {
+		t.Run(tt.encoding, func(t *testing.T) {
+			decoded := DecodeBytesWithDelimiters(tt.raw, []string{"", tt.encoding}, pnDelims)
+			encoded := EncodeBytesWithCharsets(decoded, []string{"", tt.encoding})
+			got := DecodeBytesWithDelimiters(encoded, []string{"", tt.encoding}, pnDelims)
+			if got != decoded {
+				t.Fatalf("roundtrip = %q, want %q", got, decoded)
+			}
+		})
+	}
+}
+
+func TestEncodePersonNameRoundtrip(t *testing.T) {
+	raw := []byte("Dionysios=\x1b\x2d\x46\xc4\xe9\xef\xed\xf5\xf3\xe9\xef\xf2")
+	charsets := []string{"ISO 2022 IR 100", "ISO 2022 IR 126"}
+	pn, err := decodePersonNameBytes(raw, charsets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := EncodePersonNameWithCharsets(pn, charsets)
+	got, err := decodePersonNameBytes(encoded, charsets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != pn.String() {
+		t.Fatalf("roundtrip PN = %q, want %q", got.String(), pn.String())
+	}
+}
+
+func TestWriteCharsetRoundtrip(t *testing.T) {
+	ds := NewDataset()
+	ds.Set(NewDataElement(TagCharset, VRCS, "ISO_IR 100"))
+	ds.Set(NewDataElement(MustTag(0x00100010), VRPN, PersonName{Alphabetic: "Buc^Jérôme"}))
+
+	var buf bytes.Buffer
+	fp := newDicomWriter(&buf)
+	fp.SetByteOrder(true)
+	if err := writeDataset(fp, ds, false, true, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	readDS := NewDataset()
+	ctx := &readContext{data: buf.Bytes()}
+	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, false, true, []string{DefaultCharacterSet}, nil, ctx); err != nil {
+		t.Fatal(err)
+	}
+	elem, ok := readDS.Get(MustTag(0x00100010))
+	if !ok {
+		t.Fatal("PatientName missing")
+	}
+	pn := elem.Value.(PersonName)
+	if pn.String() != "Buc^Jérôme" {
+		t.Fatalf("PatientName = %q", pn.String())
+	}
+}
+
+func TestSequenceCharsetInheritance(t *testing.T) {
+	// Parent default ASCII; SQ item declares ISO_IR 100 for its PatientName.
+	item := NewDataset()
+	item.Set(NewDataElement(TagCharset, VRCS, "ISO_IR 100"))
+	item.Set(NewDataElement(MustTag(0x00100010), VRPN, PersonName{Alphabetic: "Buc^Jérôme"}))
+
+	seq := NewSequence([]*Dataset{item})
+	parent := NewDataset()
+	parent.Set(NewDataElement(MustTag(0x00100060), VRPN, PersonName{Alphabetic: "ASCII^Name"}))
+	parent.Set(NewDataElement(MustTag(0x00400020), VRSQ, seq))
+
+	var buf bytes.Buffer
+	fp := newDicomWriter(&buf)
+	fp.SetByteOrder(true)
+	if err := writeDataset(fp, parent, false, true, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	readDS := NewDataset()
+	ctx := &readContext{data: buf.Bytes()}
+	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, false, true, []string{DefaultCharacterSet}, nil, ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	sqElem, ok := readDS.Get(MustTag(0x00400020))
+	if !ok {
+		t.Fatal("sequence missing")
+	}
+	sq := sqElem.Value.(*Sequence)
+	if sq.Len() != 1 {
+		t.Fatalf("sequence len = %d", sq.Len())
+	}
+	itemPN, ok := sq.Items()[0].Get(MustTag(0x00100010))
+	if !ok {
+		t.Fatal("item PatientName missing")
+	}
+	if itemPN.Value.(PersonName).String() != "Buc^Jérôme" {
+		t.Fatalf("item PN = %q", itemPN.Value.(PersonName).String())
+	}
+	parentPN, ok := readDS.Get(MustTag(0x00100060))
+	if !ok {
+		t.Fatal("parent PN missing")
+	}
+	if parentPN.Value.(PersonName).String() != "ASCII^Name" {
+		t.Fatalf("parent PN = %q", parentPN.Value.(PersonName).String())
 	}
 }
 
