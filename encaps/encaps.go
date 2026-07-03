@@ -121,6 +121,15 @@ func GetFrame(pixelData []byte, index int, opts FramesOptions) ([]byte, error) {
 	return frames[index], nil
 }
 
+// CountFragments returns the number of fragment items in encapsulated pixel data
+// starting at the first fragment item (after the Basic Offset Table, if any).
+func CountFragments(fragmentData []byte, littleEndian bool) (int, error) {
+	if !littleEndian {
+		return 0, errors.New("encaps: only little endian encapsulated pixel data is supported")
+	}
+	return countFragments(fragmentData, littleEndian)
+}
+
 func readFragments(buf []byte, littleEndian bool) ([][]byte, error) {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !littleEndian {
