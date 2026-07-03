@@ -259,6 +259,11 @@ func convertFloats(b []byte, le bool, size int) (interface{}, error) {
 }
 
 func convertInts(b []byte, le bool, size int, signed bool) (interface{}, error) {
+	if len(b)%size != 0 {
+		return nil, fmt.Errorf(
+			"expected total bytes to be an even multiple of bytes per value",
+		)
+	}
 	var order binary.ByteOrder = binary.LittleEndian
 	if !le {
 		order = binary.BigEndian
