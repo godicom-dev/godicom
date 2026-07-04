@@ -606,11 +606,6 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 	return pos, nil
 }
 
-func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, isLittleEndian bool) int64 {
-	_, endPos := readBytesUntilDelimiter(data, offset, delimiter, isLittleEndian)
-	return endPos
-}
-
 func shouldReadUndefinedLengthAsSequence(vr VR) bool {
 	if vr == VRSQ || vr == "" {
 		return true
