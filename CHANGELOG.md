@@ -7,16 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-04
+
 ### Added
-- **File Writer**: byte-identical roundtrip tests for undefined-length sequences, private nested SQ, and additional pydicom fixtures
+- **File Writer**: byte-identical roundtrip tests for undefined-length sequences, private nested SQ, `MR_small_implicit.dcm`, and additional pydicom fixtures
+- **File Writer**: implicit nested ambiguous VR via sequence owner/parent ancestor chain; pydicom-aligned P2 tests (index/nearest access, parent change, `(FFFF,FFFF)`, no-preamble/prefix)
+- **File Writer**: `CorrectAmbiguousVRPreservingRaw` for implicit writes with in-memory values while keeping raw byte roundtrips
 - **Reader**: undefined-length UN values parsed as sequences (PS3.5 6.2.2); raw byte preservation for other undefined-length elements
-- **v0.6**: transfer syntax encoding from file meta; TS conversion roundtrip tests (BE↔LE); RawValue preserved on same-encoding write; lazy ambiguous VR correction on `Get` for file-read elements
-- **v0.6**: `UN_sequence.dcm` semantic read test; overlay/waveform ambiguous VR tests; file meta validation/group length tests
+- **Reader**: `Force` read of small files without preamble; propagate transfer syntax encoding into nested sequence items
+- Transfer syntax encoding from file meta; TS conversion roundtrip tests (BE↔LE); lazy ambiguous VR correction on `Get` for file-read elements
+- `UN_sequence.dcm` semantic read test; overlay/waveform ambiguous VR tests; file meta validation/group length tests
 
 ### Fixed
 - **File Writer**: nested sequences with repeated tags no longer skip items due to incorrect cycle detection
-- **Ambiguous VR**: `WaveformBitsAllocated` tag lookup (was wrongly using `WaveformBitsStored`)
 - **File Writer**: re-encode from typed values when output transfer syntax differs from read encoding (instead of writing stale RawValue bytes)
+- **File Writer**: `encodeInts` handles `[]int` / `[]int64` (fixes empty LUTDescriptor on implicit write)
+- **Ambiguous VR**: `WaveformBitsAllocated` tag lookup (was wrongly using `WaveformBitsStored`)
+
+**Tests**: 531 passed (v0.5.0: 503)
 
 ## [0.5.0] - 2026-07-04
 
@@ -80,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/godicom-dev/godicom/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/godicom-dev/godicom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/godicom-dev/godicom/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/godicom-dev/godicom/compare/v0.3.0...v0.3.1
