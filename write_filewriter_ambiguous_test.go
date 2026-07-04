@@ -16,7 +16,7 @@ func TestWriteExplicitVRAmbiguousUnresolved(t *testing.T) {
 	ds := NewDataset()
 	ds.Set(NewDataElement(MustTag("PerimeterValue"), VRUsSS, []byte{0x00, 0x01}))
 
-	err := writeDataset(fp, ds, false, true, nil)
+	err := writeDataset(fp, ds, false, true, nil, false)
 	if err == nil {
 		t.Fatal("writeDataset error = nil, want ambiguous VR error")
 	}

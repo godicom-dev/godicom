@@ -9,16 +9,18 @@ import (
 	"math"
 	"os"
 	"strings"
+
+	"github.com/godicom-dev/godicom/uid"
 )
 
 var (
-	sqDepth    int
-	sqTagStack []Tag
+	sqDepth           int
+	visitingSequences map[*Sequence]struct{}
 )
 
 func resetWriteGlobals() {
 	sqDepth = 0
-	sqTagStack = sqTagStack[:0]
+	visitingSequences = nil
 }
 
 // WriteOptions controls DICOM file writing behavior.
@@ -59,29 +61,19 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		}
 	}
 
-	// Determine encoding
-	isImplicit := false
-	isLittleEndian := true
-
-	if opts.ImplicitVR != nil {
-		isImplicit = *opts.ImplicitVR
-	} else {
-		isImplicit = source.dataset.originalEnc.IsImplicitVR
+	fileMeta := source.fileMeta
+	if fileMeta != nil {
+		fileMeta = cloneFileMeta(fileMeta)
 	}
 
-	if opts.LittleEndian != nil {
-		isLittleEndian = *opts.LittleEndian
-	} else {
-		isLittleEndian = source.dataset.originalEnc.IsLittleEndian
+	// Determine encoding (transfer syntax in file meta takes priority over originalEnc).
+	isImplicit, isLittleEndian, encErr := determineWriteEncoding(fileMeta, source.dataset, opts)
+	if encErr != nil {
+		return encErr
 	}
 
 	if !opts.EnforceFileFormat && isImplicit && !isLittleEndian {
 		return fmt.Errorf("godicom: implicit VR and big endian is not a valid encoding combination")
-	}
-
-	fileMeta := source.fileMeta
-	if fileMeta != nil {
-		fileMeta = cloneFileMeta(fileMeta)
 	}
 
 	if opts.EnforceFileFormat {
@@ -164,7 +156,7 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
 		dsWriter.SetByteOrder(isLittleEndian)
-		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian, nil); err != nil {
+		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
 			return fmt.Errorf("godicom: error writing dataset: %w", err)
 		}
 		var deflated bytes.Buffer
@@ -188,18 +180,11 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		return nil
 	}
 
-	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian, nil); err != nil {
+	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
 	return nil
-}
-
-func transferSyntaxUID(fileMeta *FileMetaDataset) (string, bool) {
-	if fileMeta == nil {
-		return "", false
-	}
-	return fileMeta.GetString(MustTag("TransferSyntaxUID"))
 }
 
 func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard bool) error {
@@ -220,7 +205,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 		if elem.Tag.Group() != 0x0002 {
 			continue
 		}
-		if err := writeElement(metaWriter, elem, false, true, nil); err != nil {
+		if err := writeElement(metaWriter, elem, false, true, nil, false); err != nil {
 			return err
 		}
 	}
@@ -236,7 +221,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 				if e.Tag.Group() != 0x0002 {
 					continue
 				}
-				if err := writeElement(metaWriter, e, false, true, nil); err != nil {
+				if err := writeElement(metaWriter, e, false, true, nil, false); err != nil {
 					return err
 				}
 			}
@@ -249,13 +234,74 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 	return nil
 }
 
-func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string) error {
+func transferSyntaxUID(fileMeta *FileMetaDataset) (string, bool) {
+	if fileMeta == nil {
+		return "", false
+	}
+	return fileMeta.GetString(MustTag("TransferSyntaxUID"))
+}
+
+// determineWriteEncoding selects implicit VR and endianness for writing.
+// Mirrors pydicom.filewriter._determine_encoding (non-force path).
+func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteOptions) (isImplicit, isLittleEndian bool, err error) {
+	if opts == nil {
+		opts = &WriteOptions{}
+	}
+
+	fallbackImplicit := ds.originalEnc.IsImplicitVR
+	fallbackLittle := ds.originalEnc.IsLittleEndian
+	if opts.ImplicitVR != nil {
+		fallbackImplicit = *opts.ImplicitVR
+	}
+	if opts.LittleEndian != nil {
+		fallbackLittle = *opts.LittleEndian
+	} else if opts.ImplicitVR != nil {
+		fallbackLittle = true
+	}
+
+	tsUID, hasTS := transferSyntaxUID(fileMeta)
+	if !hasTS || tsUID == "" {
+		return fallbackImplicit, fallbackLittle, nil
+	}
+
+	info, ok := uid.Known[uid.UID(tsUID)]
+	if !ok || !info.IsTransferSyntax {
+		return fallbackImplicit, fallbackLittle, nil
+	}
+
+	// Explicit WriteOptions override file meta transfer syntax.
+	if opts.ImplicitVR != nil || opts.LittleEndian != nil {
+		if opts.ImplicitVR != nil && opts.LittleEndian != nil {
+			if *opts.ImplicitVR != info.IsImplicitVR {
+				return false, false, fmt.Errorf(
+					"godicom: ImplicitVR=%t is inconsistent with transfer syntax %q",
+					*opts.ImplicitVR, tsUID,
+				)
+			}
+			if *opts.LittleEndian != info.IsLittleEndian {
+				return false, false, fmt.Errorf(
+					"godicom: LittleEndian=%t is inconsistent with transfer syntax %q",
+					*opts.LittleEndian, tsUID,
+				)
+			}
+		}
+		return fallbackImplicit, fallbackLittle, nil
+	}
+
+	return info.IsImplicitVR, info.IsLittleEndian, nil
+}
+
+func encodingChanged(ds *Dataset, isImplicit, isLittleEndian bool) bool {
+	return isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
+}
+
+func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
 	if len(charsets) == 0 {
 		charsets = []string{DefaultCharacterSet}
 	}
 	localCharsets := append([]string(nil), charsets...)
 
-	encodingChanged := isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
+	encodingChanged := reencodeValues
 	if !isImplicit || encodingChanged {
 		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
 			return err
@@ -270,7 +316,7 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, cha
 		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
 			continue
 		}
-		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets); err != nil {
+		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets, encodingChanged); err != nil {
 			return err
 		}
 		if elem.Tag == TagCharset {
@@ -350,8 +396,8 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 	return nil
 }
 
-func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string) error {
-	if elem.RawValue != nil && elem.VR != VRSQ {
+func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
+	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
 	}
 
@@ -365,23 +411,31 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 	fp.SetByteOrder(isLittleEndian)
 
 	isSQ := elem.VR == VRSQ
+	var seq *Sequence
+	if isSQ {
+		seq, _ = elem.Value.(*Sequence)
+	}
 	undefinedSQ := elem.IsUndefinedLength
-	if isSQ && !undefinedSQ {
-		if seq, ok := elem.Value.(*Sequence); ok && seq != nil {
-			undefinedSQ = seq.IsUndefinedLength
-		}
+	if isSQ && !undefinedSQ && seq != nil {
+		undefinedSQ = seq.IsUndefinedLength
 	}
 
-	// Cycle detection: check if this SQ tag is already in the ancestor stack
 	isCircular := false
-	if isSQ {
-		for _, t := range sqTagStack {
-			if t == elem.Tag {
-				isCircular = true
-				break
-			}
+	if isSQ && seq != nil {
+		if visitingSequences != nil {
+			_, isCircular = visitingSequences[seq]
 		}
-		sqTagStack = append(sqTagStack, elem.Tag)
+	}
+	enteredSequence := false
+	if isSQ && seq != nil && !isCircular {
+		if visitingSequences == nil {
+			visitingSequences = make(map[*Sequence]struct{})
+		}
+		visitingSequences[seq] = struct{}{}
+		enteredSequence = true
+	}
+	if enteredSequence {
+		defer delete(visitingSequences, seq)
 	}
 
 	// For defined-length SQs with items (and not circular), pre-compute content
@@ -400,7 +454,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 				var itemBuf bytes.Buffer
 				itemFp := newDicomWriter(&itemBuf)
 				itemFp.SetByteOrder(isLittleEndian)
-				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets); err != nil {
+				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues); err != nil {
 					return err
 				}
 				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
@@ -484,7 +538,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
 					itemFp.SetByteOrder(isLittleEndian)
-					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets); err != nil {
+					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues); err != nil {
 						return err
 					}
 					if err := fp.WriteTag(ItemTag); err != nil {
@@ -521,11 +575,6 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 		if err := fp.WriteUint32(0); err != nil {
 			return err
 		}
-	}
-
-	// Pop tag from ancestor stack
-	if isSQ {
-		sqTagStack = sqTagStack[:len(sqTagStack)-1]
 	}
 
 	return nil
