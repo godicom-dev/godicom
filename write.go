@@ -306,6 +306,8 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, cha
 		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
 			return err
 		}
+	} else if err := CorrectAmbiguousVRPreservingRaw(ds, isLittleEndian, nil); err != nil {
+		return err
 	}
 
 	for _, elem := range ds.Iter() {
@@ -883,6 +885,14 @@ func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
 		ints = []uint64{v}
 	case *MultiValue[int]:
 		for _, x := range v.Values() {
+			ints = append(ints, uint64(x))
+		}
+	case []int:
+		for _, x := range v {
+			ints = append(ints, uint64(x))
+		}
+	case []int64:
+		for _, x := range v {
 			ints = append(ints, uint64(x))
 		}
 	case *MultiValue[int64]:

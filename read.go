@@ -83,20 +83,18 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	}
 	f.Close()
 
-	if len(data) < 132 {
+	if len(data) < 8 {
 		return nil, &InvalidDICOMError{Message: "file too small"}
 	}
 
-	preamble := data[:128]
-	pos := int64(132)
+	var preamble []byte
+	pos := int64(0)
 
-	if string(data[128:132]) != "DICM" {
-		if !opts.Force {
-			return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
-		}
-		// Per pydicom: if force and no DICM, seek to 0
-		preamble = nil
-		pos = 0
+	if len(data) >= 132 && string(data[128:132]) == "DICM" {
+		preamble = data[:128]
+		pos = 132
+	} else if !opts.Force {
+		return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
 	}
 	isLittleEndian := true
 	isImplicit := false
@@ -320,6 +318,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 			IsLittleEndian: isLittleEndian,
 		}
 	}
+	propagateEncoding(ds, ds.originalEnc)
 
 	fd := &FileDataset{
 		Dataset:  ds,
@@ -333,6 +332,22 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	ds.readCtx = readCtx
 
 	return fd, nil
+}
+
+func propagateEncoding(ds *Dataset, enc EncodingInfo) {
+	ds.originalEnc = enc
+	for _, elem := range ds.Iter() {
+		if elem.VR != VRSQ {
+			continue
+		}
+		seq, ok := elem.Value.(*Sequence)
+		if !ok {
+			continue
+		}
+		for _, item := range seq.Items() {
+			propagateEncoding(item, enc)
+		}
+	}
 }
 
 func determineTransferSyntaxFromElements(elements []*DataElement) UID {

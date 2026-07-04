@@ -75,7 +75,7 @@ func (d *Dataset) Get(tag Tag) (*DataElement, bool) {
 		return nil, false
 	}
 	if IsAmbiguousVR(e.VR) && e.IsRaw() {
-		_ = correctAmbiguousVRElement(e, d, d.originalEnc.IsLittleEndian, nil)
+		_ = correctAmbiguousVRElement(e, d, d.originalEnc.IsLittleEndian, d.ambiguousVRAncestors())
 	}
 	return e, true
 }
@@ -98,9 +98,33 @@ func (d *Dataset) loadDeferred(tag Tag) error {
 }
 
 func (d *Dataset) Set(element *DataElement) {
+	if element.VR == VRSQ {
+		if seq, ok := element.Value.(*Sequence); ok && seq != nil {
+			seq.owner = d
+			for _, item := range seq.Items() {
+				if item != nil {
+					item.parent = seq
+				}
+			}
+		}
+	}
 	// Replacing an element clears any prior raw bytes; caller-owned elements
 	// created via NewElement do not carry RawValue unless set explicitly.
 	d.elements[element.Tag] = element
+}
+
+func (d *Dataset) ambiguousVRAncestors() []*Dataset {
+	ancestors := []*Dataset{d}
+	cur := d
+	for cur.parent != nil {
+		owner := cur.parent.owner
+		if owner == nil {
+			break
+		}
+		ancestors = append(ancestors, owner)
+		cur = owner
+	}
+	return ancestors
 }
 
 func (d *Dataset) Delete(tag Tag) {
