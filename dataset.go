@@ -71,7 +71,13 @@ func (d *Dataset) Get(tag Tag) (*DataElement, bool) {
 		return nil, false
 	}
 	e, ok := d.elements[tag]
-	return e, ok
+	if !ok {
+		return nil, false
+	}
+	if IsAmbiguousVR(e.VR) && e.IsRaw() {
+		_ = correctAmbiguousVRElement(e, d, d.originalEnc.IsLittleEndian, nil)
+	}
+	return e, true
 }
 
 // LoadDeferred reads a deferred element's value from the source file/buffer.

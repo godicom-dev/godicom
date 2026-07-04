@@ -142,7 +142,7 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 			elem.VR = VROW
 			return nil
 		}
-		bits, ok := ds.GetInt(MustTag(0x003A021A))
+		bits, ok := ds.GetInt(MustTag("WaveformBitsAllocated"))
 		if !ok {
 			return fmt.Errorf("failed to resolve ambiguous VR for tag %s: missing 'WaveformBitsAllocated'", elem.Tag)
 		}
@@ -224,6 +224,9 @@ func CorrectAmbiguousVR(ds *Dataset, isLittleEndian bool, ancestors []*Dataset) 
 	for _, tag := range ds.SortedTags() {
 		elem, ok := ds.Get(tag)
 		if !ok {
+			continue
+		}
+		if elem.Deferred {
 			continue
 		}
 		if elem.VR == VRSQ {

@@ -163,6 +163,10 @@ func (e *Element) Equal(other *Element) bool {
 	return fmt.Sprintf("%v", e.Value) == fmt.Sprintf("%v", other.Value)
 }
 
+func (e *Element) IsRaw() bool {
+	return len(e.RawValue) > 0
+}
+
 // RawDataElement holds raw (undecoded) element data from a file.
 type RawDataElement struct {
 	Tag            Tag

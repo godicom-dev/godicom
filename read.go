@@ -226,12 +226,15 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
-			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicit, isLittleEndian, charsets, opts, readCtx)
+			valueStart := pos + int64(hdrSize)
+			if shouldReadUndefinedLengthAsSequence(vr) {
+				if vr == VRUN {
+					elem.VR = VRSQ
+				}
+				seq, newPos := readSequenceItems(data, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
 				elem.Value = seq
 				pos = newPos
 			} else {
-				valueStart := pos + int64(hdrSize)
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
@@ -240,7 +243,9 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 					}
 					pos = endPos
 				} else {
-					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicit, isLittleEndian)
+					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					elem.RawValue = raw
+					pos = newPos
 				}
 			}
 			if shouldKeepElement(opts, elem.Tag) {
@@ -528,12 +533,15 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 
 		if length == 0xFFFFFFFF {
 			elem.IsUndefinedLength = true
-			if vr == VRSQ || vr == "" {
-				seq, newPos := readSequenceItems(data, pos+int64(hdrSize), isImplicitVR, isLittleEndian, charsets, opts, ctx)
+			valueStart := pos + int64(hdrSize)
+			if shouldReadUndefinedLengthAsSequence(vr) {
+				if vr == VRUN {
+					elem.VR = VRSQ
+				}
+				seq, newPos := readSequenceItems(data, valueStart, isImplicitVR, isLittleEndian, charsets, opts, ctx)
 				elem.Value = seq
 				pos = newPos
 			} else {
-				valueStart := pos + int64(hdrSize)
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian, charsets)
@@ -542,7 +550,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 					}
 					pos = endPos
 				} else {
-					pos = skipUntilDelimiter(data, valueStart, SequenceDelimiterTag, isImplicitVR, isLittleEndian)
+					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					elem.RawValue = raw
+					pos = newPos
 				}
 			}
 			if shouldKeepElement(opts, elem.Tag) {
@@ -597,14 +607,31 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 }
 
 func skipUntilDelimiter(data []byte, offset int64, delimiter Tag, isImplicitVR, isLittleEndian bool) int64 {
+	_, endPos := readBytesUntilDelimiter(data, offset, delimiter, isLittleEndian)
+	return endPos
+}
+
+func shouldReadUndefinedLengthAsSequence(vr VR) bool {
+	if vr == VRSQ || vr == "" {
+		return true
+	}
+	// PS3.5 6.2.2: undefined-length UN values are encoded as sequences.
+	// Private tags resolve to UN via LookupVR and follow the same rule.
+	if vr == VRUN {
+		return true
+	}
+	return false
+}
+
+func readBytesUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleEndian bool) (value []byte, endPos int64) {
 	pos := offset
 	for pos+4 <= int64(len(data)) {
 		if readTagBytes(data, pos, isLittleEndian) == delimiter {
-			return pos + 8
+			return append([]byte(nil), data[offset:pos]...), pos + 8
 		}
 		pos++
 	}
-	return pos
+	return append([]byte(nil), data[offset:pos]...), pos
 }
 
 // readEncapsulatedPixelData reads undefined-length encapsulated pixel data

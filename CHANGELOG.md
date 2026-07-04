@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: byte-identical roundtrip tests for undefined-length sequences, private nested SQ, and additional pydicom fixtures
+- **Reader**: undefined-length UN values parsed as sequences (PS3.5 6.2.2); raw byte preservation for other undefined-length elements
+- **v0.6**: transfer syntax encoding from file meta; TS conversion roundtrip tests (BE↔LE); RawValue preserved on same-encoding write; lazy ambiguous VR correction on `Get` for file-read elements
+- **v0.6**: `UN_sequence.dcm` semantic read test; overlay/waveform ambiguous VR tests; file meta validation/group length tests
+
+### Fixed
+- **File Writer**: nested sequences with repeated tags no longer skip items due to incorrect cycle detection
+- **Ambiguous VR**: `WaveformBitsAllocated` tag lookup (was wrongly using `WaveformBitsStored`)
+- **File Writer**: re-encode from typed values when output transfer syntax differs from read encoding (instead of writing stale RawValue bytes)
+
 ## [0.5.0] - 2026-07-04
 
 ### Added
