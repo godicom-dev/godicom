@@ -214,6 +214,47 @@ func lutDescriptorFirstValue(elem *Element) int {
 	return 0
 }
 
+// CorrectAmbiguousVRPreservingRaw corrects ambiguous VR elements that are not
+// stored as raw bytes. Used before implicit writes with in-memory values while
+// keeping raw element roundtrips intact.
+func CorrectAmbiguousVRPreservingRaw(ds *Dataset, isLittleEndian bool, ancestors []*Dataset) error {
+	if ancestors == nil {
+		ancestors = []*Dataset{ds}
+	}
+
+	for _, tag := range ds.SortedTags() {
+		elem, ok := ds.Get(tag)
+		if !ok {
+			continue
+		}
+		if elem.Deferred {
+			continue
+		}
+		if elem.VR == VRSQ {
+			seq, ok := elem.Value.(*Sequence)
+			if !ok || seq == nil {
+				continue
+			}
+			for _, item := range seq.Items() {
+				childAncestors := append([]*Dataset{item}, ancestors...)
+				if err := CorrectAmbiguousVRPreservingRaw(item, isLittleEndian, childAncestors); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if IsAmbiguousVR(elem.VR) {
+			if len(elem.RawValue) > 0 {
+				continue
+			}
+			if err := correctAmbiguousVRElement(elem, ds, isLittleEndian, ancestors); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // CorrectAmbiguousVR walks ds correcting ambiguous VR elements when possible.
 // Mirrors pydicom.filewriter.correct_ambiguous_vr.
 func CorrectAmbiguousVR(ds *Dataset, isLittleEndian bool, ancestors []*Dataset) error {
