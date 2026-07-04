@@ -20,4 +20,4 @@ func (s *Sequence) Append(ds *Dataset) {
 	}
 	s.items = append(s.items, ds)
 }
-func (s *Sequence) IsEmpty() bool      { return len(s.items) == 0 }
+func (s *Sequence) IsEmpty() bool { return len(s.items) == 0 }
