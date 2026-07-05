@@ -51,6 +51,8 @@ declare -a charset_names=(
   chrGreek.dcm
   chrX1.dcm
   chrSQEncoding.dcm
+  chrH31.dcm
+  chrFrenMulti.dcm
 )
 declare -a charset_urls=(
   "${charset_base}/chrRuss.dcm"
@@ -58,6 +60,8 @@ declare -a charset_urls=(
   "${charset_base}/chrGreek.dcm"
   "${charset_base}/chrX1.dcm"
   "${charset_base}/chrSQEncoding.dcm"
+  "${charset_base}/chrH31.dcm"
+  "${charset_base}/chrFrenMulti.dcm"
 )
 declare -a charset_hashes=(
   e82d8856b7d9fb407a80a2824dc7adf8daf7ced265450d698955f754a9af1730
@@ -65,6 +69,8 @@ declare -a charset_hashes=(
   cdbdf7820642c13c26b49e496d571f390418d3078e75b2c070e5c668861ed49b
   133232a666587ee884804cb07aaa4becf36f720bc5919a0781732ce691f5dedc
   b124a74bcf2f258ee8c99c354208eb7ceb3969e7f2e827d9dd6e41905facaa7e
+  37b1165fc2b35cbe12f0b036a439d1c69412adb34ce5a387d23191fc2d285f48
+  ea01c20111b638327d6d9c003631a0396167267bfc69c53815f055c76e2dafc1
 )
 
 fetch_verified() {
