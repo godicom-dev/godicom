@@ -86,7 +86,6 @@ var iso2022HandledEncodings = map[string]bool{
 	"ISO 2022 IR 87":  true,
 	"ISO 2022 IR 159": true,
 	"ISO 2022 IR 58":  true,
-	"ISO 2022 IR 149": true,
 }
 
 var characterSetToEscape map[string]string

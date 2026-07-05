@@ -20,16 +20,41 @@ func requireCharsetFile(t *testing.T, name string) string {
 	return path
 }
 
+// pydicom.tests.test_charset.FILE_PATIENT_NAMES
 var charsetPatientNames = []struct {
 	file string
 	want string
 }{
-	{"chrRuss.dcm", "Люкceмбypг"},
+	{"chrArab.dcm", "قباني^لنزار"},
 	{"chrFren.dcm", "Buc^Jérôme"},
-	{"chrGreek.dcm", "Διονυσιος"},
-	{"chrX1.dcm", "Wang^XiaoDong=王^小東"},
-	{"chrH31.dcm", "Yamada^Tarou=山田^太郎=やまだ^たろう"},
 	{"chrFrenMulti.dcm", "Buc^Jérôme"},
+	{"chrGerm.dcm", "Äneas^Rüdiger"},
+	{"chrGreek.dcm", "Διονυσιος"},
+	{"chrH31.dcm", "Yamada^Tarou=山田^太郎=やまだ^たろう"},
+	{"chrH32.dcm", "ﾔﾏﾀﾞ^ﾀﾛｳ=山田^太郎=やまだ^たろう"},
+	{"chrHbrw.dcm", "שרון^דבורה"},
+	{"chrI2.dcm", "Hong^Gildong=洪^吉洞=홍^길동"},
+	{"chrJapMulti.dcm", "やまだ^たろう"},
+	{"chrJapMultiExplicitIR6.dcm", "やまだ^たろう"},
+	{"chrKoreanMulti.dcm", "김희중"},
+	{"chrRuss.dcm", "Люкceмбypг"},
+	{"chrX1.dcm", "Wang^XiaoDong=王^小東"},
+	{"chrX2.dcm", "Wang^XiaoDong=王^小东"},
+}
+
+var charsetBytesIdenticalFiles = []string{
+	"chrArab.dcm",
+	"chrFren.dcm",
+	"chrFrenMulti.dcm",
+	"chrGerm.dcm",
+	"chrGreek.dcm",
+	"chrH31.dcm",
+	"chrH32.dcm",
+	"chrHbrw.dcm",
+	"chrI2.dcm",
+	"chrRuss.dcm",
+	"chrX1.dcm",
+	"chrX2.dcm",
 }
 
 func TestReadCharsetFilesPatientName(t *testing.T) {
@@ -55,12 +80,9 @@ func TestReadCharsetFilesPatientName(t *testing.T) {
 }
 
 func TestCharsetFileWriteRoundtrip(t *testing.T) {
-	for _, file := range []string{
-		"chrFren.dcm", "chrRuss.dcm", "chrGreek.dcm", "chrX1.dcm",
-		"chrH31.dcm", "chrFrenMulti.dcm",
-	} {
-		t.Run(file, func(t *testing.T) {
-			src := requireCharsetFile(t, file)
+	for _, tt := range charsetPatientNames {
+		t.Run(tt.file, func(t *testing.T) {
+			src := requireCharsetFile(t, tt.file)
 			ds, err := ReadFile(src, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -71,7 +93,7 @@ func TestCharsetFileWriteRoundtrip(t *testing.T) {
 			}
 			wantPN := orig.Value.(PersonName).String()
 
-			outPath := filepath.Join(t.TempDir(), file)
+			outPath := filepath.Join(t.TempDir(), tt.file)
 			if err := ds.SaveAs(outPath, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -90,9 +112,8 @@ func TestCharsetFileWriteRoundtrip(t *testing.T) {
 	}
 }
 
-// pydicom.tests.test_filewriter.TestWriteFile.test_unicode / testMultiPN
 func TestCharsetFileBytesIdentical(t *testing.T) {
-	for _, file := range []string{"chrH31.dcm", "chrFrenMulti.dcm"} {
+	for _, file := range charsetBytesIdenticalFiles {
 		t.Run(file, func(t *testing.T) {
 			src := requireCharsetFile(t, file)
 			orig, err := os.ReadFile(src)
@@ -157,24 +178,28 @@ func TestReadCharsetFrenMultiValues(t *testing.T) {
 }
 
 func TestReadCharsetSequenceEncoding(t *testing.T) {
-	ds, err := ReadFile(requireCharsetFile(t, "chrSQEncoding.dcm"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seqElem, ok := ds.Get(MustTag(0x00321064))
-	if !ok {
-		t.Fatal("scheduled procedure step sequence missing")
-	}
-	seq, ok := seqElem.Value.(*Sequence)
-	if !ok || seq.Len() == 0 {
-		t.Fatalf("sequence type = %T len = %d", seqElem.Value, seq.Len())
-	}
-	itemPN, ok := seq.Items()[0].Get(MustTag(0x00100010))
-	if !ok {
-		t.Fatal("sequence item PatientName missing")
-	}
-	want := "ﾔﾏﾀﾞ^ﾀﾛｳ=山田^太郎=やまだ^たろう"
-	if itemPN.Value.(PersonName).String() != want {
-		t.Fatalf("sequence PN = %q, want %q", itemPN.Value.(PersonName).String(), want)
+	const want = "ﾔﾏﾀﾞ^ﾀﾛｳ=山田^太郎=やまだ^たろう"
+	for _, file := range []string{"chrSQEncoding.dcm", "chrSQEncoding1.dcm"} {
+		t.Run(file, func(t *testing.T) {
+			ds, err := ReadFile(requireCharsetFile(t, file), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seqElem, ok := ds.Get(MustTag(0x00321064))
+			if !ok {
+				t.Fatal("scheduled procedure step sequence missing")
+			}
+			seq, ok := seqElem.Value.(*Sequence)
+			if !ok || seq.Len() == 0 {
+				t.Fatalf("sequence type = %T len = %d", seqElem.Value, seq.Len())
+			}
+			itemPN, ok := seq.Items()[0].Get(MustTag(0x00100010))
+			if !ok {
+				t.Fatal("sequence item PatientName missing")
+			}
+			if itemPN.Value.(PersonName).String() != want {
+				t.Fatalf("sequence PN = %q, want %q", itemPN.Value.(PersonName).String(), want)
+			}
+		})
 	}
 }
