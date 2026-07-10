@@ -191,6 +191,9 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 	if fileMeta == nil {
 		return nil
 	}
+	if err := ValidateFileMeta(fileMeta, false); err != nil {
+		return err
+	}
 
 	if enforceStandard {
 		if _, ok := fileMeta.Get(MustTag("FileMetaInformationGroupLength")); !ok {

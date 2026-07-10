@@ -162,7 +162,7 @@ bash scripts/fetch-testdata.sh   # 多帧 emri_small 样例（首次或 CI）
 go test -count=1 ./...
 ```
 
-- 39 个测试文件，**591** 个测试用例（含 subtest，8 个包）
+- 40 个测试文件，**603** 个测试用例（含 subtest，8 个包）
 - 语句覆盖率见 [Codecov](https://codecov.io/gh/godicom-dev/godicom) badge
 - pydicom submodule 78 个 `.dcm` + `testdata/dcm/` 5 个 `emri_small*`
 

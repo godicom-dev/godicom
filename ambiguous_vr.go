@@ -121,12 +121,12 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 			elem.VR = VRSS
 		}
 
-		if elem.VM() == 0 {
+		raw := elementRawBytes(elem)
+		if elem.VM() == 0 && len(raw) == 0 {
 			return nil
 		}
 		if !valueIsInt(elem.Value) {
-			raw := elementRawBytes(elem)
-			if raw == nil {
+			if len(raw) == 0 {
 				return nil
 			}
 			converted, err := convertInts(raw, isLittleEndian, 2, pixelRep != 0)
@@ -160,12 +160,12 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 		first := lutDescriptorFirstValue(lutDescriptor)
 		if first == 1 {
 			elem.VR = VRUS
-			if elem.VM() == 0 {
+			raw := elementRawBytes(elem)
+			if elem.VM() == 0 && len(raw) == 0 {
 				return nil
 			}
 			if !valueIsInt(elem.Value) {
-				raw := elementRawBytes(elem)
-				if raw == nil {
+				if len(raw) == 0 {
 					return nil
 				}
 				converted, err := convertInts(raw, isLittleEndian, 2, false)
@@ -180,7 +180,9 @@ func correctAmbiguousVRElement(elem *Element, ds *Dataset, isLittleEndian bool, 
 		}
 
 	case isOverlayDataTag(elem.Tag):
-		elem.VR = VROW
+		if IsAmbiguousVR(elem.VR) {
+			elem.VR = VROW
+		}
 	}
 
 	return nil
