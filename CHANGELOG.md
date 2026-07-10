@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: non-standard file-meta-only write (no preamble), preamble+file-meta roundtrip, dataset unchanged on save
+- **File Writer**: `writeFileMetaInfo` non-standard tests (missing TransferSyntaxUID, progressive missing elements)
+- **File Writer**: byte-identical roundtrip for `chrH31.dcm` and `chrFrenMulti.dcm`
+
+**Tests**: 591 passed (v0.8.0: 583)
+
 ## [0.8.0] - 2026-07-10
 
 ### Added
