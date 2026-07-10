@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: pydicom-aligned ambiguous VR tests for LUTDescriptor VM3, LUTData, PixelData, and implicit sequence pixel-representation nearest lookup
+- **File Writer**: non-standard write paths without enforced file format (no preamble, empty file meta, dataset-only)
+
+### Fixed
+- **File Writer**: `lutDescriptorFirstValue` handles `MultiValue[uint64]` / `MultiValue[int64]` so LUTData resolves to US when descriptor first value is 1
+
+**Tests**: 583 passed (v0.7.0: 571)
+
 ## [0.7.0] - 2026-07-06
 
 ### Added

@@ -199,6 +199,16 @@ func lutDescriptorFirstValue(elem *Element) int {
 		if len(vals) > 0 {
 			return vals[0]
 		}
+	case *MultiValue[int64]:
+		vals := v.Values()
+		if len(vals) > 0 {
+			return int(vals[0])
+		}
+	case *MultiValue[uint64]:
+		vals := v.Values()
+		if len(vals) > 0 {
+			return int(vals[0])
+		}
 	case *MultiValue[interface{}]:
 		vals := v.Values()
 		if len(vals) > 0 {
