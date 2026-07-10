@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-10
+
 ### Added
 - **File Writer**: non-standard file-meta-only write (no preamble), preamble+file-meta roundtrip, dataset unchanged on save
 - **File Writer**: `writeFileMetaInfo` non-standard tests (missing TransferSyntaxUID, progressive missing elements)
