@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: reject group 2 elements in dataset; implicit VR + big endian validation; explicit/implicit SQ ambiguous VR via tag-number access
+- **File Writer**: `writeFileMetaInfo` validates non-group-2 elements; raw ambiguous element conversion tests
+
+### Fixed
+- **File Writer**: ambiguous US/SS/LUTData correction converts `RawValue`-only payloads; non-ambiguous overlay OB no longer forced to OW
+
+**Tests**: 603 passed (v0.9.0: 591)
+
 ## [0.9.0] - 2026-07-10
 
 ### Added
