@@ -13,6 +13,7 @@ type Dataset struct {
 	privateBlocks                 map[[2]interface{}]*PrivateBlock // key: (group, creator)
 	originalEnc                   EncodingInfo
 	originalCharsets              []string // SpecificCharacterSet at read time; nil if unset/new
+	writeEnc                      *EncodingInfo // nil = same as originalEnc for IsOriginalEncoding
 	parent                        *Sequence
 	IsUndefinedLengthSequenceItem bool
 	readCtx                       *readContext
@@ -510,6 +511,135 @@ func (d *Dataset) walk(fn WalkFunc, recursive bool) {
 			item.walk(fn, recursive)
 		}
 	}
+}
+
+// IterAll returns all elements in tag order, recursing into sequences.
+// Mirrors pydicom Dataset.iterall.
+func (d *Dataset) IterAll() []*DataElement {
+	var out []*DataElement
+	d.Walk(func(_ *Dataset, elem *Element) {
+		out = append(out, elem)
+	}, true)
+	return out
+}
+
+// Clear removes all elements from the dataset.
+// Mirrors pydicom Dataset.clear.
+func (d *Dataset) Clear() {
+	d.elements = make(map[Tag]*DataElement)
+	d.privateBlocks = make(map[[2]interface{}]*PrivateBlock)
+}
+
+// Pop removes and returns the element for tag.
+// Mirrors pydicom Dataset.pop for tag keys.
+func (d *Dataset) Pop(tag Tag) (*DataElement, bool) {
+	elem, ok := d.Get(tag)
+	if !ok {
+		return nil, false
+	}
+	d.Delete(tag)
+	return elem, true
+}
+
+// Update copies elements from other into d (overwriting matching tags).
+// Mirrors pydicom Dataset.update for Dataset sources.
+func (d *Dataset) Update(other *Dataset) {
+	if other == nil {
+		return
+	}
+	for _, elem := range other.Iter() {
+		d.Set(cloneElement(elem))
+	}
+}
+
+// GroupDataset returns a new dataset containing only elements of the given group.
+// Mirrors pydicom Dataset.group_dataset.
+func (d *Dataset) GroupDataset(group int) *Dataset {
+	out := NewDataset()
+	for _, elem := range d.Iter() {
+		if int(elem.Tag.Group()) == group {
+			out.Set(cloneElement(elem))
+		}
+	}
+	return out
+}
+
+// RemovePrivateTags deletes all private elements, including nested sequences.
+// Mirrors pydicom Dataset.remove_private_tags.
+func (d *Dataset) RemovePrivateTags() {
+	d.Walk(func(ds *Dataset, elem *Element) {
+		if elem.IsPrivate() {
+			ds.Delete(elem.Tag)
+		}
+	}, true)
+}
+
+// ElementByKeyword returns the element for a DICOM keyword, if present.
+// Mirrors pydicom Dataset.data_element.
+func (d *Dataset) ElementByKeyword(keyword string) (*DataElement, bool) {
+	tag, err := TagFromKeyword(keyword)
+	if err != nil {
+		return nil, false
+	}
+	return d.Get(tag)
+}
+
+// Equal reports whether d and other contain the same tags, VRs, and values.
+// Mirrors pydicom Dataset.__eq__ for Dataset values.
+func (d *Dataset) Equal(other *Dataset) bool {
+	if d == other {
+		return true
+	}
+	if d == nil || other == nil {
+		return false
+	}
+	if d.Len() != other.Len() {
+		return false
+	}
+	for _, tag := range d.SortedTags() {
+		a, okA := d.Get(tag)
+		b, okB := other.Get(tag)
+		if !okA || !okB || !a.Equal(b) {
+			return false
+		}
+	}
+	return true
+}
+
+// SetOriginalEncoding records the encoding used when the dataset was decoded.
+// Mirrors pydicom Dataset.set_original_encoding.
+func (d *Dataset) SetOriginalEncoding(isImplicit, isLittleEndian bool, charsets []string) {
+	d.originalEnc = EncodingInfo{IsImplicitVR: isImplicit, IsLittleEndian: isLittleEndian}
+	if charsets == nil {
+		d.originalCharsets = []string{DefaultCharacterSet}
+	} else {
+		d.originalCharsets = ConvertCharacterSets(charsets)
+	}
+	enc := d.originalEnc
+	d.writeEnc = &enc
+}
+
+// SetWriteEncoding sets the VR/endianness that would be used for writing.
+// Used with IsOriginalEncoding; nil write encoding means "same as original".
+func (d *Dataset) SetWriteEncoding(isImplicit, isLittleEndian bool) {
+	d.writeEnc = &EncodingInfo{IsImplicitVR: isImplicit, IsLittleEndian: isLittleEndian}
+}
+
+// IsOriginalEncoding reports whether the current write encoding and
+// SpecificCharacterSet match those captured when the dataset was read.
+// Mirrors pydicom Dataset.is_original_encoding.
+func (d *Dataset) IsOriginalEncoding() bool {
+	if d == nil || d.originalCharsets == nil {
+		return false
+	}
+	if charsetChanged(d) {
+		return false
+	}
+	if d.writeEnc == nil {
+		return true
+	}
+	return d.writeEnc.IsImplicitVR == d.originalEnc.IsImplicitVR &&
+		d.writeEnc.IsLittleEndian == d.originalEnc.IsLittleEndian
 }
 
 // Clone returns a deep copy of the dataset, including sequence items.

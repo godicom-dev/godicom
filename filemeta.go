@@ -118,6 +118,10 @@ func cloneDataset(ds *Dataset) *Dataset {
 	if ds.originalCharsets != nil {
 		clone.originalCharsets = append([]string(nil), ds.originalCharsets...)
 	}
+	if ds.writeEnc != nil {
+		enc := *ds.writeEnc
+		clone.writeEnc = &enc
+	}
 	clone.IsUndefinedLengthSequenceItem = ds.IsUndefinedLengthSequenceItem
 	for _, elem := range ds.Iter() {
 		clone.Set(cloneElement(elem))
