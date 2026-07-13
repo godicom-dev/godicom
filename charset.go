@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"bytes"
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -128,7 +129,25 @@ func DecodeString(b []byte, encodingName string) (string, error) {
 }
 
 func EncodeString(s string, encodingName string) ([]byte, error) {
-	enc, ok := dicomEncodings[encodingName]
+	name := resolveCharacterSetName(encodingName)
+
+	// Default / ISO_IR 6 is ASCII-only. encoding.Nop would otherwise accept
+	// UTF-8 and prevent fall-through to ISO-2022 extensions.
+	if isDefaultCharacterSet(name) {
+		for i := 0; i < len(s); i++ {
+			if s[i] > 0x7F {
+				return nil, fmt.Errorf("godicom: cannot encode %q with character set %q", s, name)
+			}
+		}
+		return []byte(s), nil
+	}
+
+	// UTF-8 standalone sets use Nop in dicomEncodings.
+	if name == "ISO_IR 192" || name == "ISO 2022 IR 192" {
+		return []byte(s), nil
+	}
+
+	enc, ok := dicomEncodings[name]
 	if !ok {
 		enc = encoding.Nop
 	}
@@ -407,58 +426,130 @@ func EncodeBytesWithCharsets(s string, encodings []string) []byte {
 		}
 		return b
 	}
-	for i, enc := range encodings {
-		b, err := EncodeString(s, enc)
-		if err == nil {
-			if i > 0 && !isISO2022HandledEncoding(enc) {
-				if esc := escapeForCharacterSet(enc); len(esc) > 0 {
-					b = append(append([]byte(nil), esc...), b...)
-				}
-			}
-			return b
-		}
+	// Prefer the primary set when it can encode the whole value.
+	if b, err := EncodeString(s, encodings[0]); err == nil {
+		return b
 	}
+	// Otherwise encode by longest runs so ISO-2022 escapes are re-emitted
+	// after PN/text delimiters (which reset to the initial character set).
 	return encodeStringParts(s, encodings)
 }
 
 func encodeStringParts(value string, encodings []string) []byte {
 	encodings = ConvertCharacterSets(encodings)
 	var out []byte
-	remaining := value
-
-	for remaining != "" {
-		bestPrefix := ""
-		bestEnc := encodings[0]
-		for _, enc := range encodings {
-			prefix := longestEncodablePrefix(remaining, enc)
-			if len([]rune(prefix)) > len([]rune(bestPrefix)) {
-				bestPrefix = prefix
-				bestEnc = enc
-			}
-		}
-		if bestPrefix == "" {
-			r, size := utf8.DecodeRuneInString(remaining)
-			if r == utf8.RuneError && size == 0 {
-				break
-			}
-			repl, _ := EncodeString(string(r), encodings[0])
-			out = append(out, repl...)
-			remaining = remaining[size:]
+	for _, segment := range splitCharsetEncodeSegments(value) {
+		if segment == "^" || segment == "=" || segment == "\\" {
+			out = append(out, segment...)
 			continue
 		}
-		chunk, err := EncodeString(bestPrefix, bestEnc)
-		if err != nil {
-			break
-		}
-		if bestEnc != encodings[0] && !isISO2022HandledEncoding(bestEnc) {
-			if esc := escapeForCharacterSet(bestEnc); len(esc) > 0 {
-				out = append(out, esc...)
-			}
-		}
-		out = append(out, chunk...)
-		remaining = remaining[len(bestPrefix):]
+		out = append(out, encodeCharsetSegment(segment, encodings)...)
 	}
 	return out
+}
+
+// splitCharsetEncodeSegments splits on PN/text delimiters that reset the
+// active ISO-2022 repertoire to the initial character set.
+func splitCharsetEncodeSegments(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var parts []string
+	start := 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '^', '=', '\\':
+			if i > start {
+				parts = append(parts, value[start:i])
+			}
+			parts = append(parts, value[i:i+1])
+			start = i + 1
+		}
+	}
+	if start < len(value) {
+		parts = append(parts, value[start:])
+	}
+	return parts
+}
+
+func encodeCharsetSegment(segment string, encodings []string) []byte {
+	if segment == "" {
+		return nil
+	}
+	if b, err := EncodeString(segment, encodings[0]); err == nil {
+		return b
+	}
+	bestPrefix := ""
+	bestEnc := encodings[0]
+	for _, enc := range encodings[1:] {
+		prefix := longestEncodablePrefix(segment, enc)
+		if len([]rune(prefix)) > len([]rune(bestPrefix)) {
+			bestPrefix = prefix
+			bestEnc = enc
+		}
+	}
+	if bestPrefix == "" {
+		var out []byte
+		for _, r := range segment {
+			repl, _ := EncodeString(string(r), encodings[0])
+			out = append(out, repl...)
+		}
+		return out
+	}
+	if bestPrefix != segment {
+		// Mixed within a delimiter segment: fall back to run-length encoding.
+		var out []byte
+		remaining := segment
+		for remaining != "" {
+			if prefix := longestEncodablePrefix(remaining, encodings[0]); prefix != "" {
+				chunk, _ := EncodeString(prefix, encodings[0])
+				out = append(out, chunk...)
+				remaining = remaining[len(prefix):]
+				continue
+			}
+			bestPrefix = ""
+			bestEnc = encodings[0]
+			for _, enc := range encodings[1:] {
+				prefix := longestEncodablePrefix(remaining, enc)
+				if len([]rune(prefix)) > len([]rune(bestPrefix)) {
+					bestPrefix = prefix
+					bestEnc = enc
+				}
+			}
+			if bestPrefix == "" {
+				r, size := utf8.DecodeRuneInString(remaining)
+				if r == utf8.RuneError && size == 0 {
+					break
+				}
+				repl, _ := EncodeString(string(r), encodings[0])
+				out = append(out, repl...)
+				remaining = remaining[size:]
+				continue
+			}
+			chunk, err := EncodeString(bestPrefix, bestEnc)
+			if err != nil {
+				break
+			}
+			if !isISO2022HandledEncoding(bestEnc) {
+				if esc := escapeForCharacterSet(bestEnc); len(esc) > 0 {
+					out = append(out, esc...)
+				}
+			}
+			out = append(out, chunk...)
+			remaining = remaining[len(bestPrefix):]
+		}
+		return out
+	}
+	chunk, err := EncodeString(bestPrefix, bestEnc)
+	if err != nil {
+		return []byte(segment)
+	}
+	if !isISO2022HandledEncoding(bestEnc) {
+		if esc := escapeForCharacterSet(bestEnc); len(esc) > 0 {
+			return append(append([]byte(nil), esc...), chunk...)
+		}
+	}
+	return chunk
 }
 
 func longestEncodablePrefix(s, encName string) string {

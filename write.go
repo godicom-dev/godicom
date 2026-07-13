@@ -330,14 +330,34 @@ func encodingChanged(ds *Dataset, isImplicit, isLittleEndian bool) bool {
 	return isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
 }
 
+// charsetChanged reports whether SpecificCharacterSet differs from the value
+// captured when the dataset was read. Changing the character set requires
+// re-encoding text/PN values from decoded Unicode (pydicom test_changed_character_set).
+func charsetChanged(ds *Dataset) bool {
+	if ds == nil || ds.originalCharsets == nil {
+		return false
+	}
+	current := ConvertCharacterSets(datasetCharacterSets(ds))
+	original := ConvertCharacterSets(ds.originalCharsets)
+	if len(current) != len(original) {
+		return true
+	}
+	for i := range current {
+		if current[i] != original[i] {
+			return true
+		}
+	}
+	return false
+}
+
 func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
 	if len(charsets) == 0 {
 		charsets = []string{DefaultCharacterSet}
 	}
 	localCharsets := append([]string(nil), charsets...)
 
-	encodingChanged := reencodeValues
-	if !isImplicit || encodingChanged {
+	reencode := reencodeValues || charsetChanged(ds)
+	if !isImplicit || reencode {
 		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
 			return err
 		}
@@ -353,7 +373,7 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, cha
 		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
 			continue
 		}
-		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets, encodingChanged); err != nil {
+		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets, reencode); err != nil {
 			return err
 		}
 		if elem.Tag == TagCharset {
@@ -847,6 +867,9 @@ func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {
 			return EncodeBytesWithCharsets(v, charsets)
 		}
 		return []byte(v)
+	case []byte:
+		// Already-encoded PN bytes (mirrors pydicom write_PN raw path).
+		return v
 	case *MultiValue[PersonName]:
 		if useCharsets {
 			parts := make([][]byte, v.Len())

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-13
+
+### Added
+- **Charset**: pydicom-aligned write tests — changed SpecificCharacterSet re-encode, WritePN/WriteText multi-charset, Japanese ISO-2022 PN encode
+
+### Fixed
+- **Charset / File Writer**: changing `SpecificCharacterSet` forces text/PN re-encode from decoded Unicode (no longer writes stale `RawValue`)
+- **Charset**: `EncodeString` rejects non-ASCII for default/ISO_IR 6 so ISO-2022 extensions are used
+- **Charset**: multi-charset encode splits on `^`/`=`/`\` so escapes survive delimiter repertoire resets
+
+### Removed
+- Known limitation: Japanese ISO-2022 multi-byte encode (now covered for PN roundtrip)
+
+**Tests**: 633 passed (v0.12.0: 623)
+
 ## [0.12.0] - 2026-07-13
 
 ### Added
