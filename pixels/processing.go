@@ -155,7 +155,6 @@ func convertYBRFullToRGB8(src []byte) ([]byte, error) {
 	}
 	dst := make([]byte, len(src))
 	const mid = 128.0
-	const maxv = 255.0
 	for i := 0; i < len(src); i += 3 {
 		y := float64(src[i])
 		cb := float64(src[i+1]) - mid
