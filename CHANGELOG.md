@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-13
+
+### Added
+- **Pixels**: `UnpackSamples`, `ApplyRescale` / `ApplyModalityLUT`, `ApplyWindowing` / `ApplyVOI` / `ApplyVOILUT`, `InvertValues` / `ApplyPresentationLUTShape`
+- **FileDataset**: `PixelSamples`, `ApplyModalityLUT`, `ApplyVOILUT`, `ApplyPresentationLUTShape` (pydicom display pipeline helpers; not auto-applied in `PixelBytes`)
+- **Dataset**: `GetFloats` for multi-valued DS/FD window tags
+
+**Tests**: 676 passed (v0.17.0: 667)
+
 ## [0.17.0] - 2026-07-13
 
 ### Added
