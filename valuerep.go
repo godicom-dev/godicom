@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -308,6 +309,177 @@ func (i IS) String() string {
 
 func (i IS) IsZero() bool {
 	return i.Original == "" && i.Value == 0
+}
+
+func (i IS) Equal(other IS) bool {
+	return i.Value == other.Value
+}
+
+const (
+	maxDSLength = 16
+	maxISLength = 12
+	minISValue  = -1 << 31
+	maxISValue  = 1<<31 - 1
+)
+
+var (
+	reValidDS = regexp.MustCompile(`^ *[+\-]?(\d+|\d+\.\d*|\.\d+)([eE][+\-]?\d+)? *$`)
+	reValidIS = regexp.MustCompile(`^ *[+\-]?\d+ *$`)
+)
+
+// IsValidDS reports whether s is a valid DICOM Decimal String (VR=DS).
+// Mirrors pydicom.valuerep.is_valid_ds.
+func IsValidDS(s string) bool {
+	if len(s) > maxDSLength {
+		return false
+	}
+	return reValidDS.MatchString(s)
+}
+
+// IsValidIS reports whether s is a valid DICOM Integer String (VR=IS) by
+// length and character set (not numeric range).
+func IsValidIS(s string) bool {
+	if len(s) > maxISLength {
+		return false
+	}
+	return reValidIS.MatchString(s)
+}
+
+// ISInRange reports whether v fits the DICOM IS value range [-2^31, 2^31).
+func ISInRange(v int64) bool {
+	return v >= minISValue && v <= maxISValue
+}
+
+// FormatNumberAsDS formats a float as a DICOM Decimal String (≤16 chars).
+// Mirrors pydicom.valuerep.format_number_as_ds.
+func FormatNumberAsDS(val float64) (string, error) {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return "", fmt.Errorf("godicom: cannot encode non-finite float %v as DS", val)
+	}
+
+	valstr := pythonStyleFloatString(val)
+	if len(valstr) <= maxDSLength {
+		return valstr, nil
+	}
+
+	absVal := math.Abs(val)
+	logval := math.Log10(absVal)
+	signChars := 0
+	if val < 0 || (val == 0 && math.Signbit(val)) {
+		signChars = 1
+	}
+
+	useScientific := logval < -4 || logval >= float64(14-signChars)
+	if useScientific {
+		remaining := 10 - signChars
+		trunc := formatScientificDS(val, remaining)
+		if len(trunc) > maxDSLength {
+			trunc = formatScientificDS(val, remaining-1)
+		}
+		return trunc, nil
+	}
+
+	remaining := 14 - signChars
+	if logval >= 1.0 {
+		remaining = 14 - signChars - int(math.Floor(logval))
+	}
+	if remaining < 0 {
+		remaining = 0
+	}
+	return strconv.FormatFloat(val, 'f', remaining, 64), nil
+}
+
+func pythonStyleFloatString(val float64) string {
+	if val == 0 {
+		if math.Signbit(val) {
+			return "-0.0"
+		}
+		return "0.0"
+	}
+	s := strconv.FormatFloat(val, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	// Python uses lowercase e with explicit sign in exponent for |exp|>=1.
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		s = s[:i] + "e" + normalizeExponent(s[i+1:])
+	}
+	return s
+}
+
+func normalizeExponent(exp string) string {
+	if exp == "" {
+		return "+0"
+	}
+	sign := ""
+	if exp[0] == '+' || exp[0] == '-' {
+		sign = string(exp[0])
+		exp = exp[1:]
+	} else {
+		sign = "+"
+	}
+	// Trim leading zeros but keep at least one digit; Python often uses 2+ digits.
+	for len(exp) > 1 && exp[0] == '0' {
+		exp = exp[1:]
+	}
+	if len(exp) < 2 {
+		exp = "0" + exp
+	}
+	return sign + exp
+}
+
+func formatScientificDS(val float64, precision int) string {
+	if precision < 0 {
+		precision = 0
+	}
+	s := strconv.FormatFloat(val, 'e', precision, 64)
+	// strconv uses 'e+09'; normalize like Python's default e format.
+	if i := strings.IndexByte(s, 'e'); i >= 0 {
+		s = s[:i] + "e" + normalizeExponent(s[i+1:])
+	}
+	return s
+}
+
+// DSFromFloat builds a DS whose Original is a valid DICOM decimal string.
+func DSFromFloat(val float64) (DS, error) {
+	s, err := FormatNumberAsDS(val)
+	if err != nil {
+		return DS{}, err
+	}
+	return DS{Value: val, Original: s}, nil
+}
+
+func (d DS) Equal(other DS) bool {
+	if d.IsZero() && other.IsZero() {
+		return true
+	}
+	return d.Value == other.Value
+}
+
+func (d DA) Equal(other DA) bool {
+	if d.IsZero() && other.IsZero() {
+		return true
+	}
+	y1, m1, day1 := d.Time.Date()
+	y2, m2, day2 := other.Time.Date()
+	return y1 == y2 && m1 == m2 && day1 == day2
+}
+
+func (t TM) Equal(other TM) bool {
+	if t.IsZero() && other.IsZero() {
+		return true
+	}
+	return t.Time.Hour() == other.Time.Hour() &&
+		t.Time.Minute() == other.Time.Minute() &&
+		t.Time.Second() == other.Time.Second() &&
+		t.Time.Nanosecond() == other.Time.Nanosecond()
+}
+
+func (d DT) Equal(other DT) bool {
+	if d.IsZero() && other.IsZero() {
+		return true
+	}
+	return d.Time.Equal(other.Time)
 }
 
 func parseDSValue(s string) (interface{}, error) {
