@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -824,6 +825,16 @@ func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
 		fileMeta: fd.FileMeta,
 		preamble: fd.Preamble,
 	}, opts)
+}
+
+// EncodeFile returns Part 10 DICOM file bytes for fd.
+func (fd *FileDataset) EncodeFile(opts *WriteOptions) ([]byte, error) {
+	return EncodeFile(fd, opts)
+}
+
+// Write encodes fd as a Part 10 DICOM file to w.
+func (fd *FileDataset) Write(w io.Writer, opts *WriteOptions) error {
+	return Write(w, fd, opts)
 }
 
 // Encode returns the dataset bytes (no preamble / File Meta) for transferSyntaxUID.

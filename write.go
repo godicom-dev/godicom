@@ -42,7 +42,11 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		return err
 	}
 	defer f.Close()
+	return writeTo(f, source, opts)
+}
 
+// writeTo encodes a Part 10 DICOM file to w.
+func writeTo(w io.Writer, source writeSource, opts *WriteOptions) error {
 	if opts == nil {
 		opts = &WriteOptions{}
 	}
@@ -133,16 +137,16 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 		if len(preamble) != 128 {
 			return fmt.Errorf("godicom: preamble must be 128 bytes, got %d", len(preamble))
 		}
-		if _, err := f.Write(preamble); err != nil {
+		if _, err := w.Write(preamble); err != nil {
 			return err
 		}
-		if _, err := f.Write([]byte("DICM")); err != nil {
+		if _, err := w.Write([]byte("DICM")); err != nil {
 			return err
 		}
 	}
 
 	// Write File Meta Information (always Explicit VR Little Endian)
-	fp := newDicomWriter(f)
+	fp := newDicomWriter(w)
 	fp.SetByteOrder(true)
 
 	if fileMeta != nil && fileMeta.Len() > 0 {
@@ -1054,6 +1058,30 @@ func encodeBytes(elem *DataElement) []byte {
 // WriteFile writes a Dataset to a DICOM file.
 func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	return writeFile(filename, writeSource{dataset: ds}, opts)
+}
+
+// EncodeFile encodes fd as a Part 10 DICOM file (preamble + DICM + File Meta + dataset).
+func EncodeFile(fd *FileDataset, opts *WriteOptions) ([]byte, error) {
+	if fd == nil {
+		return nil, fmt.Errorf("godicom: missing FileDataset")
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, fd, opts); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Write encodes fd as a Part 10 DICOM file to w.
+func Write(w io.Writer, fd *FileDataset, opts *WriteOptions) error {
+	if fd == nil {
+		return fmt.Errorf("godicom: missing FileDataset")
+	}
+	return writeTo(w, writeSource{
+		dataset:  fd.Dataset,
+		fileMeta: fd.FileMeta,
+		preamble: fd.Preamble,
+	}, opts)
 }
 
 // EncodeDataset encodes ds as a DICOM dataset only (no preamble / File Meta),

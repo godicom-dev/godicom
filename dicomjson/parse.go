@@ -1,6 +1,7 @@
 package dicomjson
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,35 @@ func ParseDataset(data []byte, opts ...Option) (*godicom.Dataset, error) {
 		return nil, err
 	}
 	return parseDatasetMap(raw, applyOptions(opts))
+}
+
+// ParseDatasets parses a DICOM JSON Model array (QIDO-RS / WADO-RS metadata).
+// A single object is accepted and returned as a one-element slice.
+func ParseDatasets(data []byte, opts ...Option) ([]*godicom.Dataset, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return nil, fmt.Errorf("dicomjson: empty JSON")
+	}
+	if data[0] == '{' {
+		ds, err := ParseDataset(data, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return []*godicom.Dataset{ds}, nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	out := make([]*godicom.Dataset, 0, len(items))
+	for i, item := range items {
+		ds, err := ParseDataset(item, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("dicomjson: dataset[%d]: %w", i, err)
+		}
+		out = append(out, ds)
+	}
+	return out, nil
 }
 
 func parseDatasetMap(raw map[string]rawElement, opts options) (*godicom.Dataset, error) {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-13
+
+### Added
+- **FileDataset**: `EncodeFile` / `Write` / `ReadBytes` — encode/decode Part 10 DICOM files to/from memory (DICOMweb STOW/WADO payloads)
+- **dicomjson**: `ParseDatasets` / `MarshalDatasets` — JSON array of datasets (QIDO-RS / WADO-RS metadata)
+
 ## [0.22.1] - 2026-07-13
 
 ### Fixed

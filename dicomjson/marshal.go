@@ -27,6 +27,19 @@ func MarshalDataset(ds *godicom.Dataset, opts ...Option) ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// MarshalDatasets returns a JSON array of DICOM JSON Model datasets.
+func MarshalDatasets(datasets []*godicom.Dataset, opts ...Option) ([]byte, error) {
+	out := make([]map[string]Element, 0, len(datasets))
+	for i, ds := range datasets {
+		m, err := DatasetToMap(ds, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("dicomjson: dataset[%d]: %w", i, err)
+		}
+		out = append(out, m)
+	}
+	return json.Marshal(out)
+}
+
 // DatasetToMap returns the DICOM JSON Model map representation of ds.
 func DatasetToMap(ds *godicom.Dataset, opts ...Option) (map[string]Element, error) {
 	if ds == nil {
