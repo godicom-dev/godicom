@@ -362,26 +362,88 @@ func (d *Dataset) GetIS(tag Tag) (IS, bool) {
 }
 
 func (d *Dataset) GetFloat(tag Tag) (float64, bool) {
-	if err := d.loadDeferred(tag); err != nil {
+	vals, ok := d.GetFloats(tag)
+	if !ok || len(vals) == 0 {
 		return 0, false
+	}
+	return vals[0], true
+}
+
+// GetFloats returns all floating values for a DS/FD/FL multi-valued element.
+func (d *Dataset) GetFloats(tag Tag) ([]float64, bool) {
+	if err := d.loadDeferred(tag); err != nil {
+		return nil, false
 	}
 	e, ok := d.elements[tag]
 	if !ok || e.Value == nil {
-		return 0, false
+		return nil, false
 	}
 	switch v := e.Value.(type) {
 	case float64:
-		return v, true
+		return []float64{v}, true
 	case DS:
-		return v.Value, true
+		return []float64{v.Value}, true
 	case string:
 		ds, err := ParseDS(v)
+		if err != nil {
+			return nil, false
+		}
+		return []float64{ds.Value}, true
+	case *MultiValue[float64]:
+		out := make([]float64, v.Len())
+		copy(out, v.Values())
+		return out, true
+	case *MultiValue[DS]:
+		out := make([]float64, v.Len())
+		for i, ds := range v.Values() {
+			out[i] = ds.Value
+		}
+		return out, true
+	case *MultiValue[string]:
+		out := make([]float64, 0, v.Len())
+		for _, s := range v.Values() {
+			ds, err := ParseDS(s)
+			if err != nil {
+				return nil, false
+			}
+			out = append(out, ds.Value)
+		}
+		return out, true
+	case *MultiValue[interface{}]:
+		out := make([]float64, 0, v.Len())
+		for _, item := range v.Values() {
+			f, ok := floatFromValue(item)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, f)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func floatFromValue(v interface{}) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case DS:
+		return x.Value, true
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case string:
+		ds, err := ParseDS(x)
 		if err != nil {
 			return 0, false
 		}
 		return ds.Value, true
+	default:
+		return 0, false
 	}
-	return 0, false
 }
 
 func (d *Dataset) GetBytes(tag Tag) ([]byte, bool) {
