@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-13
+
+### Added
+- **Dataset**: `DecodeDataset` / `DecodeDatasetEncoding` — decode dataset bytes without preamble / File Meta (DIMSE Identifiers / C-STORE payloads; Deflated TS supported)
+
+**Tests**: 696 passed (v0.21.0: 692); roundtrip + pynetdicom C-FIND Identifier golden
+
 ## [0.21.0] - 2026-07-13
 
 ### Added
@@ -244,7 +251,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/godicom-dev/godicom/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/godicom-dev/godicom/compare/v0.20.0...v0.21.0
 [0.7.0]: https://github.com/godicom-dev/godicom/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/godicom-dev/godicom/compare/v0.5.0...v0.6.0
