@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-13
+
+### Added
+- **Encaps**: `Encapsulate` / `EncapsulateExtended` / `FragmentFrame` / `ItemizeFragment` (pydicom encaps write path)
+- **Pixels**: `EncodeFrame` / `EncodeFrames` for native, RLE Lossless, Deflated Image Frame Compression
+- **FileDataset**: `CompressPixelData` / `SetEncodedPixelData` to re-encode Pixel Data and update Transfer Syntax
+
+### Notes
+- JPEG / JPEG-LS / JPEG2000 **encode** still requires golibjpeg / goopenjpeg encode APIs (decode-only for now)
+
+**Tests**: 685 passed (v0.18.0: 676)
+
 ## [0.18.0] - 2026-07-13
 
 ### Added
