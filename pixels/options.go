@@ -2,7 +2,9 @@ package pixels
 
 // DecodeOptions configures pixel data decoding.
 type DecodeOptions struct {
-	// Raw skips photometric colour transforms (library v2 / raw decode path).
+	// Raw skips photometric colour transforms and planar normalization.
+	// When false (default), YBR_FULL/_422 is converted to RGB and planar
+	// configuration 1 is converted to color-by-pixel.
 	Raw bool
 	// FrameIndex selects a single frame; nil decodes all frames.
 	FrameIndex *int
