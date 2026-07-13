@@ -62,6 +62,20 @@ func (e *Element) ReprValue() string {
 			return fmt.Sprintf("Array of %d elements", v.Len())
 		}
 		return fmt.Sprintf("%v", v.Values())
+	case string:
+		if e.VR == VRUI {
+			return UID(v).Name()
+		}
+		if len(v) > 64 {
+			return v[:61] + "..."
+		}
+		return v
+	case PersonName:
+		s := v.String()
+		if len(s) > 64 {
+			return s[:61] + "..."
+		}
+		return s
 	default:
 		s := fmt.Sprintf("%v", v)
 		if len(s) > 64 {
