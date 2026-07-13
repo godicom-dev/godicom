@@ -90,3 +90,21 @@ func TestWriteDataset(t *testing.T) {
 		t.Fatal("empty write")
 	}
 }
+
+func TestEncodeDatasetConcurrent(t *testing.T) {
+	ds := NewDataset()
+	ds.Set(NewDataElement(MustTag("PatientID"), VRLO, "X"))
+	const n = 32
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			_, err := EncodeDataset(ds, string(ImplicitVRLittleEndian))
+			errCh <- err
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

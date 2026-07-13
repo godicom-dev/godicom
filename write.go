@@ -13,14 +13,13 @@ import (
 	"github.com/godicom-dev/godicom/uid"
 )
 
-var (
+type writeState struct {
 	sqDepth           int
 	visitingSequences map[*Sequence]struct{}
-)
+}
 
-func resetWriteGlobals() {
-	sqDepth = 0
-	visitingSequences = nil
+func newWriteState() *writeState {
+	return &writeState{visitingSequences: make(map[*Sequence]struct{})}
 }
 
 // WriteOptions controls DICOM file writing behavior.
@@ -38,7 +37,6 @@ type writeSource struct {
 
 // writeFile writes a Dataset to a DICOM file.
 func writeFile(filename string, source writeSource, opts *WriteOptions) error {
-	resetWriteGlobals()
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -351,6 +349,13 @@ func charsetChanged(ds *Dataset) bool {
 }
 
 func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
+	return writeDatasetState(fp, ds, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteState())
+}
+
+func writeDatasetState(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool, st *writeState) error {
+	if st == nil {
+		st = newWriteState()
+	}
 	if len(charsets) == 0 {
 		charsets = []string{DefaultCharacterSet}
 	}
@@ -373,7 +378,7 @@ func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, cha
 		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
 			continue
 		}
-		if err := writeElement(fp, elem, isImplicit, isLittleEndian, localCharsets, reencode); err != nil {
+		if err := writeElementState(fp, elem, isImplicit, isLittleEndian, localCharsets, reencode, st); err != nil {
 			return err
 		}
 		if elem.Tag == TagCharset {
@@ -454,6 +459,13 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 }
 
 func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
+	return writeElementState(fp, elem, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteState())
+}
+
+func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool, st *writeState) error {
+	if st == nil {
+		st = newWriteState()
+	}
 	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
 	}
@@ -483,20 +495,20 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 
 	isCircular := false
 	if isSQ && seq != nil {
-		if visitingSequences != nil {
-			_, isCircular = visitingSequences[seq]
+		if st.visitingSequences != nil {
+			_, isCircular = st.visitingSequences[seq]
 		}
 	}
 	enteredSequence := false
 	if isSQ && seq != nil && !isCircular {
-		if visitingSequences == nil {
-			visitingSequences = make(map[*Sequence]struct{})
+		if st.visitingSequences == nil {
+			st.visitingSequences = make(map[*Sequence]struct{})
 		}
-		visitingSequences[seq] = struct{}{}
+		st.visitingSequences[seq] = struct{}{}
 		enteredSequence = true
 	}
 	if enteredSequence {
-		defer delete(visitingSequences, seq)
+		defer delete(st.visitingSequences, seq)
 	}
 
 	// For defined-length SQs with items (and not circular), pre-compute content
@@ -515,7 +527,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 				var itemBuf bytes.Buffer
 				itemFp := newDicomWriter(&itemBuf)
 				itemFp.SetByteOrder(isLittleEndian)
-				if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues); err != nil {
+				if err := writeDatasetState(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues, st); err != nil {
 					return err
 				}
 				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
@@ -592,14 +604,14 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 
 	// For undefined-length SQs, write items + delimiters
 	if isSQ && sqBuf == nil {
-		sqDepth++
-		if !isCircular && sqDepth <= 100 {
+		st.sqDepth++
+		if !isCircular && st.sqDepth <= 100 {
 			if seq, ok := elem.Value.(*Sequence); ok && seq != nil && !seq.IsEmpty() {
 				for _, item := range seq.Items() {
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
 					itemFp.SetByteOrder(isLittleEndian)
-					if err := writeDataset(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues); err != nil {
+					if err := writeDatasetState(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues, st); err != nil {
 						return err
 					}
 					if err := fp.WriteTag(ItemTag); err != nil {
@@ -629,7 +641,7 @@ func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian boo
 				}
 			}
 		}
-		sqDepth--
+		st.sqDepth--
 		if err := fp.WriteTag(SequenceDelimiterTag); err != nil {
 			return err
 		}
@@ -1084,9 +1096,6 @@ func WriteDataset(w io.Writer, ds *Dataset, transferSyntaxUID string) error {
 }
 
 func encodeDataset(ds *Dataset, isImplicit, isLittleEndian, deflated bool) ([]byte, error) {
-	resetWriteGlobals()
-	defer resetWriteGlobals()
-
 	if ds == nil {
 		return nil, fmt.Errorf("godicom: missing dataset")
 	}
