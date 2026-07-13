@@ -157,10 +157,54 @@ func (e *Element) IsPrivate() bool {
 }
 
 func (e *Element) Equal(other *Element) bool {
+	if e == other {
+		return true
+	}
+	if e == nil || other == nil {
+		return false
+	}
 	if e.Tag != other.Tag || e.VR != other.VR {
 		return false
 	}
-	return fmt.Sprintf("%v", e.Value) == fmt.Sprintf("%v", other.Value)
+	return elementValuesEqual(e.Value, other.Value)
+}
+
+func elementValuesEqual(a, b interface{}) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	switch av := a.(type) {
+	case *Sequence:
+		bv, ok := b.(*Sequence)
+		if !ok || av.Len() != bv.Len() {
+			return false
+		}
+		for i := 0; i < av.Len(); i++ {
+			if !av.Get(i).Equal(bv.Get(i)) {
+				return false
+			}
+		}
+		return true
+	case []byte:
+		bv, ok := b.([]byte)
+		if !ok {
+			return false
+		}
+		if len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if av[i] != bv[i] {
+				return false
+			}
+		}
+		return true
+	case PersonName:
+		bv, ok := b.(PersonName)
+		return ok && av == bv
+	default:
+		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+	}
 }
 
 func (e *Element) IsRaw() bool {
