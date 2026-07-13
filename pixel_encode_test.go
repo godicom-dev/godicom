@@ -81,3 +81,29 @@ func TestCompressPixelData_Deflated_MR_small(t *testing.T) {
 		t.Fatal("deflated frame roundtrip mismatch")
 	}
 }
+
+func TestCompressPixelData_J2KLossless_CT_small(t *testing.T) {
+	path := filepath.Join("pydicom", "src", "pydicom", "data", "test_files", "CT_small.dcm")
+	ds, err := godicom.ReadFile(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.CompressPixelData(string(uid.JPEG2000Lossless)); err != nil {
+		t.Fatal(err)
+	}
+	ts, ok := ds.TransferSyntaxUID()
+	if !ok || ts != string(uid.JPEG2000Lossless) {
+		t.Fatalf("TS=%q", ts)
+	}
+	got, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Fatalf("J2K lossless roundtrip mismatch: %d vs %d", len(got), len(orig))
+	}
+}
