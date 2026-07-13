@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: implicit VR byte-layout tests for OD/OL/UC/UR/UN; UC multi-value explicit cases; file meta unchanged on non-enforced save
+- **Reader / File Writer**: private-tag VR resolution from private dictionary during implicit reads; implicit↔explicit conversion keeps private creator/data VRs
+
+### Fixed
+- **Reader**: private creator tags resolve to LO; private data tags use creator + private dictionary instead of always UN on implicit VR read
+
+**Tests**: 623 passed (v0.11.0: 615)
+
 ## [0.11.0] - 2026-07-13
 
 ### Added

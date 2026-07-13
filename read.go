@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 type ReadOptions struct {
@@ -60,6 +61,47 @@ func readDeferSize(opts *ReadOptions) uint32 {
 		return 0
 	}
 	return opts.DeferSize
+}
+
+func creatorStringFromElement(elem *DataElement) string {
+	if elem == nil || elem.Value == nil {
+		return ""
+	}
+	switch v := elem.Value.(type) {
+	case string:
+		return strings.TrimRight(v, " ")
+	case []byte:
+		return strings.TrimRight(string(v), " \x00")
+	default:
+		return strings.TrimRight(fmt.Sprintf("%v", v), " ")
+	}
+}
+
+func privateCreatorFromElements(elements []*DataElement, tag Tag) string {
+	creatorTag := tag.PrivateCreator()
+	for i := len(elements) - 1; i >= 0; i-- {
+		if elements[i].Tag == creatorTag {
+			return creatorStringFromElement(elements[i])
+		}
+	}
+	return ""
+}
+
+func privateCreatorFromDataset(ds *Dataset, tag Tag) string {
+	if ds == nil {
+		return ""
+	}
+	if elem, ok := ds.elements[tag.PrivateCreator()]; ok {
+		return creatorStringFromElement(elem)
+	}
+	return ""
+}
+
+func lookupVRDuringRead(tag Tag, creator string) VR {
+	if tag.IsPrivate() {
+		return lookupVRWithCreator(tag, creator)
+	}
+	return LookupVR(tag)
 }
 
 func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
@@ -172,7 +214,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 			}
 			hdrSize = 8
-			vr = LookupVR(currentTag)
+			vr = lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag))
 		} else {
 			if pos+8 > int64(len(data)) {
 				break
@@ -190,7 +232,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 				}
 				hdrSize = 8
-				vr = LookupVR(currentTag)
+				vr = lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag))
 			} else if ExplicitVRLength16[vr] {
 				if isLittleEndian {
 					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
@@ -498,7 +540,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 			}
 			hdrSize = 8
-			vr = LookupVR(currentTag)
+			vr = lookupVRDuringRead(currentTag, privateCreatorFromDataset(ds, currentTag))
 		} else {
 			if pos+8 > int64(len(data)) {
 				break
@@ -514,7 +556,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 				}
 				hdrSize = 8
-				vr = LookupVR(currentTag)
+				vr = lookupVRDuringRead(currentTag, privateCreatorFromDataset(ds, currentTag))
 			} else if ExplicitVRLength16[vr] {
 				if isLittleEndian {
 					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))

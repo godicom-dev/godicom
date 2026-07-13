@@ -59,10 +59,15 @@ func TestLookupVR(t *testing.T) {
 	if vr != VRPN {
 		t.Errorf("got %s", vr)
 	}
-	// Private tag should return UN
+	// Private creator tags are LO (DICOM PS3.5).
 	vr = LookupVR(MustTag(0x00090010))
+	if vr != VRLO {
+		t.Errorf("private creator VR = %s, want LO", vr)
+	}
+	// Other private tags without creator context remain UN.
+	vr = LookupVR(MustTag(0x00091001))
 	if vr != VRUN {
-		t.Errorf("private tag VR = %s, want UN", vr)
+		t.Errorf("private data VR = %s, want UN", vr)
 	}
 }
 

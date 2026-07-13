@@ -131,6 +131,9 @@ func TagFromKeyword(keyword string) (Tag, error) {
 // LookupVR returns the VR for a tag, with fallback for unknown tags.
 func LookupVR(tag Tag) VR {
 	if tag.IsPrivate() {
+		if tag.IsPrivateCreator() {
+			return VRLO
+		}
 		return VRUN
 	}
 	vr, err := dictionaryVR(tag)
@@ -138,6 +141,24 @@ func LookupVR(tag Tag) VR {
 		return VRUN
 	}
 	return vr
+}
+
+// lookupVRWithCreator resolves VR for a private tag using its creator string.
+// Mirrors pydicom datadict.dictionary_VR for private elements during implicit read.
+func lookupVRWithCreator(tag Tag, creator string) VR {
+	if !tag.IsPrivate() {
+		return LookupVR(tag)
+	}
+	if tag.IsPrivateCreator() {
+		return VRLO
+	}
+	if creator == "" {
+		return VRUN
+	}
+	if vr, ok := privateDictionaryVR(tag, creator); ok {
+		return vr
+	}
+	return VRUN
 }
 
 // IsRepeaterTag returns true if the tag matches a repeater pattern.
