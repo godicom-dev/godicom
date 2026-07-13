@@ -361,6 +361,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		}
 	}
 	propagateEncoding(ds, ds.originalEnc)
+	captureOriginalCharsets(ds)
 
 	fd := &FileDataset{
 		Dataset:  ds,
@@ -374,6 +375,35 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	ds.readCtx = readCtx
 
 	return fd, nil
+}
+
+func captureOriginalCharsets(ds *Dataset) {
+	if ds == nil {
+		return
+	}
+	ds.originalCharsets = datasetCharacterSets(ds)
+	for _, elem := range ds.Iter() {
+		if elem.VR != VRSQ {
+			continue
+		}
+		seq, ok := elem.Value.(*Sequence)
+		if !ok || seq == nil {
+			continue
+		}
+		for _, item := range seq.Items() {
+			captureOriginalCharsets(item)
+		}
+	}
+}
+
+func datasetCharacterSets(ds *Dataset) []string {
+	if ds == nil {
+		return []string{DefaultCharacterSet}
+	}
+	if elem, ok := ds.elements[TagCharset]; ok {
+		return ParseCharacterSets(elem.Value)
+	}
+	return []string{DefaultCharacterSet}
 }
 
 func propagateEncoding(ds *Dataset, enc EncodingInfo) {

@@ -12,6 +12,7 @@ type Dataset struct {
 	elements                      map[Tag]*DataElement
 	privateBlocks                 map[[2]interface{}]*PrivateBlock // key: (group, creator)
 	originalEnc                   EncodingInfo
+	originalCharsets              []string // SpecificCharacterSet at read time; nil if unset/new
 	parent                        *Sequence
 	IsUndefinedLengthSequenceItem bool
 	readCtx                       *readContext
