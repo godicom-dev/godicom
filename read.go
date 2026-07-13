@@ -110,10 +110,6 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		return nil, err
 	}
 
-	if opts == nil {
-		opts = &ReadOptions{}
-	}
-
 	data, err := io.ReadAll(f)
 	if err != nil {
 		f.Close()
@@ -124,6 +120,19 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 		modTime = info.ModTime().Unix()
 	}
 	f.Close()
+
+	return readBytes(data, filename, modTime, opts)
+}
+
+// ReadBytes parses a Part 10 DICOM file from data (preamble optional when Force).
+func ReadBytes(data []byte, opts *ReadOptions) (*FileDataset, error) {
+	return readBytes(data, "", 0, opts)
+}
+
+func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (*FileDataset, error) {
+	if opts == nil {
+		opts = &ReadOptions{}
+	}
 
 	if len(data) < 8 {
 		return nil, &InvalidDICOMError{Message: "file too small"}
