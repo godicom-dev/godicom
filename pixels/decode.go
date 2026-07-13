@@ -71,6 +71,10 @@ func DecodePixelData(fd FileSource, opts ...DecodeOption) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		decoded, err = maybeProcessFrame(decoded, desc, o)
+		if err != nil {
+			return nil, err
+		}
 		return [][]byte{decoded}, nil
 	}
 
@@ -79,6 +83,10 @@ func DecodePixelData(fd FileSource, opts ...DecodeOption) ([][]byte, error) {
 		out[i], err = DecodeFrame(enc, desc, o)
 		if err != nil {
 			return nil, fmt.Errorf("pixels: frame %d: %w", i, err)
+		}
+		out[i], err = maybeProcessFrame(out[i], desc, o)
+		if err != nil {
+			return nil, fmt.Errorf("pixels: frame %d process: %w", i, err)
 		}
 	}
 	return out, nil
@@ -103,6 +111,14 @@ func DecodeAllFrames(fd FileSource, opts ...DecodeOption) ([]byte, error) {
 
 func decodeNativeFrames(pixelData []byte, desc Descriptor, opts DecodeOptions) ([][]byte, error) {
 	frameBytes := desc.UnpackedFrameBytes()
+	if desc.PhotometricInterpretation == "YBR_FULL_422" {
+		nBytes := desc.BitsAllocated / 8
+		if nBytes < 1 {
+			return nil, fmt.Errorf("pixels: invalid BitsAllocated %d for YBR_FULL_422", desc.BitsAllocated)
+		}
+		// Y Y Cb Cr for every two pixels → 2 bytes/pixel average at 8-bit.
+		frameBytes = desc.Rows * desc.Columns * 2 * nBytes
+	}
 	want := frameBytes * desc.NumberOfFrames
 	if len(pixelData) != want {
 		return nil, fmt.Errorf("pixels: native pixel data length %d, want %d", len(pixelData), want)
@@ -115,21 +131,40 @@ func decodeNativeFrames(pixelData []byte, desc Descriptor, opts DecodeOptions) (
 		start := idx * frameBytes
 		out := make([]byte, frameBytes)
 		copy(out, pixelData[start:start+frameBytes])
-		return [][]byte{out}, nil
+		processed, err := maybeProcessFrame(out, desc, opts)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{processed}, nil
 	}
 	if desc.NumberOfFrames == 1 {
 		out := make([]byte, frameBytes)
 		copy(out, pixelData)
-		return [][]byte{out}, nil
+		processed, err := maybeProcessFrame(out, desc, opts)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{processed}, nil
 	}
 	out := make([][]byte, desc.NumberOfFrames)
 	for i := 0; i < desc.NumberOfFrames; i++ {
 		start := i * frameBytes
 		frame := make([]byte, frameBytes)
 		copy(frame, pixelData[start:start+frameBytes])
-		out[i] = frame
+		processed, err := maybeProcessFrame(frame, desc, opts)
+		if err != nil {
+			return nil, fmt.Errorf("pixels: frame %d process: %w", i, err)
+		}
+		out[i] = processed
 	}
 	return out, nil
+}
+
+func maybeProcessFrame(frame []byte, desc Descriptor, opts DecodeOptions) ([]byte, error) {
+	if opts.Raw {
+		return frame, nil
+	}
+	return ProcessFrame(frame, desc, true)
 }
 
 func decodeDeflatedFrame(src []byte) ([]byte, error) {

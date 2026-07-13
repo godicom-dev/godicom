@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-13
+
+### Added
+- **Pixels**: `ConvertColorSpace` (YBR_FULL ↔ RGB), `ExpandYBR422`, planar↔interleaved helpers
+- **Pixels**: when `WithRaw(false)` (default), apply YBR→RGB and PlanarConfiguration normalization after decode
+
+**Tests**: 667 passed (v0.16.0: 662)
+
 ## [0.16.0] - 2026-07-13
 
 ### Added
