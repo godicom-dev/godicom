@@ -54,7 +54,12 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 	}
 
 	for _, elem := range source.dataset.Iter() {
-		if elem.Tag.Group() == 0x0002 {
+		switch elem.Tag.Group() {
+		case 0x0000:
+			return fmt.Errorf(
+				"godicom: Command Set elements (0000,eeee) are not allowed when writing a file; write the dataset alone instead",
+			)
+		case 0x0002:
 			return fmt.Errorf(
 				"godicom: File Meta Information group elements (0002,eeee) must be in FileDataset.FileMeta, not the dataset",
 			)
@@ -81,6 +86,10 @@ func writeFile(filename string, source writeSource, opts *WriteOptions) error {
 			fileMeta = NewFileMetaDataset()
 		}
 
+		// Under EnforceFileFormat, fill TransferSyntaxUID from the resolved
+		// encoding when missing. Unlike pydicom (which skips Explicit VR LE),
+		// godicom also fills Explicit VR Little Endian because NewDataset
+		// defaults to that encoding.
 		ts, _ := transferSyntaxUID(fileMeta)
 		if ts == "" {
 			if isImplicit && isLittleEndian {
@@ -251,47 +260,70 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 		opts = &WriteOptions{}
 	}
 
-	fallbackImplicit := ds.originalEnc.IsImplicitVR
-	fallbackLittle := ds.originalEnc.IsLittleEndian
+	var (
+		hasFallback bool
+		fallbackImp bool
+		fallbackLit bool
+	)
 	if opts.ImplicitVR != nil {
-		fallbackImplicit = *opts.ImplicitVR
-	}
-	if opts.LittleEndian != nil {
-		fallbackLittle = *opts.LittleEndian
-	} else if opts.ImplicitVR != nil {
-		fallbackLittle = true
+		fallbackImp = *opts.ImplicitVR
+		fallbackLit = true
+		hasFallback = true
+		if opts.LittleEndian != nil {
+			fallbackLit = *opts.LittleEndian
+		}
+	} else if opts.LittleEndian != nil {
+		fallbackImp = ds.originalEnc.IsImplicitVR
+		fallbackLit = *opts.LittleEndian
+		hasFallback = true
+	} else {
+		fallbackImp = ds.originalEnc.IsImplicitVR
+		fallbackLit = ds.originalEnc.IsLittleEndian
+		hasFallback = true
 	}
 
 	tsUID, hasTS := transferSyntaxUID(fileMeta)
 	if !hasTS || tsUID == "" {
-		return fallbackImplicit, fallbackLittle, nil
-	}
-
-	info, ok := uid.Known[uid.UID(tsUID)]
-	if !ok || !info.IsTransferSyntax {
-		return fallbackImplicit, fallbackLittle, nil
-	}
-
-	// Explicit WriteOptions override file meta transfer syntax.
-	if opts.ImplicitVR != nil || opts.LittleEndian != nil {
-		if opts.ImplicitVR != nil && opts.LittleEndian != nil {
-			if *opts.ImplicitVR != info.IsImplicitVR {
-				return false, false, fmt.Errorf(
-					"godicom: ImplicitVR=%t is inconsistent with transfer syntax %q",
-					*opts.ImplicitVR, tsUID,
-				)
-			}
-			if *opts.LittleEndian != info.IsLittleEndian {
-				return false, false, fmt.Errorf(
-					"godicom: LittleEndian=%t is inconsistent with transfer syntax %q",
-					*opts.LittleEndian, tsUID,
-				)
-			}
+		if !hasFallback {
+			return false, false, fmt.Errorf(
+				"godicom: unable to determine the encoding to use for writing the dataset; set FileMeta TransferSyntaxUID or WriteOptions ImplicitVR/LittleEndian",
+			)
 		}
-		return fallbackImplicit, fallbackLittle, nil
+		return fallbackImp, fallbackLit, nil
 	}
 
-	return info.IsImplicitVR, info.IsLittleEndian, nil
+	ts := uid.UID(tsUID)
+	info, known := uid.Known[ts]
+	if known && info.IsTransferSyntax {
+		if opts.ImplicitVR != nil && *opts.ImplicitVR != info.IsImplicitVR {
+			return false, false, fmt.Errorf(
+				"godicom: ImplicitVR=%t is inconsistent with transfer syntax %q",
+				*opts.ImplicitVR, tsUID,
+			)
+		}
+		if opts.LittleEndian != nil && *opts.LittleEndian != info.IsLittleEndian {
+			return false, false, fmt.Errorf(
+				"godicom: LittleEndian=%t is inconsistent with transfer syntax %q",
+				*opts.LittleEndian, tsUID,
+			)
+		}
+		return info.IsImplicitVR, info.IsLittleEndian, nil
+	}
+
+	if known && !info.IsTransferSyntax {
+		return false, false, fmt.Errorf(
+			"godicom: Transfer Syntax UID %q is not a valid transfer syntax",
+			tsUID,
+		)
+	}
+
+	// Private / unknown UID: require both encoding options.
+	if opts.ImplicitVR == nil || opts.LittleEndian == nil {
+		return false, false, fmt.Errorf(
+			"godicom: ImplicitVR and LittleEndian are required when using a private transfer syntax",
+		)
+	}
+	return *opts.ImplicitVR, *opts.LittleEndian, nil
 }
 
 func encodingChanged(ds *Dataset, isImplicit, isLittleEndian bool) bool {
@@ -404,6 +436,10 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
 	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
+	}
+
+	if !StandardVRs[elem.VR] && !IsAmbiguousVR(elem.VR) {
+		return fmt.Errorf("godicom: unknown Value Representation %q", elem.VR)
 	}
 
 	if !isImplicit && IsAmbiguousVR(elem.VR) {

@@ -680,6 +680,7 @@ func TestWriteFileImplicitVR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ds.FileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ImplicitVRLittleEndian))
 
 	implicit := true
 	opts := &WriteOptions{ImplicitVR: &implicit}
