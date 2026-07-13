@@ -115,3 +115,59 @@ func FromNamedComponents(family, given, middle, prefix, suffix string) PersonNam
 	alphabetic := strings.Join(parts, "^")
 	return ParsePersonName(alphabetic)
 }
+
+// PersonNameParts holds named PN components across alphabetic/ideographic/phonetic groups.
+// Mirrors pydicom PersonName.from_named_components keyword arguments.
+type PersonNameParts struct {
+	FamilyName string
+	GivenName  string
+	MiddleName string
+	NamePrefix string
+	NameSuffix string
+
+	FamilyNameIdeographic string
+	GivenNameIdeographic  string
+	MiddleNameIdeographic string
+	NamePrefixIdeographic string
+	NameSuffixIdeographic string
+
+	FamilyNamePhonetic string
+	GivenNamePhonetic  string
+	MiddleNamePhonetic string
+	NamePrefixPhonetic string
+	NameSuffixPhonetic string
+}
+
+// PersonNameFromParts builds a PersonName from structured component parts.
+func PersonNameFromParts(p PersonNameParts) PersonName {
+	alphabetic := joinNameParts(p.FamilyName, p.GivenName, p.MiddleName, p.NamePrefix, p.NameSuffix)
+	ideographic := joinNameParts(p.FamilyNameIdeographic, p.GivenNameIdeographic, p.MiddleNameIdeographic, p.NamePrefixIdeographic, p.NameSuffixIdeographic)
+	phonetic := joinNameParts(p.FamilyNamePhonetic, p.GivenNamePhonetic, p.MiddleNamePhonetic, p.NamePrefixPhonetic, p.NameSuffixPhonetic)
+	pn := PersonName{
+		Alphabetic:  alphabetic,
+		Ideographic: ideographic,
+		Phonetic:    phonetic,
+	}
+	return pn
+}
+
+// PersonNameFromVeterinary builds a veterinary PN (responsible party ^ patient name).
+// Mirrors pydicom PersonName.from_named_components_veterinary.
+func PersonNameFromVeterinary(responsibleParty, patientName string) PersonName {
+	return FromNamedComponents(responsibleParty, patientName, "", "", "")
+}
+
+func joinNameParts(family, given, middle, prefix, suffix string) string {
+	parts := []string{family, given, middle, prefix, suffix}
+	for len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "^")
+}
+
+func (pn PersonName) Equal(other PersonName) bool {
+	return pn.String() == other.String()
+}

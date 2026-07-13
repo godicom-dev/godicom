@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-13
+
+### Added
+- **ValueRep**: `IsValidDS` / `IsValidIS` / `ISInRange`; `FormatNumberAsDS` / `DSFromFloat` (pydicom `format_number_as_ds`)
+- **ValueRep**: `DA`/`TM`/`DT`/`DS`/`IS`/`PersonName` `Equal` helpers
+- **PersonName**: `PersonNameParts` / `PersonNameFromParts` / `PersonNameFromVeterinary` (named components + veterinary)
+
+**Tests**: 656 passed (v0.14.0: 645)
+
 ## [0.14.0] - 2026-07-13
 
 ### Added
