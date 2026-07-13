@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **File Writer**: pydicom-aligned encoding tests — EnforceFileFormat file-meta fill/SOP sync, private/invalid transfer syntax, mismatch checks, command-set reject, unknown VR, implicit↔explicit VR conversion
+
+### Fixed
+- **File Writer**: `determineWriteEncoding` rejects non-transfer-syntax UIDs, requires encoding args for private TS, and checks ImplicitVR/LittleEndian mismatches independently
+- **File Writer**: reject Command Set group `(0000,eeee)` elements on file write; reject unknown VRs when encoding elements
+
+**Tests**: 615 passed (v0.10.0: 603)
+
 ## [0.10.0] - 2026-07-10
 
 ### Added
