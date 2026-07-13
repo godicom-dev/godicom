@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-13
+
 ### Added
 - **File Writer**: pydicom-aligned encoding tests — EnforceFileFormat file-meta fill/SOP sync, private/invalid transfer syntax, mismatch checks, command-set reject, unknown VR, implicit↔explicit VR conversion
 
