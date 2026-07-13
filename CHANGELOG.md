@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-13
+
+### Added
+- **Dataset**: `Encode` / `EncodeEncoding` and package `EncodeDataset` / `EncodeDatasetEncoding` / `WriteDataset` — encode a dataset without preamble or File Meta (DIMSE C-STORE / C-FIND payloads; Deflated TS supported)
+
+**Tests**: 692 passed (v0.20.0: 686); EncodeDataset Implicit VR LE matches pynetdicom `c_store_ds` golden bytes
+
 ## [0.20.0] - 2026-07-13
 
 ### Added
@@ -237,7 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/godicom-dev/godicom/compare/v0.20.0...v0.21.0
 [0.7.0]: https://github.com/godicom-dev/godicom/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/godicom-dev/godicom/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/godicom-dev/godicom/compare/v0.4.0...v0.5.0

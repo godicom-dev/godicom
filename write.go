@@ -1044,6 +1044,94 @@ func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
 	return writeFile(filename, writeSource{dataset: ds}, opts)
 }
 
+// EncodeDataset encodes ds as a DICOM dataset only (no preamble / File Meta),
+// using transferSyntaxUID for VR, endianness, and Deflated compression when
+// applicable. Suitable for DIMSE C-STORE / C-FIND payloads.
+func EncodeDataset(ds *Dataset, transferSyntaxUID string) ([]byte, error) {
+	ts := uid.UID(transferSyntaxUID)
+	info, known := uid.Known[ts]
+	if !known || !info.IsTransferSyntax {
+		return nil, fmt.Errorf(
+			"godicom: Transfer Syntax UID %q is not a known transfer syntax; use EncodeDatasetEncoding",
+			transferSyntaxUID,
+		)
+	}
+	if UID(transferSyntaxUID).IsCompressed() {
+		if elem, ok := ds.Get(MustTag("PixelData")); ok {
+			elem.IsUndefinedLength = true
+		}
+	}
+	return encodeDataset(ds, info.IsImplicitVR, info.IsLittleEndian, ts.IsDeflated())
+}
+
+// EncodeDatasetEncoding encodes ds with explicit VR/endian flags (no preamble /
+// File Meta). Matches pynetdicom.dsutils.encode / pydicom write_dataset.
+func EncodeDatasetEncoding(ds *Dataset, isImplicitVR, isLittleEndian bool) ([]byte, error) {
+	if isImplicitVR && !isLittleEndian {
+		return nil, fmt.Errorf("godicom: implicit VR and big endian is not a valid encoding combination")
+	}
+	return encodeDataset(ds, isImplicitVR, isLittleEndian, false)
+}
+
+// WriteDataset encodes ds with transferSyntaxUID and writes the result to w.
+func WriteDataset(w io.Writer, ds *Dataset, transferSyntaxUID string) error {
+	b, err := EncodeDataset(ds, transferSyntaxUID)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
+}
+
+func encodeDataset(ds *Dataset, isImplicit, isLittleEndian, deflated bool) ([]byte, error) {
+	resetWriteGlobals()
+	defer resetWriteGlobals()
+
+	if ds == nil {
+		return nil, fmt.Errorf("godicom: missing dataset")
+	}
+	for _, elem := range ds.Iter() {
+		switch elem.Tag.Group() {
+		case 0x0000:
+			return nil, fmt.Errorf(
+				"godicom: Command Set elements (0000,eeee) are not allowed in EncodeDataset",
+			)
+		case 0x0002:
+			return nil, fmt.Errorf(
+				"godicom: File Meta Information group elements (0002,eeee) are not allowed in EncodeDataset; encode the dataset alone",
+			)
+		}
+	}
+
+	var datasetBuf bytes.Buffer
+	fp := newDicomWriter(&datasetBuf)
+	fp.SetByteOrder(isLittleEndian)
+	if err := writeDataset(fp, ds, isImplicit, isLittleEndian, nil, encodingChanged(ds, isImplicit, isLittleEndian)); err != nil {
+		return nil, fmt.Errorf("godicom: error encoding dataset: %w", err)
+	}
+
+	if !deflated {
+		return datasetBuf.Bytes(), nil
+	}
+
+	var deflatedBuf bytes.Buffer
+	fw, err := flate.NewWriter(&deflatedBuf, flate.DefaultCompression)
+	if err != nil {
+		return nil, fmt.Errorf("godicom: error creating deflater: %w", err)
+	}
+	if _, err := fw.Write(datasetBuf.Bytes()); err != nil {
+		return nil, fmt.Errorf("godicom: error deflating dataset: %w", err)
+	}
+	if err := fw.Close(); err != nil {
+		return nil, fmt.Errorf("godicom: error closing deflater: %w", err)
+	}
+	payload := deflatedBuf.Bytes()
+	if len(payload)%2 == 1 {
+		payload = append(payload, 0)
+	}
+	return payload, nil
+}
+
 // Ensure binary is used
 var _ = binary.BigEndian
 var _ = io.Discard

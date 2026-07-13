@@ -812,7 +812,7 @@ func (d *Dataset) Clone() *Dataset {
 	return cloneDataset(d)
 }
 
-// --- Save ---
+// --- Save / Encode ---
 
 func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
 	return WriteFile(filename, d, opts)
@@ -824,6 +824,16 @@ func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
 		fileMeta: fd.FileMeta,
 		preamble: fd.Preamble,
 	}, opts)
+}
+
+// Encode returns the dataset bytes (no preamble / File Meta) for transferSyntaxUID.
+func (d *Dataset) Encode(transferSyntaxUID string) ([]byte, error) {
+	return EncodeDataset(d, transferSyntaxUID)
+}
+
+// EncodeEncoding returns the dataset bytes using explicit VR/endian flags.
+func (d *Dataset) EncodeEncoding(isImplicitVR, isLittleEndian bool) ([]byte, error) {
+	return EncodeDatasetEncoding(d, isImplicitVR, isLittleEndian)
 }
 
 // --- Element count ---
