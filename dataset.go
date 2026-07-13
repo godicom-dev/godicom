@@ -475,13 +475,116 @@ func (pb *PrivateBlock) Set(offset int, vr VR, value interface{}) {
 
 // --- String ---
 
+const (
+	// DefaultElementFormat matches pydicom Dataset.default_element_format.
+	DefaultElementFormat = "%(tag)s %(name)-35.35s %(VR)s: %(repval)s"
+	// DefaultSequenceElementFormat matches pydicom Dataset.default_sequence_element_format.
+	DefaultSequenceElementFormat = "%(tag)s %(name)-35.35s %(VR)s: %(repval)s"
+
+	datasetIndentChars = "   "
+)
+
+// FormatLinesOptions controls Dataset.FormattedLines output.
+type FormatLinesOptions struct {
+	ElementFormat         string
+	SequenceElementFormat string
+}
+
 func (d *Dataset) String() string {
-	var b strings.Builder
-	for _, elem := range d.Iter() {
-		b.WriteString(elem.String())
-		b.WriteString("\n")
+	return d.prettyString(0, false)
+}
+
+// Top returns a string representation of only top-level elements.
+// Mirrors pydicom Dataset.top.
+func (d *Dataset) Top() string {
+	return d.prettyString(0, true)
+}
+
+// FormattedLines returns formatted lines for every element, recursing into sequences.
+// Mirrors pydicom Dataset.formatted_lines.
+func (d *Dataset) FormattedLines(opts *FormatLinesOptions) []string {
+	elemFmt := DefaultElementFormat
+	seqFmt := DefaultSequenceElementFormat
+	if opts != nil {
+		if opts.ElementFormat != "" {
+			elemFmt = opts.ElementFormat
+		}
+		if opts.SequenceElementFormat != "" {
+			seqFmt = opts.SequenceElementFormat
+		}
 	}
-	return b.String()
+	var out []string
+	for _, elem := range d.IterAll() {
+		if elem.VR == VRSQ {
+			out = append(out, formatElementLine(elem, seqFmt))
+		} else {
+			out = append(out, formatElementLine(elem, elemFmt))
+		}
+	}
+	return out
+}
+
+func (d *Dataset) prettyString(indent int, topLevelOnly bool) string {
+	var lines []string
+	indentStr := strings.Repeat(datasetIndentChars, indent)
+	nextIndentStr := strings.Repeat(datasetIndentChars, indent+1)
+
+	for _, elem := range d.Iter() {
+		if elem.VR == VRSQ {
+			n := 0
+			seq, ok := elem.Value.(*Sequence)
+			if ok {
+				n = seq.Len()
+			}
+			lines = append(lines, fmt.Sprintf("%s%s  %s  %d item(s) ---- ", indentStr, elem.Tag, elem.Name(), n))
+			if topLevelOnly || !ok {
+				continue
+			}
+			for _, item := range seq.Items() {
+				if item == nil {
+					lines = append(lines, nextIndentStr+"---------")
+					continue
+				}
+				nested := item.prettyString(indent+1, false)
+				if nested != "" {
+					lines = append(lines, nested)
+				}
+				lines = append(lines, nextIndentStr+"---------")
+			}
+			continue
+		}
+		lines = append(lines, indentStr+elem.String())
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatElementLine(elem *Element, format string) string {
+	tag := elem.Tag.String()
+	name := elem.Name()
+	vr := string(elem.VR)
+	repval := elem.ReprValue()
+
+	out := format
+	out = strings.ReplaceAll(out, "%(tag)s", tag)
+	out = strings.ReplaceAll(out, "%(VR)s", vr)
+	out = strings.ReplaceAll(out, "%(repval)s", repval)
+	if strings.Contains(out, "%(name)-35.35s") {
+		out = strings.ReplaceAll(out, "%(name)-35.35s", padTruncateRunes(name, 35))
+	}
+	out = strings.ReplaceAll(out, "%(name)s", name)
+	return out
+}
+
+func padTruncateRunes(s string, width int) string {
+	runes := []rune(s)
+	if len(runes) > width {
+		runes = runes[:width]
+	}
+	padded := string(runes)
+	if n := width - len([]rune(padded)); n > 0 {
+		padded += strings.Repeat(" ", n)
+	}
+	return padded
 }
 
 // WalkFunc is called for each element in a Dataset during Walk.

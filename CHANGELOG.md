@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-13
+
+### Added
+- **Dataset**: `FormattedLines` / `Top`; nested `String()` pretty-print for sequences (pydicom `formatted_lines` / `top`)
+- **Element**: UI string values resolve to known UID names in `ReprValue`
+
+**Tests**: 662 passed (v0.15.0: 656)
+
 ## [0.15.0] - 2026-07-13
 
 ### Added
