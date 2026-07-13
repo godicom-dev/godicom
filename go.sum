@@ -2,8 +2,8 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/godicom-dev/golibjpeg v1.1.2 h1:EBrJkie4QKgY6C59Yguk3l+h+2J3rggqZnkIb7osoec=
 github.com/godicom-dev/golibjpeg v1.1.2/go.mod h1:i6eA5kZXzxv4ER8Lr60sFNmIrD5Z1MddgyI3LzXQ7x0=
-github.com/godicom-dev/goopenjpeg v1.0.2 h1:xsEFm1fdiOiv6LAb9FzSVgyYo8EZ1e1eZugp2oSmfpU=
-github.com/godicom-dev/goopenjpeg v1.0.2/go.mod h1:eaA++xUWUchTHzNGS7DxIh1rrLE31TI4uo7XJvVm9XY=
+github.com/godicom-dev/goopenjpeg v1.1.1 h1:6fIIb6SzCV+RjmDY81GZtqxdp3yEbYV/G0uMzw7k0Tw=
+github.com/godicom-dev/goopenjpeg v1.1.1/go.mod h1:eaA++xUWUchTHzNGS7DxIh1rrLE31TI4uo7XJvVm9XY=
 github.com/godicom-dev/gorle v1.0.1 h1:ThoepiBxcLYwLkF564c8zVTokPUk0rIVE8t1uHjuZNQ=
 github.com/godicom-dev/gorle v1.0.1/go.mod h1:qj8CYFEf3Qf6gXGn2DGfTXVL6VZD52V6dOGN8gMUOcY=
 golang.org/x/sys v0.46.0 h1:noSf2Fq6F8DBgS+LysIkx7rIExoNHJsxOAtPp4rthXw=

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"compress/flate"
 	"fmt"
+	"strings"
 
 	"github.com/godicom-dev/godicom/encaps"
 	"github.com/godicom-dev/godicom/uid"
+	"github.com/godicom-dev/goopenjpeg"
 	"github.com/godicom-dev/gorle"
 )
 
@@ -15,7 +17,7 @@ type EncodeOption func(*EncodeOptions)
 
 // EncodeOptions configures frame encoding.
 type EncodeOptions struct {
-	// TransferSyntaxUID selects the encoder (native / RLE / Deflated).
+	// TransferSyntaxUID selects the encoder (native / RLE / Deflated / J2K).
 	TransferSyntaxUID uid.UID
 	// FragmentsPerFrame is passed to encaps.Encapsulate (default 1).
 	FragmentsPerFrame int
@@ -55,8 +57,9 @@ type EncodedPixelData struct {
 }
 
 // EncodeFrame encodes a single uncompressed frame to the target transfer syntax.
-// Supported: native (uncompressed), RLE Lossless, Deflated Image Frame Compression.
-// JPEG / JPEG-LS / JPEG2000 encode requires golibjpeg/goopenjpeg encode APIs (not yet).
+// Supported: native, RLE Lossless, Deflated Image Frame Compression,
+// JPEG 2000 Lossless / JPEG 2000 (lossy via compression ratio 10 by default for .91).
+// JPEG / JPEG-LS encode is not available (golibjpeg upstream has no encoder).
 func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 	switch {
 	case !ts.IsCompressed():
@@ -67,8 +70,10 @@ func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 		return encodeRLE(src, desc)
 	case ts == uid.DeflatedImageFrameCompression:
 		return encodeDeflated(src)
+	case ts == uid.JPEG2000Lossless, ts == uid.JPEG2000:
+		return encodeJ2K(src, desc, ts)
 	default:
-		return nil, fmt.Errorf("pixels: encode unsupported for transfer syntax %s (JPEG/J2K encode not available yet)", ts)
+		return nil, fmt.Errorf("pixels: encode unsupported for transfer syntax %s", ts)
 	}
 }
 
@@ -160,4 +165,36 @@ func encodeDeflated(src []byte) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func encodeJ2K(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
+	bits := desc.BitsStored
+	if bits == 0 {
+		bits = desc.BitsAllocated
+	}
+	opts := goopenjpeg.EncodeOptions{
+		Columns:         desc.Columns,
+		Rows:            desc.Rows,
+		SamplesPerPixel: desc.SamplesPerPixel,
+		BitsStored:      bits,
+		IsSigned:        desc.PixelRepresentation == 1,
+		Codec:           goopenjpeg.CodecJ2K,
+	}
+	pi := strings.TrimSpace(desc.PhotometricInterpretation)
+	switch pi {
+	case "MONOCHROME1", "MONOCHROME2", "":
+		opts.ColourSpace = goopenjpeg.ColourGray
+	case "RGB":
+		opts.ColourSpace = goopenjpeg.ColourSRGB
+		opts.UseMCT = true
+	case "YBR_FULL", "YBR_ICT", "YBR_RCT":
+		opts.ColourSpace = goopenjpeg.ColourSYCC
+	default:
+		opts.ColourSpace = goopenjpeg.ColourUnspecified
+	}
+	if ts == uid.JPEG2000 {
+		// Default mild lossy layer; callers needing custom ratios can use goopenjpeg directly.
+		opts.CompressionRatios = []float64{10}
+	}
+	return goopenjpeg.Encode(src, opts)
 }

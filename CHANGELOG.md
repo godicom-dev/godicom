@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-13
+
+### Added
+- **Pixels / FileDataset**: JPEG 2000 Lossless (and default lossy JPEG 2000) via `goopenjpeg` v1.1.1 `Encode`
+- `CompressPixelData` now supports `JPEG2000Lossless` / `JPEG2000` in addition to RLE / Deflated / native
+
+### Notes
+- JPEG / JPEG-LS **encode** remains unavailable (`golibjpeg` / pylibjpeg-libjpeg have no encoder)
+
+**Tests**: 686 passed (v0.19.0: 685)
+
 ## [0.19.0] - 2026-07-13
 
 ### Added
