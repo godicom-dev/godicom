@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **UID**: `GenerateUID` / `MustGenerateUID` with `WithPrefix`, `WithUUIDPrefix`, `WithEntropy` (pydicom `generate_uid` behaviour; default root `1.2.826.0.1.3680043.8.498.`)
+
 ## [0.23.0] - 2026-07-13
 
 ### Added

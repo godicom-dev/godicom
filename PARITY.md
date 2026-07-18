@@ -26,7 +26,7 @@ areas are thinner on edge fixtures.
 | Tag / standard dictionary | solid | tag, datadict | `tag/` + generated dict | Keyword constants + lookup |
 | Private dictionary | solid | `_private_dict` | `private_dictionary_*` | Creators + runtime extend |
 | UID dictionary | solid | uid, `_uid_dict` | `uid/` | ~490 entries |
-| GenerateUID / register TS | **gap** | `generate_uid`, `register_transfer_syntax` | — | Deferred |
+| GenerateUID / register TS | **partial** | `generate_uid`, `register_transfer_syntax` | `GenerateUID` (+ options) | `RegisterTransferSyntax` still deferred |
 | VR / valuerep | partial | valuerep (~117) | DA/TM/DT/DS/IS/PN | Not full valuerep surface |
 | Values conversion | partial | values (~28) | `values.go` | Main paths; thinner edges |
 | DataElement | partial | dataelem (~123) | `element.go` + `RawValue` | Validation modes thinner |
@@ -65,11 +65,11 @@ areas are thinner on edge fixtures.
 
 | Priority | Item | Why |
 |----------|------|-----|
-| P1 | `GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | P1 | Streaming / `ReadPartial` | Large studies without full RAM |
 | P2 | JPEG encode (upstream) | Accept renegotiation / some DICOMweb paths |
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
 | P3 | DICOMDIR / SR / overlay / waveform | Domain tools only |
+| done | `GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 
 ## Method
 

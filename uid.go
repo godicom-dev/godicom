@@ -44,3 +44,29 @@ func LookupUID(keyword string) (UID, bool) {
 func ValidateUID(s string) error {
 	return uid.Validate(s)
 }
+
+// RootUID is the default prefix used by GenerateUID.
+const RootUID = uid.RootUID
+
+// GenerateOption configures GenerateUID.
+type GenerateOption = uid.GenerateOption
+
+// WithPrefix sets the UID prefix for GenerateUID.
+func WithPrefix(prefix string) GenerateOption { return uid.WithPrefix(prefix) }
+
+// WithUUIDPrefix generates a 2.25.<uuid4-as-int> UID.
+func WithUUIDPrefix() GenerateOption { return uid.WithUUIDPrefix() }
+
+// WithEntropy makes GenerateUID deterministic from the given sources.
+func WithEntropy(srcs ...string) GenerateOption { return uid.WithEntropy(srcs...) }
+
+// GenerateUID returns a DICOM UID of at most 64 characters.
+// See [uid.GenerateUID] for behaviour aligned with common DICOM UID generators.
+func GenerateUID(opts ...GenerateOption) (UID, error) {
+	return uid.GenerateUID(opts...)
+}
+
+// MustGenerateUID is like GenerateUID but panics on error.
+func MustGenerateUID(opts ...GenerateOption) UID {
+	return uid.MustGenerateUID(opts...)
+}

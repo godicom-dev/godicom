@@ -50,6 +50,7 @@ func main() {
 	fmt.Println(name, id)
 
 	ds.Set(godicom.NewDataElement(tag.PatientID, godicom.VRLO, "12345678"))
+	ds.Set(godicom.NewDataElement(tag.SOPInstanceUID, godicom.VRUI, string(godicom.MustGenerateUID())))
 	if err := ds.SaveAs("ct_updated.dcm", nil); err != nil {
 		log.Fatal(err)
 	}
