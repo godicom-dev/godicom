@@ -1,221 +1,300 @@
 # godicom
 
-**Go 实现的 DICOM 文件读写库** — pydicom 的 Go 移植版。
+**Go 实现的 DICOM 核心库** — [pydicom](https://github.com/pydicom/pydicom) 的 Go 移植版，覆盖文件读写、数据集操作、像素编解码与 DICOM JSON。
 
 [![CI](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/godicom-dev/godicom/branch/main/graph/badge.svg)](https://codecov.io/gh/godicom-dev/godicom)
-[![Lint](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg?job=lint)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
 ![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)
 [![GoDoc](https://pkg.go.dev/badge/github.com/godicom-dev/godicom)](https://pkg.go.dev/github.com/godicom-dev/godicom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+## 定位
+
+godicom 只做 pydicom 核心库的事：**文件 / 数据集 / 像素 / JSON**。
+
+- 行为、测试、边界条件一律对齐 pydicom 源码与测试（`pydicom/` 子模块）。
+- 网络层（DIMSE / DICOMweb / WADO-RS / QIDO-RS / STOW-RS）**不在本库**，由上层库 [gonetdicom](https://github.com/godicom-dev/gonetdicom) 提供，依赖 godicom。
+- 不移植 pydicom 的 Python 动态特性（`ds.PatientName` 属性、`ds["Keyword"]` 下标）；统一用**显式 getter + `tag` 常量**。
+
+```
+gonetdicom ──▶ godicom ──▶ golibjpeg / goopenjpeg / gorle
+```
+
+## 安装
+
+```bash
+go get github.com/godicom-dev/godicom@latest
+```
+
+克隆（含 pydicom 参考子模块）：
+
+```bash
+git clone --recurse-submodules https://github.com/godicom-dev/godicom.git
+```
+
 ## 快速开始
 
 ```go
-import "github.com/godicom-dev/godicom"
+package main
 
-// 读取 DICOM 文件（默认选项传 nil）
-ds, err := godicom.ReadFile("ct.dcm", nil)
-if err != nil {
-    return err
-}
-
-// 带读取选项
-ds, err = godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Force: true})
-
-// 访问元素
-name, _ := ds.GetString(godicom.MustTag(0x00100010))
-id, _ := ds.GetString(godicom.MustTag(0x00100020))
-
-// 修改元素
-ds.Set(godicom.NewDataElement(godicom.MustTag(0x00100010), godicom.VRPN, "Anonymous"))
-
-// 写入文件
-err = ds.SaveAs("output.dcm", nil)
-```
-
-I/O 入口：`ReadFile` / `WriteFile`（或 `FileDataset.SaveAs`）。
-
-## 像素数据解码
-
-封装像素经 `encaps` 拆帧后，由 `pixels` 按 Transfer Syntax 调度解码（依赖 [golibjpeg](https://github.com/godicom-dev/golibjpeg)、[goopenjpeg](https://github.com/godicom-dev/goopenjpeg)、[gorle](https://github.com/godicom-dev/gorle)）：
-
-```go
 import (
+    "fmt"
+
     "github.com/godicom-dev/godicom"
-    "github.com/godicom-dev/godicom/pixels"
+    "github.com/godicom-dev/godicom/tag"
 )
 
-ds, err := godicom.ReadFile("mr_j2k.dcm", nil)
-if err != nil {
-    return err
-}
+func main() {
+    // 读取 DICOM 文件（默认选项传 nil）
+    ds, err := godicom.ReadFile("ct.dcm", nil)
+    if err != nil {
+        panic(err)
+    }
 
-// 所有帧拼成一块 buffer（native 字节布局）
+    // 用 tag 常量 + 显式 getter 取值
+    name, _ := ds.GetString(tag.PatientName)
+    id, _   := ds.GetString(tag.PatientID)
+    rows, _ := ds.GetInt(tag.Rows)
+    fmt.Println(name, id, rows)
+
+    // 修改 / 新增元素
+    ds.Set(godicom.NewDataElement(tag.PatientName, godicom.VRPN, "Anonymous"))
+
+    // 写回（Part 10 文件）
+    if err := ds.SaveAs("output.dcm", nil); err != nil {
+        panic(err)
+    }
+}
+```
+
+文件 I/O 入口：`godicom.ReadFile` / `godicom.WriteFile` / `FileDataset.SaveAs`。
+
+带读取选项：
+
+```go
+ds, _ = godicom.ReadFile("ct.dcm", &godicom.ReadOptions{
+    Force:        true,   // 无 preamble / 非 Part 10 也读
+    SpecificTags: []godicom.Tag{tag.PatientName, tag.PatientID},
+    StopBeforePixels: true,
+})
+```
+
+## 数据集 API
+
+不提供 `ds.PatientName` 这类动态属性。取值统一走 getter，定位用 `tag` 子包常量或根包 `MustTag`：
+
+```go
+name, ok := ds.GetString(tag.PatientName)
+id,   ok := ds.GetString(tag.PatientID)
+rows, ok := ds.GetInt(tag.Rows)
+f,    ok := ds.GetFloat(tag.RescaleSlope)
+fs,   ok := ds.GetFloats(tag.WindowCenter)
+pn,   ok := ds.GetPN(tag.PatientName)
+seq,  ok := ds.GetSequence(tag.ReferencedImageSequence)
+b,    ok := ds.GetBytes(tag.PixelData)
+```
+
+| 类别 | API |
+|------|-----|
+| 取值 | `GetString` / `GetInt` / `GetFloat` / `GetFloats` / `GetBytes` / `GetSequence` / `GetPN` / `GetDA` / `GetTM` / `GetDT` / `GetDS` / `GetIS`（及 `*Value` 别名） |
+| 增删 | `Set` / `Delete` / `Has` / `Pop` / `Clear` / `Update` |
+| 遍历 | `Iter` / `IterAll` / `SortedTags` / `Walk` / `GroupDataset` |
+| 私有 | `PrivateBlock` / `RemovePrivateTags` |
+| 编码状态 | `IsOriginalEncoding` / `SetOriginalEncoding` / `SetWriteEncoding` |
+| 展示 | `String` / `Top` / `FormattedLines` |
+| 比较 | `Equal` / `Clone` / `ElementByKeyword` |
+
+## 像素解码
+
+封装像素先经 `encaps` 拆帧，再由 `pixels` 按 Transfer Syntax 调度到 [golibjpeg](https://github.com/godicom-dev/golibjpeg)（JPEG）、[goopenjpeg](https://github.com/godicom-dev/goopenjpeg)（JPEG 2000 / HTJ2K）、[gorle](https://github.com/godicom-dev/gorle)（RLE）。
+
+```go
+import "github.com/godicom-dev/godicom/pixels"
+
+ds, _ := godicom.ReadFile("mr_j2k.dcm", nil)
+
+// 所有帧拼成一块 native 字节布局
 raw, err := ds.PixelBytes(pixels.WithRaw(true))
-if err != nil {
-    return err
-}
 
-// 或按帧解码
+// 或按帧取
 frames, err := ds.PixelFrames(pixels.WithRaw(true), pixels.WithFrameIndex(0))
-if err != nil {
-    return err
-}
-_ = raw
-_ = frames
-```
 
-显示向后处理（对标 pydicom `apply_modality_lut` / `apply_voi_lut`，**不会**在 `PixelBytes` 里自动执行）：
-
-```go
+// 或解包成 float64 样本（含 bitsStored / pixelRepresentation 处理）
 samples, err := ds.PixelSamples(pixels.WithRaw(true))
-hu, err := ds.ApplyModalityLUT(samples)          // Rescale 或 Modality LUT
-win, err := ds.ApplyVOILUT(hu, 0, true)          // VOI LUT 或窗宽窗位
 ```
 
-像素**编码**（native / RLE / Deflated / **JPEG 2000**；JPEG/JPEG-LS encode 上游不支持）：
+`WithRaw(true)` 返回编解码库原始字节布局；`WithRaw(false)`（默认）会在解码后做 YBR→RGB、PlanarConfiguration 归一化等显示后处理（对标 pydicom）。
+
+显示管线（对标 pydicom `apply_modality_lut` / `apply_voi_lut`，**不会**在 `PixelBytes` 里自动执行）：
 
 ```go
-err = ds.CompressPixelData(string(uid.JPEG2000Lossless))
+hu, err  := ds.ApplyModalityLUT(samples)       // Rescale 或 Modality LUT
+win, err  := ds.ApplyVOILUT(hu, 0, true)        // VOI LUT 或窗宽窗位
+shape, err := ds.ApplyPresentationLUTShape(hu) // Presentation LUT Shape
 ```
 
-**v0.2.0 像素读能力**
+底层 `pixels` 包还导出 `ApplyRescale` / `ApplyWindowing` / `ApplyVOI` / `ApplyVOILUT` / `ApplyModalityLUT` / `InvertValues` / `UnpackSamples` / `ConvertColorSpace` / `ExpandYBR422` / `PlanarToColorByPixel` / `ColorByPixelToPlanar`。
 
-| 能力 | 说明 |
-|------|------|
-| 单帧 / 多帧 | `PixelFrames` 按 `NumberOfFrames` 拆分；`WithFrameIndex(n)` 取单帧 |
-| 封装分帧 | Basic / Extended Offset Table、无 BOT + EOI 启发式 |
-| 未压缩多帧 | 原生像素按帧切分（无需 encaps） |
+## 像素编码 / 压缩
 
-**已支持的压缩格式（读）**
-
-| 类别 | Transfer Syntax（示例 UID） |
-|------|----------------------------|
-| Native | Explicit/Implicit VR Little/Big Endian、Deflated |
-| RLE Lossless | `1.2.840.10008.1.2.5` |
-| JPEG Baseline / Extended / Lossless / Lossless SV1 | `1.2.840.10008.1.2.4.50` 等 |
-| JPEG-LS Lossless / Near-Lossless | `1.2.840.10008.1.2.4.80` / `.81` |
-| JPEG 2000 / HTJ2K | `1.2.840.10008.1.2.4.90` 等 |
-
-**回归验证样例**（pydicom `pixels_reference` 采样点）
-
-| 样例文件 | 内容 |
-|----------|------|
-| `CT_small.dcm` | Native 16-bit 单帧 |
-| `MR_small*.dcm` | J2K / RLE / JPEG-LS 单帧 |
-| `emri_small*.dcm` | 10 帧 native / RLE / JPEG-LS / J2K（`scripts/fetch-testdata.sh`） |
-| `SC_rgb_jpeg_*.dcm` | JPEG baseline / lossless SV1 RGB |
-| `JPGExtended.dcm` | JPEG extended 16-bit |
-
-多帧测试数据不在 pydicom submodule 内，CI 与本地需先执行：
-
-```bash
-bash scripts/fetch-testdata.sh
+```go
+// 重新编码 Pixel Data 并更新 Transfer Syntax（原地修改数据集）
+err := ds.CompressPixelData(string(uid.RLELossless))
+err  = ds.CompressPixelData(string(uid.JPEG2000Lossless))
+err  = ds.CompressPixelData(string(uid.JPEG2000)) // 默认 lossy
 ```
 
-**已知限制**：仅解码路径（无压缩写入）；`WithRaw(true)` 返回编解码库原始字节布局，不含 pydicom 式 reshape / YBR→RGB 后处理；像素 encode 与完整 encaps 生成未实现。细节见 [TODO.md](TODO.md)。
+`CompressPixelData` 支持：native、RLE Lossless、Deflated、**JPEG 2000（lossless / lossy）**。
+
+> JPEG / JPEG-LS **encode 暂不可用** —— `golibjpeg` / pylibjpeg-libjpeg 上游没有编码器；解码路径完整。详见 [TODO.md](TODO.md)。
+
+底层封装写入（对标 pydicom encaps write path）：`encaps.Encapsulate` / `EncapsulateExtended` / `FragmentFrame` / `ItemizeFragment`，`pixels.EncodeFrame` / `EncodeFrames`，以及 `FileDataset.SetEncodedPixelData`。
+
+## 数据集编解码（DIMSE / DICOMweb 载荷）
+
+不带 preamble / File Meta 的数据集字节，供上层网络库拼 C-STORE / C-FIND 载荷或处理 DICOMweb multipart body：
+
+```go
+// 编码（可指定 Transfer Syntax；支持 Deflated）
+data, err := ds.Encode(string(uid.ExplicitVRLittleEndian))
+data, err  = ds.EncodeEncoding(false, true) // implicit VR, little endian
+
+// 解码
+parsed, err := godicom.DecodeDataset(data)
+parsed, err  = godicom.DecodeDatasetEncoding(data, false, true)
+```
+
+Part 10 文件级内存编解码（DICOMweb STOW 上传 / WADO 下载）：
+
+```go
+bytes, err := ds.EncodeFile(nil)          // FileDataset → Part 10 字节
+ds2, err    := godicom.ReadBytes(bytes)    // Part 10 字节 → FileDataset
+err         = ds.Write(w, nil)             // 流式写
+```
 
 ## DICOM JSON Model
 
 ```go
-import (
-    "github.com/godicom-dev/godicom"
-    "github.com/godicom-dev/godicom/dicomjson"
-)
-
-ds, err := godicom.ReadFile("ct.dcm", nil)
-if err != nil {
-    return err
-}
+import "github.com/godicom-dev/godicom/dicomjson"
 
 jsonData, err := dicomjson.MarshalDataset(ds.Dataset)
-if err != nil {
-    return err
-}
+parsed, err     := dicomjson.ParseDataset(jsonData)
 
-parsed, err := dicomjson.ParseDataset(jsonData)
-if err != nil {
-    return err
-}
-_ = parsed
+// QIDO-RS / WADO-RS 元数据数组
+arr, err := dicomjson.MarshalDatasets([]*godicom.Dataset{ds1, ds2})
+dss, err := dicomjson.ParseDatasets(arr)
 ```
 
-## 功能
+对齐 pydicom `test_json.py` 主路径：全 VR roundtrip、`CT_small` 完整往返、PN/AT/数值/空值/BulkDataURI/UN InlineBinary、fixture roundtrip。
+
+## CLI
+
+```bash
+go install github.com/godicom-dev/godicom/cmd/godicom@latest
+
+godicom show <file>            # 打印 file meta + dataset
+godicom read <file>            # show 别名
+godicom readcopy <src> <dst>   # 读 → 写 → 回读校验
+```
+
+`show` 支持 `-t <tag>` 过滤、`--top` 只看顶层。
+
+## 支持的 Transfer Syntax
+
+| 类别 | 读 | 写 |
+|------|----|----|
+| Explicit VR Little Endian | ✅ | ✅ |
+| Implicit VR Little Endian | ✅ | ✅ |
+| Explicit VR Big Endian | ✅ | ✅ |
+| Deflated Explicit VR Little Endian | ✅ | ✅ |
+| RLE Lossless | ✅ | ✅ |
+| JPEG Baseline / Extended | ✅ | — |
+| JPEG Lossless / Lossless SV1 | ✅ | — |
+| JPEG-LS Lossless / Near-Lossless | ✅ | — |
+| JPEG 2000 / HTJ2K | ✅ | ✅（JPEG 2000） |
+
+## 功能矩阵
 
 | 功能 | 状态 |
 |------|------|
-| 读取 Explicit VR Little Endian | ✅ |
-| 读取 Implicit VR Little Endian | ✅ |
-| 读取 Explicit VR Big Endian | ✅ |
-| 读取 Deflated Explicit VR Little Endian | ✅ |
+| Explicit/Implicit VR、Little/Big Endian、Deflated 读写 | ✅ |
 | 混合编码自动切换 | ✅ |
-| 文件 Meta 信息解析 | ✅ |
-| 序列 (SQ) 解析 | ✅ |
-| 嵌套私有 Tag | ✅ |
-| `ReadOptions.SpecificTags` | ✅ |
-| 写入 Explicit VR Little Endian | ✅ |
-| 写入 Implicit VR Little Endian | ✅ |
-| 写入 Explicit VR Big Endian | ✅ |
-| 写入 Deflated Explicit VR Little Endian | ✅ |
-| 写入序列 | ✅ |
-| 基础 VR 值转换 | ✅ |
-| DICOM 字符集 (ASCII/Latin-1/Greek 等) | 🚧 |
-| DICOM 标准字典 (5189 Tag + 88 Repeater) | ✅ |
-| Pixel Data 解码 (Native) | ✅ |
-| Pixel Data 解码 (JPEG / JPEG-LS / JPEG 2000 / RLE) | ✅ |
-| JSON 序列化 | ✅ |
-| DICOMweb / WADO-RS | → **gonetdicom**（计划中独立库，非 godicom 范围） |
-
-**v0.2.0** 起提供稳定的多帧像素**读**能力；metadata 读写与 JSON 仍在持续对齐 pydicom。完整路线图见 [TODO.md](TODO.md)。
+| File Meta 解析 / 同步 | ✅ |
+| 序列 (SQ) / 嵌套私有 Tag | ✅ |
+| `ReadOptions.SpecificTags` / `Force` / `StopBeforePixels` / `DeferSize` | ✅ |
+| 私有字典 VR 解析（implicit 读）+ 运行时扩展 | ✅ |
+| 基础 VR 值转换（string / PN / UI / AT / int / float / DS / IS …） | ✅ |
+| DICOM 字符集（ASCII / Latin-1 / Greek / 日文 / 韩文 / GB18030 等） | ✅ |
+| DICOM 标准字典（5189 Tag + 88 Repeater） | ✅ |
+| 私有字典（449 creators / 10545 entries） | ✅ |
+| UID 字典（490 条） | ✅ |
+| Pixel Data 解码（Native / JPEG / JPEG-LS / JPEG 2000 / HTJ2K / RLE） | ✅ |
+| Pixel Data 编码（Native / RLE / Deflated / JPEG 2000） | ✅ |
+| 显示管线（Modality LUT / VOI LUT / 窗宽窗位 / 反转 / P-LUT Shape） | ✅ |
+| 数据集编解码（无 File Meta，DIMSE 载荷） | ✅ |
+| Part 10 内存编解码（`EncodeFile` / `ReadBytes` / `Write`） | ✅ |
+| DICOM JSON Model（单 / 多数据集） | ✅ |
+| CLI（`show` / `read` / `readcopy`） | ✅ |
 
 ## 测试
 
 ```bash
-bash scripts/fetch-testdata.sh   # 多帧 emri_small 样例（首次或 CI）
+bash scripts/fetch-testdata.sh   # 拉取多帧 emri_small 等样例（首次或 CI）
 go test -count=1 ./...
 ```
 
-- 52 个测试文件，**686** 个测试用例（含 subtest，8 个包）
-- 语句覆盖率见 [Codecov](https://codecov.io/gh/godicom-dev/godicom) badge
-- pydicom submodule 78 个 `.dcm` + `testdata/dcm/` 5 个 `emri_small*`
+- ~700 个测试，覆盖 8 个包；pydicom submodule 78 个 `.dcm` + `testdata/dcm/` 5 个 `emri_small*`。
+- 回归样例取自 pydicom `pixels_reference` 采样点：`CT_small.dcm`、`MR_small*.dcm`、`emri_small*.dcm`、`SC_rgb_jpeg_*.dcm`、`JPGExtended.dcm`。
+- 覆盖率见 [Codecov](https://codecov.io/gh/godicom-dev/godicom) badge。
 
 ## 项目结构
 
 ```
 godicom/
-├── tag.go / tag/           # Tag 类型与 keyword 子包
-├── vr.go                   # VR 类型及分类
-├── uid.go / uid/           # UID 类型与子包
-├── errors.go               # 错误类型
-├── element.go              # DataElement / RawDataElement / PersonName
-├── dataset.go              # Dataset / FileDataset / PrivateBlock
-├── sequence.go             # Sequence
-├── multivalue.go           # MultiValue
-├── values.go               # 值转换 (bytes → Go 类型)
-├── charset.go              # DICOM 字符编码
-├── dictionary.go           # 字典查询
-├── dictionary_generated.go # 自动生成的 DICOM 字典
-├── private_dictionary.go   # 私有字典查询与运行时扩展
-├── private_dictionary_generated.go
-├── io.go                   # I/O 基础
-├── buffer.go               # 缓冲区工具
-├── read.go                 # 文件读取
-├── write.go                # 文件写入
-├── pixeldata.go            # FileDataset.PixelBytes / PixelFrames
-├── encaps/                 # 封装像素数据 (BOT / fragment / frame)
-├── pixels/                 # 像素解码调度 (native / RLE / JPEG / J2K)
-├── godicom.go              # 包文档
-├── dicomjson/              # DICOM JSON Model (Part 18 Annex F)
-├── generate_dict.py        # 字典生成脚本
-├── cmd/godicom/            # CLI 工具 (read / readcopy)
-└── pydicom/                # pydicom submodule (参考 / 测试数据)
+├── tag.go / tag/             # Tag 类型与 keyword 子包
+├── vr.go                     # VR 类型及分类
+├── uid.go / uid/             # UID 类型与子包
+├── errors.go                 # 错误类型
+├── element.go                # DataElement / RawDataElement / PersonName
+├── dataset.go                # Dataset / FileDataset / PrivateBlock
+├── sequence.go               # Sequence
+├── multivalue.go             # MultiValue
+├── values.go                 # 值转换 (bytes → Go 类型)
+├── valuerep*.go              # DA / TM / DT / DS / IS / PN 值表示
+├── charset.go                # DICOM 字符编码
+├── dictionary*.go            # 标准字典（含生成产物）
+├── private_dictionary*.go    # 私有字典
+├── read.go / write.go        # 文件读写
+├── decode.go / encode*.go    # 数据集编解码（DIMSE 载荷）
+├── encode_file*.go           # Part 10 内存编解码
+├── pixeldata.go              # FileDataset.PixelBytes / PixelFrames
+├── pixel_encode.go           # CompressPixelData / SetEncodedPixelData
+├── pixel_processing.go       # Modality / VOI / 显示管线
+├── encaps/                   # 封装像素 (BOT / fragment / frame)
+├── pixels/                   # 像素编解码调度 (native / RLE / JPEG / J2K)
+├── dicomjson/                # DICOM JSON Model (Part 18 Annex F)
+├── cmd/godicom/              # CLI (show / read / readcopy)
+├── scripts/                  # fetch-testdata.sh
+├── generate_dict.py          # 字典生成脚本
+└── pydicom/                  # pydicom submodule（参考 / 测试数据）
 ```
+
+## 范围之外
+
+以下明确**不在 godicom**，避免把 pydicom 单体塞进一个库：
+
+| 项 | 归属 |
+|----|------|
+| DIMSE（C-ECHO / C-STORE / C-FIND / C-MOVE / C-GET / DIMSE-N） | [gonetdicom](https://github.com/godicom-dev/gonetdicom) |
+| DICOMweb（WADO-RS / QIDO-RS / STOW-RS） | gonetdicom |
+| HTTP 服务 / PACS 集成 | gonetdicom |
+
+暂缓项（待有明确需求再单独立项，见 [TODO.md](TODO.md)）：`read_partial` / 流式 rawread、`defer_size` 字符串形式、`generate_uid()`、`register_transfer_syntax()`。
 
 ## 许可
 
-MIT
+MIT — 见 [LICENSE](LICENSE)。
 
 ## 变更记录
 
-See [CHANGELOG.md](CHANGELOG.md).
+见 [CHANGELOG.md](CHANGELOG.md)。
