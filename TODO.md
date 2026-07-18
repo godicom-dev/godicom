@@ -7,7 +7,8 @@ this file tracks deferred work and known gaps.
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
 Core I/O, transfer-syntax coverage, pixel decode/encode (except JPEG / JPEG-LS
-encode), display helpers, and `dicomjson` are in place as of **v0.23.0**.
+encode), display helpers, `dicomjson`, `uid.GenerateUID`, and streaming `Read`
+are in place as of **v0.24.0**.
 
 Networking (DIMSE / DICOMweb) is **out of scope** — see
 [gonetdicom](https://github.com/godicom-dev/gonetdicom).

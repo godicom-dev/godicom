@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-18
+
 ### Added
 - **uid**: `GenerateUID` / `MustGenerateUID` with `WithPrefix`, `WithUUIDPrefix`, `WithEntropy` (pydicom `generate_uid` behaviour; default root `1.2.826.0.1.3680043.8.498.`)
 - **Read**: `Read(io.Reader)` — seekable sources (`*os.File`, `io.ReadSeeker`) parse without `ReadAll`; `StopBeforePixels` / `DeferSize` / `SpecificTags` skip large values; deferred loads reopen the file path
+
+### Changed
+- **ReadFile** uses the seekable streaming path (no full-file `ReadAll`)
+- Docs: English product-first README / TODO; add [PARITY.md](PARITY.md) coverage map
 
 ## [0.23.0] - 2026-07-13
 
