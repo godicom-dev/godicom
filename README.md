@@ -169,6 +169,7 @@ godicom readcopy <src> <dst>   # read, write, re-read
 - [pkg.go.dev API reference](https://pkg.go.dev/github.com/godicom-dev/godicom)
 - [CHANGELOG](CHANGELOG.md)
 - [TODO](TODO.md) — deferred items and known gaps
+- [PARITY](PARITY.md) — coverage map vs pydicom (not full parity)
 
 ## License
 

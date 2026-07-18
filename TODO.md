@@ -52,3 +52,4 @@ gonetdicom or an application over expanding the matrix for its own sake.
 
 - [README.md](README.md)
 - [CHANGELOG.md](CHANGELOG.md)
+- [PARITY.md](PARITY.md) — domain-level coverage vs pydicom (not full parity)
