@@ -37,6 +37,7 @@ import (
 
 	"github.com/godicom-dev/godicom"
 	"github.com/godicom-dev/godicom/tag"
+	"github.com/godicom-dev/godicom/uid"
 )
 
 func main() {
@@ -50,7 +51,7 @@ func main() {
 	fmt.Println(name, id)
 
 	ds.Set(godicom.NewDataElement(tag.PatientID, godicom.VRLO, "12345678"))
-	ds.Set(godicom.NewDataElement(tag.SOPInstanceUID, godicom.VRUI, string(godicom.MustGenerateUID())))
+	ds.Set(godicom.NewDataElement(tag.SOPInstanceUID, godicom.VRUI, string(uid.MustGenerateUID())))
 	if err := ds.SaveAs("ct_updated.dcm", nil); err != nil {
 		log.Fatal(err)
 	}
