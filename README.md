@@ -58,6 +58,10 @@ func main() {
 }
 ```
 
+File I/O: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` / `FileDataset.SaveAs`.
+
+`Read` accepts any `io.Reader`. Prefer `*os.File` / seekable sources — the parser walks tags without `ReadAll`, so `StopBeforePixels`, `DeferSize`, and `SpecificTags` can skip large values without buffering them. Deferred values reload by reopening the file path.
+
 Elements are accessed with typed getters and constants from the [`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
 (`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …), not dynamic attribute names.
 

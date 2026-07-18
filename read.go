@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -102,26 +101,6 @@ func lookupVRDuringRead(tag Tag, creator string) VR {
 		return lookupVRWithCreator(tag, creator)
 	}
 	return LookupVR(tag)
-}
-
-func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	var modTime int64
-	if info, statErr := f.Stat(); statErr == nil {
-		modTime = info.ModTime().Unix()
-	}
-	f.Close()
-
-	return readBytes(data, filename, modTime, opts)
 }
 
 // ReadBytes parses a Part 10 DICOM file from data (preamble optional when Force).

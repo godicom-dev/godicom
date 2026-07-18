@@ -22,9 +22,10 @@ type Dataset struct {
 
 // readContext holds the source used for deferred element loading.
 type readContext struct {
-	data     []byte
-	filename string
+	data     []byte // in-memory source (ReadBytes / non-seekable Read)
+	filename string // reopen path for streaming ReadFile
 	modTime  int64
+	size     int64 // file size when filename is used without data
 }
 
 // EncodingInfo describes the DICOM encoding used when reading/writing.

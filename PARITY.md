@@ -33,7 +33,7 @@ areas are thinner on edge fixtures.
 | Dataset / FileDataset | partial | dataset (~205) | Get*/Set/Walk/Clone/… | No dynamic attrs (by design) |
 | Sequence / MultiValue | solid | sequence, multival | present | Core ops |
 | Charset / Unicode | partial | charset (~34) | `charset.go` | Major sets OK; not full `chr*` |
-| File reader | partial | filereader (~110) | `ReadFile` + options | No streaming `ReadPartial` |
+| File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable path skips large values; no string `DeferSize` |
 | File writer | partial | filewriter (~168) | `WriteFile` / `SaveAs` | Key roundtrips; not full suite |
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |
 | Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames; thinner suite |
@@ -65,11 +65,11 @@ areas are thinner on edge fixtures.
 
 | Priority | Item | Why |
 |----------|------|-----|
-| P1 | Streaming / `ReadPartial` | Large studies without full RAM |
 | P2 | JPEG encode (upstream) | Accept renegotiation / some DICOMweb paths |
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
 | P3 | DICOMDIR / SR / overlay / waveform | Domain tools only |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
+| done | `Read` streaming / seekable skip | Large studies without full RAM |
 
 ## Method
 

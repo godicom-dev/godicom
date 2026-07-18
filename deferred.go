@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -57,7 +58,28 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 	}
 
 	elementStart := elem.ValueTell - dataElementOffsetToValue(elem.IsImplicitVR, elem.VR)
-	raw, err := readRawDataElementAt(ctx.data, elementStart, elem.IsImplicitVR, elem.IsLittleEndian)
+
+	data := ctx.data
+	var owned []byte
+	if data == nil {
+		if ctx.filename == "" {
+			return fmt.Errorf("godicom: deferred read requires source data")
+		}
+		f, err := os.Open(ctx.filename)
+		if err != nil {
+			return fmt.Errorf("godicom: deferred read: %w", err)
+		}
+		defer f.Close()
+		total := dataElementOffsetToValue(elem.IsImplicitVR, elem.VR) + int64(elem.ValueLength)
+		owned = make([]byte, total)
+		if _, err := io.ReadFull(io.NewSectionReader(f, elementStart, total), owned); err != nil {
+			return fmt.Errorf("godicom: deferred read: %w", err)
+		}
+		data = owned
+		elementStart = 0
+	}
+
+	raw, err := readRawDataElementAt(data, elementStart, elem.IsImplicitVR, elem.IsLittleEndian)
 	if err != nil {
 		return err
 	}

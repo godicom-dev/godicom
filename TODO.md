@@ -16,7 +16,6 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 
 | Item | Today | Trigger |
 |------|-------|---------|
-| Streaming / partial read (`io.Reader`) | `ReadFile` loads the whole file; deferred load is buffer-backed | Network streams, pipes, or files larger than memory |
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | JPEG / JPEG-LS **encode** | Decode only (`golibjpeg`) | Upstream encoder, or Accept renegotiation that needs it |
