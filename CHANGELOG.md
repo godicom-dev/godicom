@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-07
+
+### Fixed
+- CI: bump `golibjpeg` to v1.2.1 (Linux/Windows prebuilt libs include `golibjpeg_encode`; v1.2.0 native artifacts were incomplete)
+- `gofmt` on `pixels/encode.go`
+
 ## [0.25.0] - 2026-08-07
 
 ### Added
