@@ -246,11 +246,11 @@ func runBenchmarks() {
 	root := pydicomTestFiles()
 	pynet := pynetTestFiles()
 	files := map[string]string{
-		"CT_small 38KB native":   filepath.Join(root, "CT_small.dcm"),
-		"MR_small_RLE 8KB":       filepath.Join(root, "MR_small_RLE.dcm"),
-		"JPGExtended JPEG":       filepath.Join(root, "JPGExtended.dcm"),
-		"MR JPEG-LS":             filepath.Join(root, "MR_small_jpeg_ls_lossless.dcm"),
-		"RTImageStorage 2MB":     filepath.Join(pynet, "RTImageStorage.dcm"),
+		"CT_small 38KB native": filepath.Join(root, "CT_small.dcm"),
+		"MR_small_RLE 8KB":     filepath.Join(root, "MR_small_RLE.dcm"),
+		"JPGExtended JPEG":     filepath.Join(root, "JPGExtended.dcm"),
+		"MR JPEG-LS":           filepath.Join(root, "MR_small_jpeg_ls_lossless.dcm"),
+		"RTImageStorage 2MB":   filepath.Join(pynet, "RTImageStorage.dcm"),
 	}
 	cstorePath := filepath.Join(pynet, "CTImageStorage.dcm")
 	bin := dcmtkBin()
