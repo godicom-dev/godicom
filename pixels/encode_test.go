@@ -31,6 +31,29 @@ func TestEncodeFrame_RLE_roundtrip_synthetic(t *testing.T) {
 	}
 }
 
+func TestEncodeFrame_JPEGLS_roundtrip_synthetic(t *testing.T) {
+	desc := pixels.Descriptor{
+		TransferSyntaxUID: uid.JPEGLSLossless,
+		Rows:              2,
+		Columns:           2,
+		SamplesPerPixel:   1,
+		BitsAllocated:     8,
+		BitsStored:        8,
+	}
+	src := []byte{1, 2, 3, 4}
+	enc, err := pixels.EncodeFrame(src, desc, uid.JPEGLSLossless)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err := pixels.DecodeFrame(enc, desc, pixels.DecodeOptions{Raw: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(dec, src) {
+		t.Fatalf("got %v want %v", dec, src)
+	}
+}
+
 func TestEncodeFrames_native(t *testing.T) {
 	desc := pixels.Descriptor{Rows: 1, Columns: 2, SamplesPerPixel: 1, BitsAllocated: 8}
 	out, err := pixels.EncodeFrames([][]byte{{1, 2}, {3, 4}}, desc, pixels.EncodeOptions{

@@ -12,8 +12,7 @@ import (
 // updates PixelData + FileMeta.TransferSyntaxUID.
 //
 // Supported targets: uncompressed (native), RLE Lossless, Deflated Image Frame
-// Compression, JPEG 2000 Lossless, JPEG 2000. JPEG / JPEG-LS encode is not
-// available (golibjpeg upstream has no encoder).
+// Compression, JPEG baseline/lossless/JPEG-LS, JPEG 2000 Lossless, JPEG 2000.
 //
 // Source frames are decoded with Raw=true (no photometric post-process).
 func (fd *FileDataset) CompressPixelData(transferSyntaxUID string, opts ...pixels.EncodeOption) error {

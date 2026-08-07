@@ -111,13 +111,13 @@ and Deflated transfer syntaxes need no extra plugins.
 import "github.com/godicom-dev/godicom/uid"
 
 err := ds.CompressPixelData(string(uid.RLELossless))
+err = ds.CompressPixelData(string(uid.JPEGLSLossless))
 err = ds.CompressPixelData(string(uid.JPEG2000Lossless))
 err = ds.CompressPixelData(string(uid.JPEG2000)) // lossy JPEG 2000
 ```
 
-Supported encode paths today: native, RLE Lossless, Deflated, and JPEG 2000
-(lossless / lossy). JPEG and JPEG-LS **encode** are not available yet (upstream
-decoders only).
+Supported encode paths today: native, RLE Lossless, Deflated, JPEG
+(baseline / lossless / JPEG-LS), and JPEG 2000 (lossless / lossy).
 
 ## Dataset bytes (no File Meta)
 
