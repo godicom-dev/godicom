@@ -19,7 +19,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 |------|-------|---------|
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
-| JPEG / JPEG-LS **encode** | Decode only (`golibjpeg`) | Upstream encoder, or Accept renegotiation that needs it |
+| JPEG / JPEG-LS **encode** | done (`golibjpeg` v1.2.0) | — |
 | File-set / DICOMDIR | Not implemented | Media interchange / DICOMDIR consumers |
 | SR / codes / overlays / waveforms | Not implemented | Domain-specific tooling |
 

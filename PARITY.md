@@ -38,7 +38,7 @@ areas are thinner on edge fixtures.
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |
 | Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames; thinner suite |
 | Pixel decode | partial | pixels+handlers (~900) | native/RLE/JPEG/JLS/J2K/HTJ2K | Common TS; fixture depth << |
-| Pixel encode | partial | encoders | native/RLE/Deflated/J2K | **JPEG/JPEG-LS encode missing** |
+| Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K | HTJ2K encode missing |
 | Pixel processing | partial | processing.py | Modality/VOI/YBR/planar | Explicit; not auto in PixelBytes |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
 | File-set / DICOMDIR | **gap** | fileset (~124) | — | Tag names ≠ API |
@@ -56,8 +56,8 @@ areas are thinner on edge fixtures.
 | Native Explicit/Implicit LE/BE | yes | yes (dataset) |
 | Deflated Explicit VR LE | yes | yes |
 | RLE Lossless | yes | yes |
-| JPEG Baseline / Extended / Lossless | yes | **no** |
-| JPEG-LS | yes | **no** |
+| JPEG Baseline / Extended / Lossless | yes | yes |
+| JPEG-LS | yes | yes |
 | JPEG 2000 | yes | yes |
 | HTJ2K | yes | — (decode) |
 
@@ -65,7 +65,6 @@ areas are thinner on edge fixtures.
 
 | Priority | Item | Why |
 |----------|------|-----|
-| P2 | JPEG encode (upstream) | Accept renegotiation / some DICOMweb paths |
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
 | P3 | DICOMDIR / SR / overlay / waveform | Domain tools only |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |

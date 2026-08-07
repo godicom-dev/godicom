@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -98,5 +99,23 @@ func TestConvertISString(t *testing.T) {
 	i, ok := v.(IS)
 	if !ok || i.Value != 42 {
 		t.Errorf("got %v", v)
+	}
+}
+
+func TestConvertValueWithCharsets_ambiguousVR(t *testing.T) {
+	raw := []byte{0x01, 0x02, 0x03, 0x04}
+	for _, vr := range []VR{VRObOw, VRUsOw, VRUsSS, VRUsSsOw} {
+		got, err := convertValueWithCharsets(&RawDataElement{
+			VR:             vr,
+			Value:          raw,
+			IsLittleEndian: true,
+		}, nil)
+		if err != nil {
+			t.Fatalf("VR %q: %v", vr, err)
+		}
+		b, ok := got.([]byte)
+		if !ok || !bytes.Equal(b, raw) {
+			t.Fatalf("VR %q: got %T %v, want []byte", vr, got, got)
+		}
 	}
 }

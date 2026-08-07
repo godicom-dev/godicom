@@ -60,6 +60,54 @@ func TestCompressPixelData_RLE_CT_small_roundtrip(t *testing.T) {
 	}
 }
 
+func TestCompressPixelData_JPEGLSLossless_CT_small(t *testing.T) {
+	path := filepath.Join("pydicom", "src", "pydicom", "data", "test_files", "CT_small.dcm")
+	ds, err := godicom.ReadFile(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.CompressPixelData(string(uid.JPEGLSLossless)); err != nil {
+		t.Fatal(err)
+	}
+	ts, ok := ds.TransferSyntaxUID()
+	if !ok || ts != string(uid.JPEGLSLossless) {
+		t.Fatalf("TS=%q", ts)
+	}
+	got, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Fatalf("JPEG-LS lossless roundtrip mismatch: %d vs %d", len(got), len(orig))
+	}
+}
+
+func TestCompressPixelData_JPEGLossless_CT_small(t *testing.T) {
+	path := filepath.Join("pydicom", "src", "pydicom", "data", "test_files", "CT_small.dcm")
+	ds, err := godicom.ReadFile(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.CompressPixelData(string(uid.JPEGLossless)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ds.PixelBytes(pixels.WithRaw(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Fatalf("JPEG lossless roundtrip mismatch: %d vs %d", len(got), len(orig))
+	}
+}
+
 func TestCompressPixelData_Deflated_MR_small(t *testing.T) {
 	path := filepath.Join("pydicom", "src", "pydicom", "data", "test_files", "MR_small.dcm")
 	ds, err := godicom.ReadFile(path, nil)

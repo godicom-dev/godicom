@@ -9,6 +9,7 @@ import (
 	"github.com/godicom-dev/godicom/encaps"
 	"github.com/godicom-dev/godicom/uid"
 	"github.com/godicom-dev/goopenjpeg"
+	"github.com/godicom-dev/golibjpeg"
 	"github.com/godicom-dev/gorle"
 )
 
@@ -57,9 +58,8 @@ type EncodedPixelData struct {
 }
 
 // EncodeFrame encodes a single uncompressed frame to the target transfer syntax.
-// Supported: native, RLE Lossless, Deflated Image Frame Compression,
+// Supported: native, RLE Lossless, Deflated, JPEG baseline/lossless, JPEG-LS,
 // JPEG 2000 Lossless / JPEG 2000 (lossy via compression ratio 10 by default for .91).
-// JPEG / JPEG-LS encode is not available (golibjpeg upstream has no encoder).
 func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 	switch {
 	case !ts.IsCompressed():
@@ -70,6 +70,10 @@ func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 		return encodeRLE(src, desc)
 	case ts == uid.DeflatedImageFrameCompression:
 		return encodeDeflated(src)
+	case ts == uid.JPEGBaseline8Bit, ts == uid.JPEGExtended12Bit,
+		ts == uid.JPEGLossless, ts == uid.JPEGLosslessSV1,
+		ts == uid.JPEGLSLossless, ts == uid.JPEGLSNearLossless:
+		return encodeJPEG(src, desc, ts)
 	case ts == uid.JPEG2000Lossless, ts == uid.JPEG2000:
 		return encodeJ2K(src, desc, ts)
 	default:
@@ -197,4 +201,49 @@ func encodeJ2K(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 		opts.CompressionRatios = []float64{10}
 	}
 	return goopenjpeg.Encode(src, opts)
+}
+
+func encodeJPEG(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
+	bits := desc.BitsStored
+	if bits == 0 {
+		bits = desc.BitsAllocated
+	}
+	opts := golibjpeg.EncodeOptions{
+		Columns:         desc.Columns,
+		Rows:            desc.Rows,
+		SamplesPerPixel: desc.SamplesPerPixel,
+		BitsPerSample:   bits,
+		Quality:         90,
+		LSInterleaving:  golibjpeg.LSInterleaveSample,
+	}
+	switch ts {
+	case uid.JPEGBaseline8Bit:
+		opts.FrameType = golibjpeg.FrameBaseline
+	case uid.JPEGExtended12Bit:
+		opts.FrameType = golibjpeg.FrameSequential
+	case uid.JPEGLossless, uid.JPEGLosslessSV1:
+		opts.FrameType = golibjpeg.FrameLossless
+	case uid.JPEGLSLossless:
+		opts.FrameType = golibjpeg.FrameJPEGLS
+		opts.ErrorBound = 0
+	case uid.JPEGLSNearLossless:
+		opts.FrameType = golibjpeg.FrameJPEGLS
+		opts.ErrorBound = 1
+	default:
+		return nil, fmt.Errorf("pixels: unsupported JPEG transfer syntax %s", ts)
+	}
+
+	pi := strings.TrimSpace(desc.PhotometricInterpretation)
+	switch pi {
+	case "RGB":
+		if opts.FrameType == golibjpeg.FrameBaseline || opts.FrameType == golibjpeg.FrameSequential {
+			opts.ColourTransform = golibjpeg.ColourTransformYCbCr
+		}
+	case "MONOCHROME1", "MONOCHROME2", "":
+		opts.ColourTransform = golibjpeg.ColourTransformNone
+	default:
+		opts.ColourTransform = golibjpeg.ColourTransformNone
+	}
+
+	return golibjpeg.Encode(src, opts)
 }

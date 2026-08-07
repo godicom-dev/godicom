@@ -61,6 +61,9 @@ func convertValueWithCharsets(raw *RawDataElement, charsets []string) (interface
 		return convertInts(raw.Value, raw.IsLittleEndian, 2, false)
 	case VRUV:
 		return convertInts(raw.Value, raw.IsLittleEndian, 8, false)
+	case VRObOw, VRUsOw, VRUsSS, VRUsSsOw:
+		// Ambiguous VRs: keep raw bytes until correctAmbiguousVRElement resolves VR/type.
+		return raw.Value, nil
 	default:
 		return string(raw.Value), nil
 	}

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-07
+
+### Added
+- **Pixels**: JPEG baseline / extended / lossless and JPEG-LS encode via `golibjpeg` v1.2.0 (`EncodeFrame`, `CompressPixelData`)
+
+### Fixed
+- **Read**: ambiguous VR elements (`OB or OW`, `US or OW`, `US or SS`, `US or SS or OW`) keep raw `[]byte` at read time so Implicit VR LE `PixelData` works with `GetBytes` / `PixelBytes` (fixes #45)
+
+### Changed
+- **golibjpeg** dependency: v1.1.2 → v1.2.0
+
+**Tests**: 731 passed
+
 ## [0.24.0] - 2026-07-18
 
 ### Added
