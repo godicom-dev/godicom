@@ -117,7 +117,8 @@ err = ds.CompressPixelData(string(uid.JPEG2000)) // lossy JPEG 2000
 ```
 
 Supported encode paths today: native, RLE Lossless, Deflated, JPEG
-(baseline / lossless / JPEG-LS), and JPEG 2000 (lossless / lossy).
+(baseline / lossless / JPEG-LS), JPEG 2000 (lossless / lossy), and HTJ2K
+(.201 lossless LRCP, .202 lossless RPCL, .203 lossy).
 
 ## Dataset bytes (no File Meta)
 
@@ -168,7 +169,7 @@ godicom readcopy <src> <dst>   # read, write, re-read
 | RLE Lossless | ✅ | ✅ |
 | JPEG Baseline / Extended / Lossless | ✅ | — |
 | JPEG-LS | ✅ | — |
-| JPEG 2000 / HTJ2K | ✅ | ✅ (JPEG 2000) |
+| JPEG 2000 / HTJ2K | ✅ | ✅ |
 
 ## Documentation
 

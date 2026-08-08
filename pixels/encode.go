@@ -59,7 +59,7 @@ type EncodedPixelData struct {
 
 // EncodeFrame encodes a single uncompressed frame to the target transfer syntax.
 // Supported: native, RLE Lossless, Deflated, JPEG baseline/lossless, JPEG-LS,
-// JPEG 2000 Lossless / JPEG 2000 (lossy via compression ratio 10 by default for .91).
+// JPEG 2000 / HTJ2K (.90–.91, .201–.203).
 func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 	switch {
 	case !ts.IsCompressed():
@@ -76,6 +76,8 @@ func EncodeFrame(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 		return encodeJPEG(src, desc, ts)
 	case ts == uid.JPEG2000Lossless, ts == uid.JPEG2000:
 		return encodeJ2K(src, desc, ts)
+	case ts == uid.HTJ2KLossless, ts == uid.HTJ2KLosslessRPCL, ts == uid.HTJ2K:
+		return encodeHTJ2K(src, desc, ts)
 	default:
 		return nil, fmt.Errorf("pixels: encode unsupported for transfer syntax %s", ts)
 	}
@@ -199,6 +201,45 @@ func encodeJ2K(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
 	if ts == uid.JPEG2000 {
 		// Default mild lossy layer; callers needing custom ratios can use goopenjpeg directly.
 		opts.CompressionRatios = []float64{10}
+	}
+	return goopenjpeg.Encode(src, opts)
+}
+
+func encodeHTJ2K(src []byte, desc Descriptor, ts uid.UID) ([]byte, error) {
+	bits := desc.BitsStored
+	if bits == 0 {
+		bits = desc.BitsAllocated
+	}
+	opts := goopenjpeg.EncodeOptions{
+		Columns:         desc.Columns,
+		Rows:            desc.Rows,
+		SamplesPerPixel: desc.SamplesPerPixel,
+		BitsStored:      bits,
+		IsSigned:        desc.PixelRepresentation == 1,
+		Codec:           goopenjpeg.CodecHTJ2K,
+	}
+	switch ts {
+	case uid.HTJ2KLossless:
+		opts.ProgressionOrder = goopenjpeg.ProgressionLRCP
+	case uid.HTJ2KLosslessRPCL:
+		opts.ProgressionOrder = goopenjpeg.ProgressionRPCL
+	case uid.HTJ2K:
+		opts.ProgressionOrder = goopenjpeg.ProgressionLRCP
+		opts.CompressionRatios = []float64{10}
+	default:
+		return nil, fmt.Errorf("pixels: unsupported HTJ2K transfer syntax %s", ts)
+	}
+	pi := strings.TrimSpace(desc.PhotometricInterpretation)
+	switch pi {
+	case "MONOCHROME1", "MONOCHROME2", "":
+		opts.ColourSpace = goopenjpeg.ColourGray
+	case "RGB":
+		opts.ColourSpace = goopenjpeg.ColourSRGB
+		opts.UseMCT = true
+	case "YBR_FULL", "YBR_ICT", "YBR_RCT":
+		opts.ColourSpace = goopenjpeg.ColourSYCC
+	default:
+		opts.ColourSpace = goopenjpeg.ColourUnspecified
 	}
 	return goopenjpeg.Encode(src, opts)
 }

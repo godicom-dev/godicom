@@ -54,6 +54,38 @@ func TestEncodeFrame_JPEGLS_roundtrip_synthetic(t *testing.T) {
 	}
 }
 
+func TestEncodeFrame_HTJ2K_roundtrip_synthetic(t *testing.T) {
+	desc := pixels.Descriptor{
+		TransferSyntaxUID: uid.HTJ2KLossless,
+		Rows:              8,
+		Columns:           8,
+		SamplesPerPixel:   1,
+		BitsAllocated:     8,
+		BitsStored:        8,
+	}
+	src := make([]byte, 8*8)
+	for i := range src {
+		src[i] = byte(i)
+	}
+	for _, ts := range []uid.UID{uid.HTJ2KLossless, uid.HTJ2KLosslessRPCL} {
+		t.Run(string(ts), func(t *testing.T) {
+			enc, err := pixels.EncodeFrame(src, desc, ts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decDesc := desc
+			decDesc.TransferSyntaxUID = ts
+			dec, err := pixels.DecodeFrame(enc, decDesc, pixels.DecodeOptions{Raw: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(dec, src) {
+				t.Fatalf("pixel mismatch")
+			}
+		})
+	}
+}
+
 func TestEncodeFrames_native(t *testing.T) {
 	desc := pixels.Descriptor{Rows: 1, Columns: 2, SamplesPerPixel: 1, BitsAllocated: 8}
 	out, err := pixels.EncodeFrames([][]byte{{1, 2}, {3, 4}}, desc, pixels.EncodeOptions{
