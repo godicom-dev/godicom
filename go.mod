@@ -6,7 +6,7 @@ toolchain go1.26.4
 
 require (
 	github.com/godicom-dev/golibjpeg v1.2.1
-	github.com/godicom-dev/goopenjpeg v1.1.2-0.20260808150922-d280d2a81042
+	github.com/godicom-dev/goopenjpeg v1.1.2-0.20260808151358-b85f157f6819
 	github.com/godicom-dev/gorle v1.0.1
 	golang.org/x/text v0.38.0
 )
