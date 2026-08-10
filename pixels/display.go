@@ -23,16 +23,6 @@ func WithPreferVOILUT(prefer bool) DisplayOption {
 	}
 }
 
-func applyDisplayOptions(opts []DisplayOption) DisplayOptions {
-	out := DisplayOptions{PreferLUT: true}
-	for _, fn := range opts {
-		if fn != nil {
-			fn(&out)
-		}
-	}
-	return out
-}
-
 // PackDisplayU8 converts processed samples to 8-bit display values.
 // Values already in [0,255] are clipped; wider ranges are linearly scaled.
 func PackDisplayU8(samples []float64) []byte {
