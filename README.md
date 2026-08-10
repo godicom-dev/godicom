@@ -94,6 +94,14 @@ hu, err := ds.ApplyModalityLUT(samples)
 win, err := ds.ApplyVOILUT(hu, 0, true)
 ```
 
+For pydicom-style access, use `PixelArray` (decoded samples + shape) and
+`DisplayFrame` (8-bit display-ready bytes after modality / VOI / presentation):
+
+```go
+arr, err := ds.PixelArray(pixels.WithRaw(true))
+frame, err := ds.DisplayFrame(0)
+```
+
 ### Decompressing Pixel Data
 
 | Format | Package |
