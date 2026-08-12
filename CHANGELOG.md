@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-13
+
+### Added
+- **Logging**: quiet-by-default `log/slog` foundation (`WithLogger` /
+  `LoggerFromContext` / `SetDefaultLogger`); `ReadOptions.Logger` /
+  `WriteOptions.Logger`; `*Context` entry points; CLI `godicom show -debug`
+- **Pixels**: `PixelArray` and `DisplayFrame` (pydicom-style pixel access +
+  8-bit display pipeline)
+- **Pixels**: HTJ2K encode for transfer syntaxes `.201` / `.202` / `.203` via
+  [goopenjpeg](https://github.com/godicom-dev/goopenjpeg) v1.2.0
+
+### Changed
+- Docs: README aligned with pydicom-style layout (badges, description, examples)
+
 ## [0.25.1] - 2026-08-07
 
 ### Fixed
