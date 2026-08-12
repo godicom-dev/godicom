@@ -111,14 +111,6 @@ func logDebug(ctx context.Context, msg string, args ...any) {
 	l.DebugContext(ctx, msg, args...)
 }
 
-func logWarn(ctx context.Context, msg string, args ...any) {
-	l := LoggerFromContext(ctx)
-	if !l.Enabled(ctx, slog.LevelWarn) {
-		return
-	}
-	l.WarnContext(ctx, msg, args...)
-}
-
 func offsetHex(off int64) string {
 	return fmt.Sprintf("%08x", uint64(off))
 }

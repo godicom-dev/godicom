@@ -1,6 +1,9 @@
 package pixels
 
-import "log/slog"
+import (
+	"context"
+	"log/slog"
+)
 
 // DecodeOptions configures pixel data decoding.
 type DecodeOptions struct {
@@ -57,7 +60,7 @@ func (o DecodeOptions) logger() *slog.Logger {
 
 func (o DecodeOptions) debug(msg string, args ...any) {
 	l := o.logger()
-	if !l.Enabled(nil, slog.LevelDebug) {
+	if !l.Enabled(context.TODO(), slog.LevelDebug) {
 		return
 	}
 	l.Debug(msg, append([]any{"component", "pixels"}, args...)...)

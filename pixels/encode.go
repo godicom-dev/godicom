@@ -3,6 +3,7 @@ package pixels
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -60,7 +61,7 @@ func (o EncodeOptions) logger() *slog.Logger {
 
 func (o EncodeOptions) debug(msg string, args ...any) {
 	l := o.logger()
-	if !l.Enabled(nil, slog.LevelDebug) {
+	if !l.Enabled(context.TODO(), slog.LevelDebug) {
 		return
 	}
 	l.Debug(msg, append([]any{"component", "pixels"}, args...)...)
