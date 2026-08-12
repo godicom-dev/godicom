@@ -141,7 +141,12 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				return nil, err
 			}
 			pos = 132
-			logDebug(ctx, "DICM prefix found", AttrOffset, int64(128), AttrPath, filename)
+			logDebug(ctx, "Reading File Meta Information preamble", AttrOffset, int64(0), AttrOffsetHex, offsetHex(0), AttrPath, filename)
+			if len(preamble) >= 8 {
+				logDebug(ctx, "preamble sample", AttrOffsetHex, offsetHex(0), AttrHex, bytesHex(preamble[:8]))
+			}
+			logDebug(ctx, "Reading File Meta Information prefix", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128))
+			logDebug(ctx, "'DICM' prefix found", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128), AttrPath, filename)
 		} else if !opts.Force {
 			return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
 		} else {
@@ -228,13 +233,11 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		if !ok {
 			break
 		}
-
-		logDebug(ctx, "element",
-			AttrOffset, pos,
-			AttrTag, currentTag.String(),
-			AttrVR, string(vr),
-			AttrLen, length,
-		)
+		header, herr := v.bytes(pos, int64(hdrSize))
+		if herr != nil {
+			break
+		}
+		logElementHeader(ctx, pos, header, currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
 		keep := shouldKeepElement(opts, currentTag)
@@ -255,6 +258,8 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				if vr == VRUN {
 					elem.VR = VRSQ
 				}
+				logDebug(ctx, "Reading/parsing undefined length sequence",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				seq, endPos, err := readUndefinedSequenceAt(v, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
 				if err != nil {
 					return nil, err
@@ -265,6 +270,8 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				}
 				pos = endPos
 			} else {
+				logDebug(ctx, "Reading undefined length data element",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				// Encapsulated / undefined-length OB/OW (typically Pixel Data).
 				endPos, encapsulated, err := readOrSkipEncapsulated(v, valueStart, isLittleEndian, keep)
 				if err != nil {
@@ -272,8 +279,11 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				}
 				if keep {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
 					} else {
+						logElementValue(ctx, valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian, charsets)
 					}
 					allElements = append(allElements, elem)
@@ -306,12 +316,15 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 
 		if keep {
 			if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+				logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+					AttrTag, currentTag.String(), AttrLen, length)
 				markElementDeferred(elem, valueStart, length, isImplicit, isLittleEndian, charsets)
 			} else {
 				value, err := v.bytes(valueStart, int64(length))
 				if err != nil {
 					break
 				}
+				logElementValue(ctx, valueStart, value)
 				assignElementBytes(elem, value, vr, isImplicit, isLittleEndian, charsets)
 			}
 			allElements = append(allElements, elem)
@@ -321,6 +334,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		}
 		// Skip: advance without allocating the value (Go win vs ReadAll).
 		pos = next
+		continue
 	}
 
 	return assembleFileDataset(allElements, preamble, filename, modTime, isImplicit, isLittleEndian, readCtx), nil

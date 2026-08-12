@@ -2,17 +2,25 @@ package godicom
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"sync/atomic"
 )
 
 // Standard slog attribute keys for godicom debug logs.
+// Content mirrors pydicom filereader debug / dcm4che DicomInputStream diagnostics.
 const (
 	AttrComponent      = "component"
-	AttrOffset         = "offset"
-	AttrTag            = "tag"
+	AttrOffset         = "offset"     // absolute file offset (int)
+	AttrOffsetHex      = "offset_hex" // pydicom-style "%08x"
+	AttrHex            = "hex"        // header or sample bytes as hex
+	AttrTag            = "tag"        // "(GGGG,EEEE)"
 	AttrVR             = "vr"
-	AttrLen            = "len"
+	AttrLen            = "len" // element length; -1 means undefined (0xFFFFFFFF)
+	AttrUndefined      = "undefined_length"
+	AttrValueHex       = "value_hex" // first ≤20 value bytes as hex
+	AttrValue          = "value"     // first ≤20 value bytes as Go quoted string
 	AttrTransferSyntax = "transfer_syntax"
 	AttrFrame          = "frame"
 	AttrPath           = "path"
@@ -25,6 +33,8 @@ const (
 	ComponentPixels = "pixels"
 	ComponentEncaps = "encaps"
 )
+
+const debugValuePreview = 20
 
 type loggerContextKey struct{}
 
@@ -107,4 +117,58 @@ func logWarn(ctx context.Context, msg string, args ...any) {
 		return
 	}
 	l.WarnContext(ctx, msg, args...)
+}
+
+func offsetHex(off int64) string {
+	return fmt.Sprintf("%08x", uint64(off))
+}
+
+func bytesHex(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
+
+// logElementHeader mirrors pydicom's per-element header line:
+// offset + header hex + tag + VR + Length / Undefined length.
+func logElementHeader(ctx context.Context, offset int64, header []byte, tag Tag, vr VR, length int) {
+	l := LoggerFromContext(ctx)
+	if !l.Enabled(ctx, slog.LevelDebug) {
+		return
+	}
+	args := []any{
+		AttrOffset, offset,
+		AttrOffsetHex, offsetHex(offset),
+		AttrHex, bytesHex(header),
+		AttrTag, tag.String(),
+	}
+	if vr != "" {
+		args = append(args, AttrVR, string(vr))
+	}
+	if length == 0xFFFFFFFF {
+		args = append(args, AttrLen, -1, AttrUndefined, true)
+	} else {
+		args = append(args, AttrLen, length, AttrUndefined, false)
+	}
+	l.DebugContext(ctx, "data element", args...)
+}
+
+// logElementValue mirrors pydicom's value preview (first 20 bytes hex + repr).
+func logElementValue(ctx context.Context, valueTell int64, value []byte) {
+	l := LoggerFromContext(ctx)
+	if !l.Enabled(ctx, slog.LevelDebug) {
+		return
+	}
+	preview := value
+	if len(preview) > debugValuePreview {
+		preview = preview[:debugValuePreview]
+	}
+	l.DebugContext(ctx, "data element value",
+		AttrOffset, valueTell,
+		AttrOffsetHex, offsetHex(valueTell),
+		AttrValueHex, bytesHex(preview),
+		AttrValue, fmt.Sprintf("%q", preview),
+		AttrLen, len(value),
+	)
 }

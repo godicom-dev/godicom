@@ -492,9 +492,10 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 	if st == nil {
 		st = newWriteState()
 	}
-	logDebug(st.ctx, "element",
+	logDebug(st.ctx, "data element",
 		AttrTag, elem.Tag.String(),
 		AttrVR, string(elem.VR),
+		AttrUndefined, elem.IsUndefinedLength,
 	)
 	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)

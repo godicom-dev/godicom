@@ -134,7 +134,12 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	if len(data) >= 132 && string(data[128:132]) == "DICM" {
 		preamble = data[:128]
 		pos = 132
-		logDebug(ctx, "DICM prefix found", AttrOffset, int64(128), AttrPath, filename)
+		logDebug(ctx, "Reading File Meta Information preamble", AttrOffset, int64(0), AttrOffsetHex, offsetHex(0), AttrPath, filename)
+		if len(preamble) >= 8 {
+			logDebug(ctx, "preamble sample", AttrOffsetHex, offsetHex(0), AttrHex, bytesHex(preamble[:8]))
+		}
+		logDebug(ctx, "Reading File Meta Information prefix", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128))
+		logDebug(ctx, "'DICM' prefix found", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128), AttrPath, filename)
 	} else if !opts.Force {
 		return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
 	} else {
@@ -256,12 +261,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			}
 		}
 
-		logDebug(ctx, "element",
-			AttrOffset, pos,
-			AttrTag, currentTag.String(),
-			AttrVR, string(vr),
-			AttrLen, length,
-		)
+		logElementHeader(ctx, pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
 
@@ -281,19 +281,27 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				if vr == VRUN {
 					elem.VR = VRSQ
 				}
+				logDebug(ctx, "Reading/parsing undefined length sequence",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				seq, newPos := readSequenceItems(data, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
 				elem.Value = seq
 				pos = newPos
 			} else {
+				logDebug(ctx, "Reading undefined length data element",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
 					} else {
+						logElementValue(ctx, valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian, charsets)
 					}
 					pos = endPos
 				} else {
 					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					logElementValue(ctx, valueStart, raw)
 					elem.RawValue = raw
 					pos = newPos
 				}
@@ -331,8 +339,11 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		valueTell := pos + int64(hdrSize)
 
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+			logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+				AttrTag, currentTag.String(), AttrLen, length)
 			markElementDeferred(elem, valueTell, length, isImplicit, isLittleEndian, charsets)
 		} else {
+			logElementValue(ctx, valueTell, value)
 			assignElementBytes(elem, value, vr, isImplicit, isLittleEndian, charsets)
 		}
 
@@ -497,7 +508,7 @@ func readSequenceItemsUntil(
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 
 		if currentTag == SequenceDelimiterTag {
-			logDebug(ctx.logCtx(), "end of sequence", AttrOffset, pos)
+			logDebug(ctx.logCtx(), "End of Sequence", AttrOffset, pos, AttrOffsetHex, offsetHex(pos))
 			pos += 8
 			break
 		}
@@ -518,7 +529,13 @@ func readSequenceItemsUntil(
 		}
 		pos += 8
 
-		logDebug(ctx.logCtx(), "sequence item", AttrOffset, pos, AttrLen, itemLength)
+		logDebug(ctx.logCtx(), "Found Item tag (start of item)",
+			AttrOffset, pos-8,
+			AttrOffsetHex, offsetHex(pos-8),
+			AttrHex, bytesHex(data[pos-8:pos]),
+			AttrLen, itemLength,
+			AttrUndefined, itemLength == 0xFFFFFFFF,
+		)
 
 		item := NewDataset()
 		item.parent = seq
@@ -541,8 +558,9 @@ func readSequenceItemsUntil(
 			if pos < itemEnd {
 				pos = itemEnd
 			}
+			logDebug(ctx.logCtx(), "Finished sequence item", AttrOffset, pos, AttrOffsetHex, offsetHex(pos))
 		} else {
-			pos += int64(itemLength)
+			logDebug(ctx.logCtx(), "Finished sequence item", AttrOffset, pos, AttrOffsetHex, offsetHex(pos))
 		}
 
 		seq.Append(item)
@@ -620,12 +638,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			}
 		}
 
-		logDebug(ctx.logCtx(), "element",
-			AttrOffset, pos,
-			AttrTag, currentTag.String(),
-			AttrVR, string(vr),
-			AttrLen, length,
-		)
+		logElementHeader(ctx.logCtx(), pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
 
@@ -645,19 +658,27 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				if vr == VRUN {
 					elem.VR = VRSQ
 				}
+				logDebug(ctx.logCtx(), "Reading/parsing undefined length sequence",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				seq, newPos := readSequenceItems(data, valueStart, isImplicitVR, isLittleEndian, charsets, opts, ctx)
 				elem.Value = seq
 				pos = newPos
 			} else {
+				logDebug(ctx.logCtx(), "Reading undefined length data element",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
+							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian, charsets)
 					} else {
+						logElementValue(ctx.logCtx(), valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, isImplicitVR, isLittleEndian, charsets)
 					}
 					pos = endPos
 				} else {
 					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					logElementValue(ctx.logCtx(), valueStart, raw)
 					elem.RawValue = raw
 					pos = newPos
 				}
@@ -695,8 +716,11 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		valueTell := pos + int64(hdrSize)
 
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+			logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
+				AttrTag, currentTag.String(), AttrLen, length)
 			markElementDeferred(elem, valueTell, length, isImplicitVR, isLittleEndian, charsets)
 		} else {
+			logElementValue(ctx.logCtx(), valueTell, value)
 			assignElementBytes(elem, value, vr, isImplicitVR, isLittleEndian, charsets)
 		}
 

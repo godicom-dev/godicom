@@ -60,14 +60,17 @@ func TestReadFile_LoggerEmitsDebugElements(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "DICM prefix found") {
+	if !strings.Contains(out, "'DICM' prefix found") {
 		t.Fatalf("missing DICM log:\n%s", out)
 	}
 	if !strings.Contains(out, "component=reader") {
 		t.Fatalf("missing component=reader:\n%s", out)
 	}
-	if !strings.Contains(out, "element") || !strings.Contains(out, "tag=") {
+	if !strings.Contains(out, "data element") || !strings.Contains(out, "tag=") {
 		t.Fatalf("missing element logs:\n%s", out)
+	}
+	if !strings.Contains(out, "offset_hex=") {
+		t.Fatalf("missing offset_hex (pydicom-style):\n%s", out)
 	}
 	if !strings.Contains(out, "transfer syntax") {
 		t.Fatalf("missing transfer syntax log:\n%s", out)
@@ -84,7 +87,7 @@ func TestReadFileContext_UsesContextLogger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "DICM prefix found") {
+	if !strings.Contains(buf.String(), "'DICM' prefix found") {
 		t.Fatalf("expected context logger output, got:\n%s", buf.String())
 	}
 }
@@ -139,7 +142,7 @@ func TestOptionsLoggerOverridesContext(t *testing.T) {
 	if ctxBuf.Len() != 0 {
 		t.Fatalf("context logger should be unused when Options.Logger set, got:\n%s", ctxBuf.String())
 	}
-	if !strings.Contains(optBuf.String(), "DICM prefix found") {
+	if !strings.Contains(optBuf.String(), "'DICM' prefix found") {
 		t.Fatalf("options logger unused:\n%s", optBuf.String())
 	}
 }

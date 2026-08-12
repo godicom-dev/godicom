@@ -90,7 +90,12 @@ ds, err = godicom.ReadFileContext(ctx, "ct.dcm", nil)
 
 CLI: `godicom show -debug file.dcm`
 
-Debug records use fixed attribute keys (`component`, `offset`, `tag`, `vr`, `len`, `transfer_syntax`, …).
+Debug records use fixed attribute keys aligned with pydicom filereader /
+dcm4che diagnostics (`component`, `offset`, `offset_hex`, `hex`, `tag`, `vr`,
+`len`, `undefined_length`, `value_hex`, `value`, `transfer_syntax`, …).
+Messages cover the same events as pydicom's debugger: FMI/DICM, per-element
+header + value preview (first 20 bytes), defer skips, and sequence item
+boundaries.
 
 Elements are accessed with typed getters and constants from the [`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
 (`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …), not dynamic attribute names.
