@@ -62,6 +62,36 @@ File I/O: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` / `FileDataset.SaveAs`
 
 `Read` accepts any `io.Reader`. Prefer `*os.File` / seekable sources — the parser walks tags without `ReadAll`, so `StopBeforePixels`, `DeferSize`, and `SpecificTags` can skip large values without buffering them. Deferred values reload by reopening the file path.
 
+Context-aware variants (`ReadFileContext`, `WriteContext`, `DecodeDatasetContext`, …) accept a `context.Context` for cancellation and structured logging.
+
+## Logging
+
+godicom uses `log/slog`. By default it is silent (`DiscardHandler`).
+
+```go
+import (
+	"context"
+	"log/slog"
+	"os"
+
+	"github.com/godicom-dev/godicom"
+)
+
+h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+logger := slog.New(h)
+
+// Per-call (preferred)
+ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Logger: logger})
+
+// Or via context (for gonetdicom / request-scoped logging)
+ctx := godicom.WithLogger(context.Background(), logger)
+ds, err = godicom.ReadFileContext(ctx, "ct.dcm", nil)
+```
+
+CLI: `godicom show -debug file.dcm`
+
+Debug records use fixed attribute keys (`component`, `offset`, `tag`, `vr`, `len`, `transfer_syntax`, …).
+
 Elements are accessed with typed getters and constants from the [`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
 (`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …), not dynamic attribute names.
 
@@ -163,6 +193,7 @@ dss, err := dicomjson.ParseDatasets(arr)
 go install github.com/godicom-dev/godicom/cmd/godicom@latest
 
 godicom show <file>            # print file meta + dataset
+godicom show -debug <file>     # also emit reader debug logs to stderr
 godicom read <file>            # alias for show
 godicom readcopy <src> <dst>   # read, write, re-read
 ```

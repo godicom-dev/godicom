@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/godicom-dev/godicom/pixels"
@@ -16,10 +17,17 @@ import (
 //
 // Source frames are decoded with Raw=true (no photometric post-process).
 func (fd *FileDataset) CompressPixelData(transferSyntaxUID string, opts ...pixels.EncodeOption) error {
+	return fd.CompressPixelDataContext(context.Background(), transferSyntaxUID, opts...)
+}
+
+// CompressPixelDataContext is like CompressPixelData but uses ctx for logging.
+func (fd *FileDataset) CompressPixelDataContext(ctx context.Context, transferSyntaxUID string, opts ...pixels.EncodeOption) error {
 	ts := uid.UID(transferSyntaxUID)
 	if ts == "" {
 		return fmt.Errorf("godicom: TransferSyntaxUID required")
 	}
+	ctx = loggerContext(ctx, nil, ComponentPixels)
+	logDebug(ctx, "compress pixel data", AttrTransferSyntax, transferSyntaxUID)
 	desc, err := pixels.DescriptorFromFile(fd)
 	if err != nil {
 		return err
@@ -28,7 +36,7 @@ func (fd *FileDataset) CompressPixelData(transferSyntaxUID string, opts ...pixel
 	if err != nil {
 		return err
 	}
-	encOpts := pixels.EncodeOptions{TransferSyntaxUID: ts}
+	encOpts := pixels.EncodeOptions{TransferSyntaxUID: ts, Logger: LoggerFromContext(ctx)}
 	for _, fn := range opts {
 		if fn != nil {
 			fn(&encOpts)

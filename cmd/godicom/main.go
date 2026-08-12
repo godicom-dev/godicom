@@ -33,6 +33,8 @@ func printUsage() {
 	fmt.Println("  show <file>          - Display DICOM file (file meta + dataset)")
 	fmt.Println("  read <file>          - Alias for show")
 	fmt.Println("  readcopy <src> <dst> - Read then write DICOM file")
+	fmt.Println("Flags:")
+	fmt.Println("  show -debug          - Emit reader debug logs to stderr")
 }
 
 func runReadCopy(args []string) {

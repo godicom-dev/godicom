@@ -17,6 +17,10 @@ import (
 
 // DecodeFrame decodes a single encapsulated frame's compressed bytes.
 func DecodeFrame(frame []byte, desc Descriptor, opts DecodeOptions) ([]byte, error) {
+	opts.debug("decode frame",
+		"transfer_syntax", string(desc.TransferSyntaxUID),
+		"len", len(frame),
+	)
 	switch {
 	case desc.TransferSyntaxUID == uid.RLELossless:
 		return decodeRLE(frame, desc, opts)
@@ -62,6 +66,7 @@ func DecodePixelData(fd FileSource, opts ...DecodeOption) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	o.debug("encapsulated frames", "frames", len(encodedFrames))
 	if o.FrameIndex != nil {
 		idx := *o.FrameIndex
 		if idx < 0 || idx >= len(encodedFrames) {

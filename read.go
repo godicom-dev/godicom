@@ -3,9 +3,11 @@ package godicom
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 )
 
@@ -14,6 +16,9 @@ type ReadOptions struct {
 	StopBeforePixels bool
 	Force            bool
 	SpecificTags     []Tag
+	// Logger overrides the call-scoped slog logger for this read.
+	// When nil, LoggerFromContext / DefaultLogger is used.
+	Logger *slog.Logger
 }
 
 func hasExplicitVRAt(data []byte, pos int64) bool {
@@ -105,13 +110,19 @@ func lookupVRDuringRead(tag Tag, creator string) VR {
 
 // ReadBytes parses a Part 10 DICOM file from data (preamble optional when Force).
 func ReadBytes(data []byte, opts *ReadOptions) (*FileDataset, error) {
-	return readBytes(data, "", 0, opts)
+	return ReadBytesContext(context.Background(), data, opts)
 }
 
-func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (*FileDataset, error) {
+// ReadBytesContext is like ReadBytes but uses ctx for cancellation and logging.
+func ReadBytesContext(ctx context.Context, data []byte, opts *ReadOptions) (*FileDataset, error) {
+	return readBytes(ctx, data, "", 0, opts)
+}
+
+func readBytes(ctx context.Context, data []byte, filename string, modTime int64, opts *ReadOptions) (*FileDataset, error) {
 	if opts == nil {
 		opts = &ReadOptions{}
 	}
+	ctx = loggerContext(ctx, opts.Logger, ComponentReader)
 
 	if len(data) < 8 {
 		return nil, &InvalidDICOMError{Message: "file too small"}
@@ -123,8 +134,11 @@ func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (
 	if len(data) >= 132 && string(data[128:132]) == "DICM" {
 		preamble = data[:128]
 		pos = 132
+		logDebug(ctx, "DICM prefix found", AttrOffset, int64(128), AttrPath, filename)
 	} else if !opts.Force {
 		return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
+	} else {
+		logDebug(ctx, "reading without DICM prefix", AttrPath, filename)
 	}
 	isLittleEndian := true
 	isImplicit := false
@@ -137,7 +151,7 @@ func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
 	charsets := []string{DefaultCharacterSet}
-	readCtx := &readContext{data: data, filename: filename, modTime: modTime}
+	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx}
 
 	for pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
@@ -145,6 +159,7 @@ func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (
 			inFileMeta = false
 			if len(allElements) > 0 {
 				ts := determineTransferSyntaxFromElements(allElements)
+				logDebug(ctx, "transfer syntax", AttrTransferSyntax, string(ts), AttrOffset, pos)
 				if ts == DeflatedExplicitVRLittleEndian {
 					inflated, err := inflateRaw(data[pos:])
 					if err != nil {
@@ -240,6 +255,13 @@ func readBytes(data []byte, filename string, modTime int64, opts *ReadOptions) (
 				hdrSize = 12
 			}
 		}
+
+		logDebug(ctx, "element",
+			AttrOffset, pos,
+			AttrTag, currentTag.String(),
+			AttrVR, string(vr),
+			AttrLen, length,
+		)
 
 		elem := NewDataElement(currentTag, vr, nil)
 
@@ -475,6 +497,7 @@ func readSequenceItemsUntil(
 		currentTag := readTagBytes(data, pos, isLittleEndian)
 
 		if currentTag == SequenceDelimiterTag {
+			logDebug(ctx.logCtx(), "end of sequence", AttrOffset, pos)
 			pos += 8
 			break
 		}
@@ -494,6 +517,8 @@ func readSequenceItemsUntil(
 			itemLength = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 		}
 		pos += 8
+
+		logDebug(ctx.logCtx(), "sequence item", AttrOffset, pos, AttrLen, itemLength)
 
 		item := NewDataset()
 		item.parent = seq
@@ -594,6 +619,13 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				hdrSize = 12
 			}
 		}
+
+		logDebug(ctx.logCtx(), "element",
+			AttrOffset, pos,
+			AttrTag, currentTag.String(),
+			AttrVR, string(vr),
+			AttrLen, length,
+		)
 
 		elem := NewDataElement(currentTag, vr, nil)
 
@@ -769,5 +801,10 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLi
 
 // ReadFile reads a DICOM file from filename.
 func ReadFile(filename string, opts *ReadOptions) (*FileDataset, error) {
-	return readFile(filename, opts)
+	return ReadFileContext(context.Background(), filename, opts)
+}
+
+// ReadFileContext is like ReadFile but uses ctx for cancellation and logging.
+func ReadFileContext(ctx context.Context, filename string, opts *ReadOptions) (*FileDataset, error) {
+	return readFile(ctx, filename, opts)
 }

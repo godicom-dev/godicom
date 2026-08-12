@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/godicom-dev/godicom"
@@ -17,9 +18,11 @@ type showOptions struct {
 
 func runShow(args []string) {
 	opts := showOptions{}
+	var debug bool
 	fs := flag.NewFlagSet("show", flag.ExitOnError)
 	fs.BoolVar(&opts.noMeta, "no-meta", false, "skip file meta information")
 	fs.BoolVar(&opts.topLevel, "top", false, "only show top-level elements")
+	fs.BoolVar(&debug, "debug", false, "emit godicom reader debug logs to stderr")
 	fs.Func("t", "show only elements with this tag (keyword or hex; repeatable)", func(s string) error {
 		opts.tagKeywords = append(opts.tagKeywords, s)
 		return nil
@@ -31,11 +34,17 @@ func runShow(args []string) {
 	fs.Parse(args)
 	rest := fs.Args()
 	if len(rest) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: godicom show [-no-meta] [-top] [-t tag]... <file>")
+		fmt.Fprintln(os.Stderr, "Usage: godicom show [-debug] [-no-meta] [-top] [-t tag]... <file>")
 		os.Exit(1)
 	}
 
-	ds, err := godicom.ReadFile(rest[0], nil)
+	readOpts := (*godicom.ReadOptions)(nil)
+	if debug {
+		h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+		readOpts = &godicom.ReadOptions{Logger: slog.New(h)}
+	}
+
+	ds, err := godicom.ReadFile(rest[0], readOpts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

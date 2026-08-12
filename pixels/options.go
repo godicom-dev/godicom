@@ -1,5 +1,7 @@
 package pixels
 
+import "log/slog"
+
 // DecodeOptions configures pixel data decoding.
 type DecodeOptions struct {
 	// Raw skips photometric colour transforms and planar normalization.
@@ -8,6 +10,8 @@ type DecodeOptions struct {
 	Raw bool
 	// FrameIndex selects a single frame; nil decodes all frames.
 	FrameIndex *int
+	// Logger receives debug events for this decode; nil discards.
+	Logger *slog.Logger
 }
 
 // DecodeOption configures DecodeOptions.
@@ -27,6 +31,13 @@ func WithFrameIndex(index int) DecodeOption {
 	}
 }
 
+// WithLogger sets the slog logger for pixel decode debug events.
+func WithLogger(l *slog.Logger) DecodeOption {
+	return func(o *DecodeOptions) {
+		o.Logger = l
+	}
+}
+
 func applyDecodeOptions(opts []DecodeOption) DecodeOptions {
 	out := DecodeOptions{}
 	for _, fn := range opts {
@@ -35,4 +46,19 @@ func applyDecodeOptions(opts []DecodeOption) DecodeOptions {
 		}
 	}
 	return out
+}
+
+func (o DecodeOptions) logger() *slog.Logger {
+	if o.Logger != nil {
+		return o.Logger
+	}
+	return slog.New(slog.DiscardHandler)
+}
+
+func (o DecodeOptions) debug(msg string, args ...any) {
+	l := o.logger()
+	if !l.Enabled(nil, slog.LevelDebug) {
+		return
+	}
+	l.Debug(msg, append([]any{"component", "pixels"}, args...)...)
 }

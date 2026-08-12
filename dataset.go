@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -20,12 +21,21 @@ type Dataset struct {
 	readCtx                       *readContext
 }
 
-// readContext holds the source used for deferred element loading.
+// readContext holds the source used for deferred element loading and the
+// call-scoped logger context for this parse.
 type readContext struct {
 	data     []byte // in-memory source (ReadBytes / non-seekable Read)
 	filename string // reopen path for streaming ReadFile
 	modTime  int64
 	size     int64 // file size when filename is used without data
+	ctx      context.Context
+}
+
+func (rc *readContext) logCtx() context.Context {
+	if rc != nil && rc.ctx != nil {
+		return rc.ctx
+	}
+	return context.Background()
 }
 
 // EncodingInfo describes the DICOM encoding used when reading/writing.
@@ -817,11 +827,11 @@ func (d *Dataset) Clone() *Dataset {
 // --- Save / Encode ---
 
 func (d *Dataset) SaveAs(filename string, opts *WriteOptions) error {
-	return WriteFile(filename, d, opts)
+	return WriteFileContext(context.Background(), filename, d, opts)
 }
 
 func (fd *FileDataset) SaveAs(filename string, opts *WriteOptions) error {
-	return writeFile(filename, writeSource{
+	return writeFile(context.Background(), filename, writeSource{
 		dataset:  fd.Dataset,
 		fileMeta: fd.FileMeta,
 		preamble: fd.Preamble,
@@ -835,7 +845,7 @@ func (fd *FileDataset) EncodeFile(opts *WriteOptions) ([]byte, error) {
 
 // Write encodes fd as a Part 10 DICOM file to w.
 func (fd *FileDataset) Write(w io.Writer, opts *WriteOptions) error {
-	return Write(w, fd, opts)
+	return WriteContext(context.Background(), w, fd, opts)
 }
 
 // Encode returns the dataset bytes (no preamble / File Meta) for transferSyntaxUID.

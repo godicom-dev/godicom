@@ -45,7 +45,7 @@ areas are thinner on edge fixtures.
 | SR / codes | **gap** | sr/ | — | Not implemented |
 | Overlays | **gap** | overlays/ | — | Tag constants only |
 | Waveforms | **gap** | waveforms/ | — | Tag constants only |
-| Config / hooks | **gap** | config, hooks | — | Needs Go API design |
+| Config / hooks | **partial** | config, hooks | slog + Options/context logger | hooks still deferred |
 | CLI | partial | cli (~17) | show/read/readcopy | Minimal |
 | Networking | out of scope | → pynetdicom | → gonetdicom | Separate library |
 

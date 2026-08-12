@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"bytes"
+	"context"
 	"testing"
 )
 
@@ -330,7 +331,7 @@ func TestWriteCharsetRoundtrip(t *testing.T) {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	if err := writeDataset(fp, ds, false, true, nil, false); err != nil {
+	if err := writeDataset(context.Background(), fp, ds, false, true, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -363,7 +364,7 @@ func TestSequenceCharsetInheritance(t *testing.T) {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	if err := writeDataset(fp, parent, false, true, nil, false); err != nil {
+	if err := writeDataset(context.Background(), fp, parent, false, true, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
