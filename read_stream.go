@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,6 +17,11 @@ import (
 //
 // Non-seekable readers fall back to buffering the stream (then ReadBytes).
 func Read(r io.Reader, opts *ReadOptions) (*FileDataset, error) {
+	return ReadContext(context.Background(), r, opts)
+}
+
+// ReadContext is like Read but uses ctx for cancellation and logging.
+func ReadContext(ctx context.Context, r io.Reader, opts *ReadOptions) (*FileDataset, error) {
 	if r == nil {
 		return nil, fmt.Errorf("godicom: nil reader")
 	}
@@ -24,7 +30,7 @@ func Read(r io.Reader, opts *ReadOptions) (*FileDataset, error) {
 		if err != nil {
 			return nil, err
 		}
-		return readReaderAt(f, info.Size(), f.Name(), info.ModTime().Unix(), opts)
+		return readReaderAt(ctx, f, info.Size(), f.Name(), info.ModTime().Unix(), opts)
 	}
 	if rs, ok := r.(io.ReadSeeker); ok {
 		size, err := rs.Seek(0, io.SeekEnd)
@@ -34,13 +40,13 @@ func Read(r io.Reader, opts *ReadOptions) (*FileDataset, error) {
 		if _, err := rs.Seek(0, io.SeekStart); err != nil {
 			return nil, err
 		}
-		return readReaderAt(seekerReaderAt{rs: rs}, size, "", 0, opts)
+		return readReaderAt(ctx, seekerReaderAt{rs: rs}, size, "", 0, opts)
 	}
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	return readBytes(data, "", 0, opts)
+	return readBytes(ctx, data, "", 0, opts)
 }
 
 // seekerReaderAt adapts a ReadSeeker to ReaderAt via Seek+Read.
@@ -56,7 +62,7 @@ func (s seekerReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	return io.ReadFull(s.rs, p)
 }
 
-func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
+func readFile(ctx context.Context, filename string, opts *ReadOptions) (*FileDataset, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -67,7 +73,7 @@ func readFile(filename string, opts *ReadOptions) (*FileDataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	return readReaderAt(f, info.Size(), filename, info.ModTime().Unix(), opts)
+	return readReaderAt(ctx, f, info.Size(), filename, info.ModTime().Unix(), opts)
 }
 
 type atView struct {
@@ -111,10 +117,11 @@ func (v atView) hasExplicitVR(pos int64) bool {
 	return b[0] >= 0x41 && b[0] <= 0x5A && b[1] >= 0x41 && b[1] <= 0x5A
 }
 
-func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, opts *ReadOptions) (*FileDataset, error) {
+func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename string, modTime int64, opts *ReadOptions) (*FileDataset, error) {
 	if opts == nil {
 		opts = &ReadOptions{}
 	}
+	ctx = loggerContext(ctx, opts.Logger, ComponentReader)
 	if size < 8 {
 		return nil, &InvalidDICOMError{Message: "file too small"}
 	}
@@ -134,8 +141,16 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 				return nil, err
 			}
 			pos = 132
+			logDebug(ctx, "Reading File Meta Information preamble", AttrOffset, int64(0), AttrOffsetHex, offsetHex(0), AttrPath, filename)
+			if len(preamble) >= 8 {
+				logDebug(ctx, "preamble sample", AttrOffsetHex, offsetHex(0), AttrHex, bytesHex(preamble[:8]))
+			}
+			logDebug(ctx, "Reading File Meta Information prefix", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128))
+			logDebug(ctx, "'DICM' prefix found", AttrOffset, int64(128), AttrOffsetHex, offsetHex(128), AttrPath, filename)
 		} else if !opts.Force {
 			return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
+		} else {
+			logDebug(ctx, "reading without DICM prefix", AttrPath, filename)
 		}
 	} else if !opts.Force {
 		return nil, &InvalidDICOMError{Message: "missing DICM prefix"}
@@ -152,7 +167,7 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 	allElements := make([]*DataElement, 0)
 	charsets := []string{DefaultCharacterSet}
 	// No in-memory copy of the file: deferred loads reopen filename.
-	readCtx := &readContext{filename: filename, modTime: modTime, size: size}
+	readCtx := &readContext{filename: filename, modTime: modTime, size: size, ctx: ctx}
 
 	for pos+4 <= size {
 		currentTag, err := v.tag(pos, isLittleEndian)
@@ -164,6 +179,7 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 			inFileMeta = false
 			if len(allElements) > 0 {
 				ts := determineTransferSyntaxFromElements(allElements)
+				logDebug(ctx, "transfer syntax", AttrTransferSyntax, string(ts), AttrOffset, pos)
 				if ts == DeflatedExplicitVRLittleEndian {
 					rest, err := v.bytes(pos, size-pos)
 					if err != nil {
@@ -174,7 +190,7 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 						return nil, err
 					}
 					// Remainder is an in-memory dataset; keep buffer for deferred.
-					return finishDeflated(inflated, preamble, allElements, filename, modTime, opts)
+					return finishDeflated(ctx, inflated, preamble, allElements, filename, modTime, opts)
 				}
 				isImplicit = ts.IsImplicitVR()
 				isLittleEndian = ts.IsLittleEndian()
@@ -217,6 +233,11 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 		if !ok {
 			break
 		}
+		header, herr := v.bytes(pos, int64(hdrSize))
+		if herr != nil {
+			break
+		}
+		logElementHeader(ctx, pos, header, currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
 		keep := shouldKeepElement(opts, currentTag)
@@ -237,6 +258,8 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 				if vr == VRUN {
 					elem.VR = VRSQ
 				}
+				logDebug(ctx, "Reading/parsing undefined length sequence",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				seq, endPos, err := readUndefinedSequenceAt(v, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
 				if err != nil {
 					return nil, err
@@ -247,6 +270,8 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 				}
 				pos = endPos
 			} else {
+				logDebug(ctx, "Reading undefined length data element",
+					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				// Encapsulated / undefined-length OB/OW (typically Pixel Data).
 				endPos, encapsulated, err := readOrSkipEncapsulated(v, valueStart, isLittleEndian, keep)
 				if err != nil {
@@ -254,8 +279,11 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 				}
 				if keep {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
 						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
 					} else {
+						logElementValue(ctx, valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian, charsets)
 					}
 					allElements = append(allElements, elem)
@@ -288,12 +316,15 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 
 		if keep {
 			if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+				logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+					AttrTag, currentTag.String(), AttrLen, length)
 				markElementDeferred(elem, valueStart, length, isImplicit, isLittleEndian, charsets)
 			} else {
 				value, err := v.bytes(valueStart, int64(length))
 				if err != nil {
 					break
 				}
+				logElementValue(ctx, valueStart, value)
 				assignElementBytes(elem, value, vr, isImplicit, isLittleEndian, charsets)
 			}
 			allElements = append(allElements, elem)
@@ -303,6 +334,7 @@ func readReaderAt(ra io.ReaderAt, size int64, filename string, modTime int64, op
 		}
 		// Skip: advance without allocating the value (Go win vs ReadAll).
 		pos = next
+		continue
 	}
 
 	return assembleFileDataset(allElements, preamble, filename, modTime, isImplicit, isLittleEndian, readCtx), nil
@@ -499,6 +531,7 @@ func readOrSkipEncapsulated(v atView, offset int64, littleEndian, keep bool) (en
 }
 
 func finishDeflated(
+	ctx context.Context,
 	inflated []byte,
 	preamble []byte,
 	metaElems []*DataElement,
@@ -511,8 +544,9 @@ func finishDeflated(
 		sub.DeferSize = opts.DeferSize
 		sub.StopBeforePixels = opts.StopBeforePixels
 		sub.SpecificTags = opts.SpecificTags
+		sub.Logger = opts.Logger
 	}
-	rest, err := readBytes(inflated, filename, modTime, sub)
+	rest, err := readBytes(ctx, inflated, filename, modTime, sub)
 	if err != nil {
 		return nil, err
 	}

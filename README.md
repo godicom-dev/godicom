@@ -1,18 +1,20 @@
-# godicom
-
-*godicom* is a Go package for working with [DICOM](https://www.dicomstandard.org/) files.
-It lets you read, modify and write DICOM datasets with an idiomatic Go API.
-
-*godicom* is a general-purpose DICOM framework concerned with reading and writing
-DICOM datasets, pixel data, and the DICOM JSON Model. It does not handle DICOM
-networking. For DIMSE and DICOMweb (WADO-RS / QIDO-RS / STOW-RS), use
-[gonetdicom](https://github.com/godicom-dev/gonetdicom), which builds on *godicom*.
-
 [![CI](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml/badge.svg)](https://github.com/godicom-dev/godicom/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/godicom-dev/godicom/branch/main/graph/badge.svg)](https://codecov.io/gh/godicom-dev/godicom)
-![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)
+[![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.26-%23007d9c)](https://go.dev/)
 [![GoDoc](https://pkg.go.dev/badge/github.com/godicom-dev/godicom)](https://pkg.go.dev/github.com/godicom-dev/godicom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+# *godicom*
+
+*godicom* is a Go package for working with [DICOM](https://www.dicomstandard.org/) files.
+It lets you read, modify and write DICOM data with an idiomatic Go API.
+
+*godicom* is a general-purpose DICOM framework concerned with reading and writing
+DICOM datasets. In order to keep the project manageable, it does not handle the
+specifics of individual SOP classes or DICOM networking. Other libraries in the
+[godicom-dev](https://github.com/godicom-dev) organisation build on *godicom*
+for those areas — notably [gonetdicom](https://github.com/godicom-dev/gonetdicom)
+for DIMSE and DICOMweb (WADO-RS / QIDO-RS / STOW-RS).
 
 ## Installation
 
@@ -26,18 +28,24 @@ Clone with the optional reference submodule (test fixtures):
 git clone --recurse-submodules https://github.com/godicom-dev/godicom.git
 ```
 
-## Quick start
+## Documentation
+
+The [pkg.go.dev API reference](https://pkg.go.dev/github.com/godicom-dev/godicom),
+[CHANGELOG](CHANGELOG.md), and [PARITY](PARITY.md) coverage map vs pydicom are
+the primary docs. Deferred items live in [TODO](TODO.md).
+
+## Examples
+
+**Change a patient's ID**
 
 ```go
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/godicom-dev/godicom"
 	"github.com/godicom-dev/godicom/tag"
-	"github.com/godicom-dev/godicom/uid"
 )
 
 func main() {
@@ -45,29 +53,47 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	name, _ := ds.GetString(tag.PatientName)
-	id, _ := ds.GetString(tag.PatientID)
-	fmt.Println(name, id)
-
 	ds.Set(godicom.NewDataElement(tag.PatientID, godicom.VRLO, "12345678"))
-	ds.Set(godicom.NewDataElement(tag.SOPInstanceUID, godicom.VRUI, string(uid.MustGenerateUID())))
 	if err := ds.SaveAs("ct_updated.dcm", nil); err != nil {
 		log.Fatal(err)
 	}
 }
 ```
 
-File I/O: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` / `FileDataset.SaveAs`.
+Elements are accessed with typed getters and constants from the
+[`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
+(`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …).
 
-`Read` accepts any `io.Reader`. Prefer `*os.File` / seekable sources — the parser walks tags without `ReadAll`, so `StopBeforePixels`, `DeferSize`, and `SpecificTags` can skip large values without buffering them. Deferred values reload by reopening the file path.
+File I/O entry points: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` /
+`FileDataset.SaveAs`. `Read` accepts any `io.Reader`; prefer `*os.File` /
+seekable sources so `StopBeforePixels`, `DeferSize`, and `SpecificTags` can
+skip large values without buffering them.
 
-Elements are accessed with typed getters and constants from the [`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
-(`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …), not dynamic attribute names.
+Context-aware variants (`ReadFileContext`, `WriteContext`,
+`DecodeDatasetContext`, …) accept a `context.Context` for cancellation and
+structured logging.
 
-## Pixel Data
+**Dataset bytes (no File Meta)**
 
-Compressed and uncompressed *Pixel Data* can be read as raw bytes or decoded frames:
+Encode or decode a dataset without a Part 10 preamble — useful for DIMSE or
+multipart payloads:
+
+```go
+data, err := ds.Encode(string(uid.ExplicitVRLittleEndian))
+parsed, err := godicom.DecodeDataset(data)
+```
+
+Part 10 files in memory:
+
+```go
+bytes, err := ds.EncodeFile(nil)
+ds2, err := godicom.ReadBytes(bytes)
+```
+
+## *Pixel Data*
+
+Compressed and uncompressed *Pixel Data* can be read as raw bytes or decoded
+frames:
 
 ```go
 import "github.com/godicom-dev/godicom/pixels"
@@ -84,15 +110,9 @@ raw, err := ds.PixelBytes(pixels.WithRaw(true))
 frames, err := ds.PixelFrames(pixels.WithRaw(true), pixels.WithFrameIndex(0))
 ```
 
-With `WithRaw(false)` (the default), decoded frames are normalized for display
+With `WithRaw(false)` (the default), decoded frames are normalised for display
 (for example YBR→RGB and planar configuration). Modality / VOI LUT helpers are
-available separately and are **not** applied automatically by `PixelBytes`:
-
-```go
-samples, err := ds.PixelSamples(pixels.WithRaw(true))
-hu, err := ds.ApplyModalityLUT(samples)
-win, err := ds.ApplyVOILUT(hu, 0, true)
-```
+available separately and are **not** applied automatically by `PixelBytes`.
 
 For pydicom-style access, use `PixelArray` (decoded samples + shape) and
 `DisplayFrame` (8-bit display-ready bytes after modality / VOI / presentation):
@@ -102,7 +122,7 @@ arr, err := ds.PixelArray(pixels.WithRaw(true))
 frame, err := ds.DisplayFrame(0)
 ```
 
-### Decompressing Pixel Data
+### Decompressing *Pixel Data*
 
 | Format | Package |
 |--------|---------|
@@ -113,37 +133,52 @@ frame, err := ds.DisplayFrame(0)
 These are pulled in automatically as module dependencies. Native (uncompressed)
 and Deflated transfer syntaxes need no extra plugins.
 
-### Compressing Pixel Data
+### Compressing *Pixel Data*
 
 ```go
-import "github.com/godicom-dev/godicom/uid"
-
 err := ds.CompressPixelData(string(uid.RLELossless))
 err = ds.CompressPixelData(string(uid.JPEGLSLossless))
 err = ds.CompressPixelData(string(uid.JPEG2000Lossless))
 err = ds.CompressPixelData(string(uid.JPEG2000)) // lossy JPEG 2000
 ```
 
-Supported encode paths today: native, RLE Lossless, Deflated, JPEG
-(baseline / lossless / JPEG-LS), JPEG 2000 (lossless / lossy), and HTJ2K
-(.201 lossless LRCP, .202 lossless RPCL, .203 lossy).
+Supported encode paths: native, RLE Lossless, Deflated, JPEG (baseline /
+lossless / JPEG-LS), JPEG 2000 (lossless / lossy), and HTJ2K (`.201` lossless
+LRCP, `.202` lossless RPCL, `.203` lossy).
 
-## Dataset bytes (no File Meta)
+## Logging
 
-Encode or decode a dataset without a Part 10 preamble — useful for DIMSE or
-multipart payloads:
-
-```go
-data, err := ds.Encode(string(uid.ExplicitVRLittleEndian))
-parsed, err := godicom.DecodeDataset(data)
-```
-
-Part 10 files in memory:
+*godicom* uses Go's `log/slog`. By default it is silent (`DiscardHandler`),
+similar in spirit to leaving pydicom's debugger off until you call
+`config.debug()`.
 
 ```go
-bytes, err := ds.EncodeFile(nil)
-ds2, err := godicom.ReadBytes(bytes)
+import (
+	"context"
+	"log/slog"
+	"os"
+
+	"github.com/godicom-dev/godicom"
+)
+
+h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+logger := slog.New(h)
+
+// Per-call (preferred)
+ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{Logger: logger})
+
+// Or via context (request-scoped / shared with gonetdicom)
+ctx := godicom.WithLogger(context.Background(), logger)
+ds, err = godicom.ReadFileContext(ctx, "ct.dcm", nil)
 ```
+
+CLI: `godicom show -debug file.dcm`
+
+Debug records use fixed attribute keys aligned with pydicom filereader
+diagnostics (`component`, `offset`, `offset_hex`, `hex`, `tag`, `vr`, `len`,
+`undefined_length`, `value_hex`, `value`, `transfer_syntax`, …). Messages cover
+the same events as pydicom's debugger: FMI/DICM, per-element header + value
+preview (first 20 bytes), defer skips, and sequence item boundaries.
 
 ## DICOM JSON Model
 
@@ -163,6 +198,7 @@ dss, err := dicomjson.ParseDatasets(arr)
 go install github.com/godicom-dev/godicom/cmd/godicom@latest
 
 godicom show <file>            # print file meta + dataset
+godicom show -debug <file>     # also emit reader debug logs to stderr
 godicom read <file>            # alias for show
 godicom readcopy <src> <dst>   # read, write, re-read
 ```
@@ -175,16 +211,14 @@ godicom readcopy <src> <dst>   # read, write, re-read
 | Explicit VR Big Endian | ✅ | ✅ |
 | Deflated Explicit VR Little Endian | ✅ | ✅ |
 | RLE Lossless | ✅ | ✅ |
-| JPEG Baseline / Extended / Lossless | ✅ | — |
-| JPEG-LS | ✅ | — |
+| JPEG Baseline / Extended / Lossless | ✅ | ✅ |
+| JPEG-LS | ✅ | ✅ |
 | JPEG 2000 / HTJ2K | ✅ | ✅ |
 
-## Documentation
+## Contributing
 
-- [pkg.go.dev API reference](https://pkg.go.dev/github.com/godicom-dev/godicom)
-- [CHANGELOG](CHANGELOG.md)
-- [TODO](TODO.md) — deferred items and known gaps
-- [PARITY](PARITY.md) — coverage map vs pydicom (not full parity)
+Bug reports, fixes, and documentation improvements are welcome. Please open an
+issue or pull request on GitHub.
 
 ## License
 

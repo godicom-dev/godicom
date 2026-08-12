@@ -3,7 +3,9 @@ package pixels
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/godicom-dev/godicom/encaps"
@@ -26,6 +28,8 @@ type EncodeOptions struct {
 	HasBOT *bool
 	// UseExtendedOffsetTable uses encaps.EncapsulateExtended instead of Encapsulate.
 	UseExtendedOffsetTable bool
+	// Logger receives debug events for this encode; nil discards.
+	Logger *slog.Logger
 }
 
 // WithEncodeTransferSyntax sets the target transfer syntax (also set via EncodeOptions).
@@ -46,6 +50,21 @@ func WithBasicOffsetTable(hasBOT bool) EncodeOption {
 // WithExtendedOffsetTable requests EncapsulateExtended.
 func WithExtendedOffsetTable(enabled bool) EncodeOption {
 	return func(o *EncodeOptions) { o.UseExtendedOffsetTable = enabled }
+}
+
+func (o EncodeOptions) logger() *slog.Logger {
+	if o.Logger != nil {
+		return o.Logger
+	}
+	return slog.New(slog.DiscardHandler)
+}
+
+func (o EncodeOptions) debug(msg string, args ...any) {
+	l := o.logger()
+	if !l.Enabled(context.TODO(), slog.LevelDebug) {
+		return
+	}
+	l.Debug(msg, append([]any{"component", "pixels"}, args...)...)
 }
 
 // EncodedPixelData is the result of encoding one or more frames.
@@ -93,6 +112,10 @@ func EncodeFrames(frames [][]byte, desc Descriptor, opts EncodeOptions) (*Encode
 	if ts == "" {
 		return nil, fmt.Errorf("pixels: TransferSyntaxUID required for encode")
 	}
+	opts.debug("encode frames",
+		"transfer_syntax", string(ts),
+		"frames", len(frames),
+	)
 
 	encoded := make([][]byte, len(frames))
 	for i, frame := range frames {

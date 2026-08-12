@@ -3,9 +3,11 @@ package godicom
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"strings"
@@ -16,10 +18,18 @@ import (
 type writeState struct {
 	sqDepth           int
 	visitingSequences map[*Sequence]struct{}
+	ctx               context.Context
 }
 
 func newWriteState() *writeState {
-	return &writeState{visitingSequences: make(map[*Sequence]struct{})}
+	return &writeState{visitingSequences: make(map[*Sequence]struct{}), ctx: context.Background()}
+}
+
+func newWriteStateCtx(ctx context.Context) *writeState {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &writeState{visitingSequences: make(map[*Sequence]struct{}), ctx: ctx}
 }
 
 // WriteOptions controls DICOM file writing behavior.
@@ -27,6 +37,9 @@ type WriteOptions struct {
 	ImplicitVR        *bool
 	LittleEndian      *bool
 	EnforceFileFormat bool
+	// Logger overrides the call-scoped slog logger for this write.
+	// When nil, LoggerFromContext / DefaultLogger is used.
+	Logger *slog.Logger
 }
 
 type writeSource struct {
@@ -36,20 +49,21 @@ type writeSource struct {
 }
 
 // writeFile writes a Dataset to a DICOM file.
-func writeFile(filename string, source writeSource, opts *WriteOptions) error {
+func writeFile(ctx context.Context, filename string, source writeSource, opts *WriteOptions) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return writeTo(f, source, opts)
+	return writeTo(ctx, f, source, opts)
 }
 
 // writeTo encodes a Part 10 DICOM file to w.
-func writeTo(w io.Writer, source writeSource, opts *WriteOptions) error {
+func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOptions) error {
 	if opts == nil {
 		opts = &WriteOptions{}
 	}
+	ctx = loggerContext(ctx, opts.Logger, ComponentWriter)
 
 	if source.dataset == nil {
 		return fmt.Errorf("godicom: missing dataset")
@@ -77,6 +91,14 @@ func writeTo(w io.Writer, source writeSource, opts *WriteOptions) error {
 	isImplicit, isLittleEndian, encErr := determineWriteEncoding(fileMeta, source.dataset, opts)
 	if encErr != nil {
 		return encErr
+	}
+	if ts, ok := transferSyntaxUID(fileMeta); ok && ts != "" {
+		logDebug(ctx, "write encoding", AttrTransferSyntax, ts)
+	} else {
+		logDebug(ctx, "write encoding",
+			"implicit_vr", isImplicit,
+			"little_endian", isLittleEndian,
+		)
 	}
 
 	if !opts.EnforceFileFormat && isImplicit && !isLittleEndian {
@@ -167,7 +189,7 @@ func writeTo(w io.Writer, source writeSource, opts *WriteOptions) error {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
 		dsWriter.SetByteOrder(isLittleEndian)
-		if err := writeDataset(dsWriter, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
+		if err := writeDataset(ctx, dsWriter, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
 			return fmt.Errorf("godicom: error writing dataset: %w", err)
 		}
 		var deflated bytes.Buffer
@@ -191,7 +213,7 @@ func writeTo(w io.Writer, source writeSource, opts *WriteOptions) error {
 		return nil
 	}
 
-	if err := writeDataset(fp, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
+	if err := writeDataset(ctx, fp, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
@@ -352,8 +374,8 @@ func charsetChanged(ds *Dataset) bool {
 	return false
 }
 
-func writeDataset(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
-	return writeDatasetState(fp, ds, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteState())
+func writeDataset(ctx context.Context, fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
+	return writeDatasetState(fp, ds, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteStateCtx(ctx))
 }
 
 func writeDatasetState(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool, st *writeState) error {
@@ -470,6 +492,11 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 	if st == nil {
 		st = newWriteState()
 	}
+	logDebug(st.ctx, "data element",
+		AttrTag, elem.Tag.String(),
+		AttrVR, string(elem.VR),
+		AttrUndefined, elem.IsUndefinedLength,
+	)
 	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
 		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
 	}
@@ -1057,16 +1084,26 @@ func encodeBytes(elem *DataElement) []byte {
 
 // WriteFile writes a Dataset to a DICOM file.
 func WriteFile(filename string, ds *Dataset, opts *WriteOptions) error {
-	return writeFile(filename, writeSource{dataset: ds}, opts)
+	return WriteFileContext(context.Background(), filename, ds, opts)
+}
+
+// WriteFileContext is like WriteFile but uses ctx for cancellation and logging.
+func WriteFileContext(ctx context.Context, filename string, ds *Dataset, opts *WriteOptions) error {
+	return writeFile(ctx, filename, writeSource{dataset: ds}, opts)
 }
 
 // EncodeFile encodes fd as a Part 10 DICOM file (preamble + DICM + File Meta + dataset).
 func EncodeFile(fd *FileDataset, opts *WriteOptions) ([]byte, error) {
+	return EncodeFileContext(context.Background(), fd, opts)
+}
+
+// EncodeFileContext is like EncodeFile but uses ctx for cancellation and logging.
+func EncodeFileContext(ctx context.Context, fd *FileDataset, opts *WriteOptions) ([]byte, error) {
 	if fd == nil {
 		return nil, fmt.Errorf("godicom: missing FileDataset")
 	}
 	var buf bytes.Buffer
-	if err := Write(&buf, fd, opts); err != nil {
+	if err := WriteContext(ctx, &buf, fd, opts); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -1074,10 +1111,15 @@ func EncodeFile(fd *FileDataset, opts *WriteOptions) ([]byte, error) {
 
 // Write encodes fd as a Part 10 DICOM file to w.
 func Write(w io.Writer, fd *FileDataset, opts *WriteOptions) error {
+	return WriteContext(context.Background(), w, fd, opts)
+}
+
+// WriteContext is like Write but uses ctx for cancellation and logging.
+func WriteContext(ctx context.Context, w io.Writer, fd *FileDataset, opts *WriteOptions) error {
 	if fd == nil {
 		return fmt.Errorf("godicom: missing FileDataset")
 	}
-	return writeTo(w, writeSource{
+	return writeTo(ctx, w, writeSource{
 		dataset:  fd.Dataset,
 		fileMeta: fd.FileMeta,
 		preamble: fd.Preamble,
@@ -1143,7 +1185,7 @@ func encodeDataset(ds *Dataset, isImplicit, isLittleEndian, deflated bool) ([]by
 	var datasetBuf bytes.Buffer
 	fp := newDicomWriter(&datasetBuf)
 	fp.SetByteOrder(isLittleEndian)
-	if err := writeDataset(fp, ds, isImplicit, isLittleEndian, nil, encodingChanged(ds, isImplicit, isLittleEndian)); err != nil {
+	if err := writeDataset(context.Background(), fp, ds, isImplicit, isLittleEndian, nil, encodingChanged(ds, isImplicit, isLittleEndian)); err != nil {
 		return nil, fmt.Errorf("godicom: error encoding dataset: %w", err)
 	}
 
