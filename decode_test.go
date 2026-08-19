@@ -10,11 +10,11 @@ func TestDecodeDatasetRoundtripImplicit(t *testing.T) {
 	ds.Set(NewDataElement(MustTag("PatientName"), VRPN, "Tube^HeNe"))
 	ds.Set(NewDataElement(MustTag("PatientID"), VRLO, "Test1101"))
 
-	encoded, err := EncodeDataset(ds, string(ImplicitVRLittleEndian))
+	encoded, err := EncodeDataset(ds, ImplicitVRLittleEndian)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := DecodeDataset(encoded, string(ImplicitVRLittleEndian))
+	got, err := DecodeDataset(encoded, ImplicitVRLittleEndian)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestDecodeDatasetRoundtripExplicit(t *testing.T) {
 	ds.Set(NewDataElement(MustTag("SOPClassUID"), VRUI, "1.2.840.10008.5.1.4.1.1.7"))
 	ds.Set(NewDataElement(MustTag("SOPInstanceUID"), VRUI, "1.2.3.4.5"))
 
-	encoded, err := ds.Encode(string(ExplicitVRLittleEndian))
+	encoded, err := ds.Encode(ExplicitVRLittleEndian)
 	if err != nil {
 		t.Fatal(err)
 	}

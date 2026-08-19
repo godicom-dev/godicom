@@ -53,7 +53,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ds.Set(godicom.NewDataElement(tag.PatientID, godicom.VRLO, "12345678"))
+	if err := ds.SetString(tag.PatientID, "12345678"); err != nil {
+		log.Fatal(err)
+	}
 	if err := ds.SaveAs("ct_updated.dcm", nil); err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +64,11 @@ func main() {
 
 Elements are accessed with typed getters and constants from the
 [`tag`](https://pkg.go.dev/github.com/godicom-dev/godicom/tag) package
-(`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …).
+(`GetString`, `GetInt`, `GetFloat`, `GetBytes`, `GetSequence`, …), and written
+with the matching setters (`SetString`, `SetInt`, `SetFloats`, `SetSequence`, …),
+which take the VR from the data dictionary and reject values the tag's VR cannot
+hold. For private tags and other tags outside the dictionary, supply the VR
+yourself with `Set(godicom.NewDataElement(tag, vr, value))`.
 
 File I/O entry points: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` /
 `FileDataset.SaveAs`. `Read` accepts any `io.Reader`; prefer `*os.File` /

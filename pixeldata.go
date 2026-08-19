@@ -5,12 +5,13 @@ import (
 	"github.com/godicom-dev/godicom/tag"
 )
 
-// TransferSyntaxUID returns the file meta transfer syntax UID string.
-func (fd *FileDataset) TransferSyntaxUID() (string, bool) {
+// TransferSyntaxUID returns the file meta transfer syntax UID.
+func (fd *FileDataset) TransferSyntaxUID() (UID, bool) {
 	if fd == nil || fd.FileMeta == nil {
 		return "", false
 	}
-	return fd.FileMeta.GetString(tag.TransferSyntaxUID)
+	s, ok := fd.FileMeta.GetString(tag.TransferSyntaxUID)
+	return UID(s), ok
 }
 
 // PixelBytes returns decoded pixel data as a contiguous byte buffer.

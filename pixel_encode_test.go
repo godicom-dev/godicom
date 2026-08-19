@@ -21,11 +21,11 @@ func TestCompressPixelData_RLE_CT_small_roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.CompressPixelData(string(uid.RLELossless)); err != nil {
+	if err := ds.CompressPixelData(uid.RLELossless); err != nil {
 		t.Fatal(err)
 	}
 	ts, ok := ds.TransferSyntaxUID()
-	if !ok || ts != string(uid.RLELossless) {
+	if !ok || ts != uid.RLELossless {
 		t.Fatalf("TS=%q", ts)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -70,11 +70,11 @@ func TestCompressPixelData_JPEGLSLossless_CT_small(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.CompressPixelData(string(uid.JPEGLSLossless)); err != nil {
+	if err := ds.CompressPixelData(uid.JPEGLSLossless); err != nil {
 		t.Fatal(err)
 	}
 	ts, ok := ds.TransferSyntaxUID()
-	if !ok || ts != string(uid.JPEGLSLossless) {
+	if !ok || ts != uid.JPEGLSLossless {
 		t.Fatalf("TS=%q", ts)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -96,7 +96,7 @@ func TestCompressPixelData_JPEGLossless_CT_small(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.CompressPixelData(string(uid.JPEGLossless)); err != nil {
+	if err := ds.CompressPixelData(uid.JPEGLossless); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -118,7 +118,7 @@ func TestCompressPixelData_Deflated_MR_small(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.CompressPixelData(string(uid.DeflatedImageFrameCompression)); err != nil {
+	if err := ds.CompressPixelData(uid.DeflatedImageFrameCompression); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -140,11 +140,11 @@ func TestCompressPixelData_J2KLossless_CT_small(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.CompressPixelData(string(uid.JPEG2000Lossless)); err != nil {
+	if err := ds.CompressPixelData(uid.JPEG2000Lossless); err != nil {
 		t.Fatal(err)
 	}
 	ts, ok := ds.TransferSyntaxUID()
-	if !ok || ts != string(uid.JPEG2000Lossless) {
+	if !ok || ts != uid.JPEG2000Lossless {
 		t.Fatalf("TS=%q", ts)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
