@@ -95,6 +95,49 @@ func TestRead_DeferSizeReloadsFromFile(t *testing.T) {
 	}
 }
 
+func TestRead_DeferSizeReloadsFromSeeker(t *testing.T) {
+	t.Parallel()
+	path := testFilePath("CT_small.dcm")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// bytes.Reader is seekable but not an *os.File, so there is no path to
+	// reopen: deferred values must come back through the retained reader.
+	ds, err := Read(bytes.NewReader(data), &ReadOptions{DeferSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pixelElem *DataElement
+	for _, elem := range ds.Iter() {
+		if elem.Tag == MustTag("PixelData") {
+			pixelElem = elem
+			break
+		}
+	}
+	if pixelElem == nil || !pixelElem.Deferred {
+		t.Fatal("PixelData should start deferred")
+	}
+	if ds.readCtx == nil || ds.readCtx.data != nil || ds.readCtx.filename != "" {
+		t.Fatal("seekable Read should defer via the retained reader, not data or filename")
+	}
+	pixel, ok := ds.GetBytes(MustTag("PixelData"))
+	if !ok {
+		t.Fatal("deferred PixelData unreachable after Read from a non-file ReadSeeker")
+	}
+	eager, err := ReadFile(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, ok := eager.GetBytes(MustTag("PixelData"))
+	if !ok {
+		t.Fatal("PixelData missing from eager read")
+	}
+	if !bytes.Equal(pixel, want) {
+		t.Fatalf("deferred PixelData = %d bytes, want %d", len(pixel), len(want))
+	}
+}
+
 func TestRead_SpecificTagsSkipsLargeValues(t *testing.T) {
 	t.Parallel()
 	path := testFilePath("CT_small.dcm")

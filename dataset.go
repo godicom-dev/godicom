@@ -28,7 +28,12 @@ type readContext struct {
 	filename string // reopen path for streaming ReadFile
 	modTime  int64
 	size     int64 // file size when filename is used without data
-	ctx      context.Context
+	// src is the random-access source a seekable Read parsed from, kept so
+	// deferred values remain loadable when there is no path to reopen (for
+	// example an io.ReadSeeker that is not an *os.File). Reading through it
+	// moves the underlying reader's position and is not safe for concurrent use.
+	src io.ReaderAt
+	ctx context.Context
 }
 
 func (rc *readContext) logCtx() context.Context {

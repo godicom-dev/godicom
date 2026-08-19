@@ -15,6 +15,10 @@ import (
 // can skip large values without buffering them. Deferred elements are reloaded
 // later by reopening the path when r is an *os.File (see ReadFile).
 //
+// For any other io.ReadSeeker there is no path to reopen, so the returned
+// dataset retains r itself for deferred loads: keep it open and do not move its
+// offset or read from it concurrently until every deferred value is loaded.
+//
 // Non-seekable readers fall back to buffering the stream (then ReadBytes).
 func Read(r io.Reader, opts *ReadOptions) (*FileDataset, error) {
 	return ReadContext(context.Background(), r, opts)
@@ -166,8 +170,9 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 
 	allElements := make([]*DataElement, 0)
 	charsets := []string{DefaultCharacterSet}
-	// No in-memory copy of the file: deferred loads reopen filename.
-	readCtx := &readContext{filename: filename, modTime: modTime, size: size, ctx: ctx}
+	// No in-memory copy of the file: deferred loads reopen filename, or re-read
+	// through ra when there is no path to reopen (a non-*os.File ReadSeeker).
+	readCtx := &readContext{filename: filename, modTime: modTime, size: size, src: ra, ctx: ctx}
 
 	for pos+4 <= size {
 		currentTag, err := v.tag(pos, isLittleEndian)
