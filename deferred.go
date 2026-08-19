@@ -44,6 +44,24 @@ func markElementDeferred(
 	elem.RawValue = nil
 }
 
+// valueReaderAt returns the random-access source used to reload a deferred
+// value, plus a cleanup func when this call opened the source itself (nil
+// otherwise). Reopening filename wins over the retained parse source so a
+// deferred load never depends on a reader the caller may have moved on from.
+func (rc *readContext) valueReaderAt() (io.ReaderAt, func(), error) {
+	if rc.filename != "" {
+		f, err := os.Open(rc.filename)
+		if err != nil {
+			return nil, nil, fmt.Errorf("godicom: deferred read: %w", err)
+		}
+		return f, func() { _ = f.Close() }, nil
+	}
+	if rc.src != nil {
+		return rc.src, nil, nil
+	}
+	return nil, nil, fmt.Errorf("godicom: deferred read requires source data")
+}
+
 func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 	if !elem.Deferred {
 		return nil
@@ -60,19 +78,17 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 	elementStart := elem.ValueTell - dataElementOffsetToValue(elem.IsImplicitVR, elem.VR)
 
 	data := ctx.data
-	var owned []byte
 	if data == nil {
-		if ctx.filename == "" {
-			return fmt.Errorf("godicom: deferred read requires source data")
-		}
-		f, err := os.Open(ctx.filename)
+		src, cleanup, err := ctx.valueReaderAt()
 		if err != nil {
-			return fmt.Errorf("godicom: deferred read: %w", err)
+			return err
 		}
-		defer f.Close()
+		if cleanup != nil {
+			defer cleanup()
+		}
 		total := dataElementOffsetToValue(elem.IsImplicitVR, elem.VR) + int64(elem.ValueLength)
-		owned = make([]byte, total)
-		if _, err := io.ReadFull(io.NewSectionReader(f, elementStart, total), owned); err != nil {
+		owned := make([]byte, total)
+		if _, err := io.ReadFull(io.NewSectionReader(src, elementStart, total), owned); err != nil {
 			return fmt.Errorf("godicom: deferred read: %w", err)
 		}
 		data = owned
