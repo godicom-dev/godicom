@@ -93,7 +93,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 		return encErr
 	}
 	if ts, ok := transferSyntaxUID(fileMeta); ok && ts != "" {
-		logDebug(ctx, "write encoding", AttrTransferSyntax, ts)
+		logDebug(ctx, "write encoding", AttrTransferSyntax, string(ts))
 	} else {
 		logDebug(ctx, "write encoding",
 			"implicit_vr", isImplicit,
@@ -142,7 +142,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	}
 
 	if ts, ok := transferSyntaxUID(fileMeta); ok {
-		if UID(ts).IsCompressed() {
+		if ts.IsCompressed() {
 			if elem, ok := source.dataset.Get(MustTag("PixelData")); ok {
 				elem.IsUndefinedLength = true
 			}
@@ -180,12 +180,12 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	// Write dataset
 	fp.SetByteOrder(isLittleEndian)
 
-	tsUID := ""
+	tsUID := UID("")
 	if fileMeta != nil {
 		tsUID, _ = transferSyntaxUID(fileMeta)
 	}
 
-	if UID(tsUID).IsDeflated() {
+	if tsUID.IsDeflated() {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
 		dsWriter.SetByteOrder(isLittleEndian)
@@ -270,11 +270,12 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 	return nil
 }
 
-func transferSyntaxUID(fileMeta *FileMetaDataset) (string, bool) {
+func transferSyntaxUID(fileMeta *FileMetaDataset) (UID, bool) {
 	if fileMeta == nil {
 		return "", false
 	}
-	return fileMeta.GetString(MustTag("TransferSyntaxUID"))
+	s, ok := fileMeta.GetString(MustTag("TransferSyntaxUID"))
+	return UID(s), ok
 }
 
 // determineWriteEncoding selects implicit VR and endianness for writing.
@@ -306,8 +307,8 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 		hasFallback = true
 	}
 
-	tsUID, hasTS := transferSyntaxUID(fileMeta)
-	if !hasTS || tsUID == "" {
+	ts, hasTS := transferSyntaxUID(fileMeta)
+	if !hasTS || ts == "" {
 		if !hasFallback {
 			return false, false, fmt.Errorf(
 				"godicom: unable to determine the encoding to use for writing the dataset; set FileMeta TransferSyntaxUID or WriteOptions ImplicitVR/LittleEndian",
@@ -316,19 +317,18 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 		return fallbackImp, fallbackLit, nil
 	}
 
-	ts := uid.UID(tsUID)
 	info, known := uid.Known[ts]
 	if known && info.IsTransferSyntax {
 		if opts.ImplicitVR != nil && *opts.ImplicitVR != info.IsImplicitVR {
 			return false, false, fmt.Errorf(
 				"godicom: ImplicitVR=%t is inconsistent with transfer syntax %q",
-				*opts.ImplicitVR, tsUID,
+				*opts.ImplicitVR, ts,
 			)
 		}
 		if opts.LittleEndian != nil && *opts.LittleEndian != info.IsLittleEndian {
 			return false, false, fmt.Errorf(
 				"godicom: LittleEndian=%t is inconsistent with transfer syntax %q",
-				*opts.LittleEndian, tsUID,
+				*opts.LittleEndian, ts,
 			)
 		}
 		return info.IsImplicitVR, info.IsLittleEndian, nil
@@ -337,7 +337,7 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 	if known && !info.IsTransferSyntax {
 		return false, false, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a valid transfer syntax",
-			tsUID,
+			ts,
 		)
 	}
 
@@ -1047,8 +1047,18 @@ func encodeAT(elem *DataElement, le bool) []byte {
 		tags = []Tag{v}
 	case int:
 		tags = []Tag{Tag(v)}
+	case []Tag:
+		tags = v
+	case []int:
+		for _, x := range v {
+			tags = append(tags, Tag(x))
+		}
 	case *MultiValue[Tag]:
 		tags = v.Values()
+	case *MultiValue[int]:
+		for _, x := range v.Values() {
+			tags = append(tags, Tag(x))
+		}
 	case *MultiValue[interface{}]:
 		for _, item := range v.Values() {
 			switch x := item.(type) {
@@ -1062,9 +1072,13 @@ func encodeAT(elem *DataElement, le bool) []byte {
 		return nil
 	}
 
+	// PS3.5 7.1.1: AT is a pair of 16-bit values (group then element), not one
+	// 32-bit value. The two differ under little endian, and convertTag reads the
+	// pair form, so encoding a uint32 here round-trips with the halves swapped.
 	buf := make([]byte, len(tags)*4)
 	for i, t := range tags {
-		order.PutUint32(buf[i*4:], uint32(t))
+		order.PutUint16(buf[i*4:], uint16(t.Group()))
+		order.PutUint16(buf[i*4+2:], uint16(t.Element()))
 	}
 	return buf
 }
@@ -1127,18 +1141,17 @@ func WriteContext(ctx context.Context, w io.Writer, fd *FileDataset, opts *Write
 }
 
 // EncodeDataset encodes ds as a DICOM dataset only (no preamble / File Meta),
-// using transferSyntaxUID for VR, endianness, and Deflated compression when
-// applicable. Suitable for DIMSE C-STORE / C-FIND payloads.
-func EncodeDataset(ds *Dataset, transferSyntaxUID string) ([]byte, error) {
-	ts := uid.UID(transferSyntaxUID)
+// using ts for VR, endianness, and Deflated compression when applicable.
+// Suitable for DIMSE C-STORE / C-FIND payloads.
+func EncodeDataset(ds *Dataset, ts UID) ([]byte, error) {
 	info, known := uid.Known[ts]
 	if !known || !info.IsTransferSyntax {
 		return nil, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a known transfer syntax; use EncodeDatasetEncoding",
-			transferSyntaxUID,
+			ts,
 		)
 	}
-	if UID(transferSyntaxUID).IsCompressed() {
+	if ts.IsCompressed() {
 		if elem, ok := ds.Get(MustTag("PixelData")); ok {
 			elem.IsUndefinedLength = true
 		}
@@ -1155,9 +1168,9 @@ func EncodeDatasetEncoding(ds *Dataset, isImplicitVR, isLittleEndian bool) ([]by
 	return encodeDataset(ds, isImplicitVR, isLittleEndian, false)
 }
 
-// WriteDataset encodes ds with transferSyntaxUID and writes the result to w.
-func WriteDataset(w io.Writer, ds *Dataset, transferSyntaxUID string) error {
-	b, err := EncodeDataset(ds, transferSyntaxUID)
+// WriteDataset encodes ds with transfer syntax ts and writes the result to w.
+func WriteDataset(w io.Writer, ds *Dataset, ts UID) error {
+	b, err := EncodeDataset(ds, ts)
 	if err != nil {
 		return err
 	}

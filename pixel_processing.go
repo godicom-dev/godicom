@@ -6,7 +6,6 @@ import (
 
 	"github.com/godicom-dev/godicom/pixels"
 	"github.com/godicom-dev/godicom/tag"
-	"github.com/godicom-dev/godicom/uid"
 )
 
 // PixelSamples returns decoded pixel samples as float64 (one per sample).
@@ -59,7 +58,7 @@ func (fd *FileDataset) pixelLittleEndian() bool {
 	if !ok || ts == "" {
 		return true
 	}
-	return uid.UID(ts).IsLittleEndian()
+	return ts.IsLittleEndian()
 }
 
 func (fd *FileDataset) modalityParams() (pixels.ModalityParams, error) {

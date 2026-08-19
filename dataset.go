@@ -514,6 +514,107 @@ func (d *Dataset) GetDataElement(tag Tag) *DataElement {
 	return d.elements[tag]
 }
 
+// --- Convenience setters ---
+//
+// Each setter mirrors the getter of the same name: the VR comes from the data
+// dictionary, so callers do not repeat it. Tags outside the dictionary (private
+// tags in particular) have no dictionary VR and return an error; pass the VR
+// explicitly with Set(NewDataElement(tag, vr, value)) for those.
+//
+// The typed setters also reject value kinds the tag's VR cannot hold, which
+// turns a silently mis-encoded element into an error at the call site.
+
+// SetValue stores value under tag using the VR from the data dictionary.
+// The value type is not checked against the VR; the typed setters below do that.
+func (d *Dataset) SetValue(tag Tag, value interface{}) error {
+	return d.setDictionary(tag, value, "", nil)
+}
+
+// setDictionary resolves tag's dictionary VR, checks it admits kind, and stores
+// value. A nil allow skips the kind check.
+func (d *Dataset) setDictionary(tag Tag, value interface{}, kind string, allow func(VR) bool) error {
+	vr, err := dictionaryVR(tag)
+	if err != nil {
+		return fmt.Errorf("%w; pass the VR explicitly with Set(NewDataElement(tag, vr, value))", err)
+	}
+	if allow != nil && !allow(vr) {
+		return fmt.Errorf("godicom: tag %s has VR %s, which does not hold %s values", tag, vr, kind)
+	}
+	d.Set(NewDataElement(tag, vr, value))
+	return nil
+}
+
+// Value kinds admitted by each typed setter. The ambiguous VRs are included
+// where any of their candidate VRs admits the kind; the write path resolves
+// them via CorrectAmbiguousVR.
+func setsString(vr VR) bool { return IsStringVR(vr) }
+func setsInt(vr VR) bool {
+	return IsIntVR(vr) || vr == VRUsSS || vr == VRUsOw || vr == VRUsSsOw
+}
+func setsFloat(vr VR) bool { return IsFloatVR(vr) }
+func setsBytes(vr VR) bool {
+	return IsBinaryVR(vr) || vr == VRObOw || vr == VRUsOw || vr == VRUsSsOw
+}
+
+func (d *Dataset) SetString(tag Tag, value string) error {
+	return d.setDictionary(tag, value, "string", setsString)
+}
+
+// SetStrings stores a multi-valued string element (backslash-separated on write).
+func (d *Dataset) SetStrings(tag Tag, values ...string) error {
+	return d.setDictionary(tag, NewMultiValue(values), "string", setsString)
+}
+
+func (d *Dataset) SetInt(tag Tag, value int) error {
+	return d.setDictionary(tag, value, "integer", setsInt)
+}
+
+// SetInts stores a multi-valued integer element.
+func (d *Dataset) SetInts(tag Tag, values ...int) error {
+	return d.setDictionary(tag, NewMultiValue(values), "integer", setsInt)
+}
+
+func (d *Dataset) SetFloat(tag Tag, value float64) error {
+	return d.setDictionary(tag, value, "floating-point", setsFloat)
+}
+
+// SetFloats stores a multi-valued floating-point element.
+func (d *Dataset) SetFloats(tag Tag, values ...float64) error {
+	return d.setDictionary(tag, NewMultiValue(values), "floating-point", setsFloat)
+}
+
+func (d *Dataset) SetBytes(tag Tag, value []byte) error {
+	return d.setDictionary(tag, value, "binary", setsBytes)
+}
+
+func (d *Dataset) SetSequence(tag Tag, seq *Sequence) error {
+	return d.setDictionary(tag, seq, "sequence", func(vr VR) bool { return vr == VRSQ })
+}
+
+func (d *Dataset) SetDA(tag Tag, value DA) error {
+	return d.setDictionary(tag, value, "date", func(vr VR) bool { return vr == VRDA })
+}
+
+func (d *Dataset) SetTM(tag Tag, value TM) error {
+	return d.setDictionary(tag, value, "time", func(vr VR) bool { return vr == VRTM })
+}
+
+func (d *Dataset) SetDT(tag Tag, value DT) error {
+	return d.setDictionary(tag, value, "date-time", func(vr VR) bool { return vr == VRDT })
+}
+
+func (d *Dataset) SetPN(tag Tag, value PersonName) error {
+	return d.setDictionary(tag, value, "person name", func(vr VR) bool { return vr == VRPN })
+}
+
+func (d *Dataset) SetDS(tag Tag, value DS) error {
+	return d.setDictionary(tag, value, "decimal string", func(vr VR) bool { return vr == VRDS })
+}
+
+func (d *Dataset) SetIS(tag Tag, value IS) error {
+	return d.setDictionary(tag, value, "integer string", func(vr VR) bool { return vr == VRIS })
+}
+
 // --- Private blocks ---
 
 func (d *Dataset) PrivateBlock(group int, creator string) *PrivateBlock {
@@ -853,9 +954,9 @@ func (fd *FileDataset) Write(w io.Writer, opts *WriteOptions) error {
 	return WriteContext(context.Background(), w, fd, opts)
 }
 
-// Encode returns the dataset bytes (no preamble / File Meta) for transferSyntaxUID.
-func (d *Dataset) Encode(transferSyntaxUID string) ([]byte, error) {
-	return EncodeDataset(d, transferSyntaxUID)
+// Encode returns the dataset bytes (no preamble / File Meta) for transfer syntax ts.
+func (d *Dataset) Encode(ts UID) ([]byte, error) {
+	return EncodeDataset(d, ts)
 }
 
 // EncodeEncoding returns the dataset bytes using explicit VR/endian flags.

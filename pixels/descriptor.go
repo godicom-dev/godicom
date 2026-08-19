@@ -17,7 +17,7 @@ type DatasetSource interface {
 // FileSource is a DICOM file dataset with file meta transfer syntax.
 type FileSource interface {
 	DatasetSource
-	TransferSyntaxUID() (string, bool)
+	TransferSyntaxUID() (uid.UID, bool)
 }
 
 // Descriptor holds image-related dataset attributes needed for pixel decode.
@@ -60,7 +60,7 @@ func DescriptorFromFile(fd FileSource) (Descriptor, error) {
 	if !ok || ts == "" {
 		return Descriptor{}, fmt.Errorf("pixels: missing TransferSyntaxUID in file meta")
 	}
-	return DescriptorFromDataset(fd, uid.UID(ts))
+	return DescriptorFromDataset(fd, ts)
 }
 
 // DescriptorFromDataset builds a Descriptor using an explicit transfer syntax UID.

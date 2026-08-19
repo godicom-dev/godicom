@@ -6,28 +6,26 @@ import (
 
 	"github.com/godicom-dev/godicom/pixels"
 	"github.com/godicom-dev/godicom/tag"
-	"github.com/godicom-dev/godicom/uid"
 )
 
-// CompressPixelData re-encodes current Pixel Data to transferSyntaxUID and
+// CompressPixelData re-encodes current Pixel Data to transfer syntax ts and
 // updates PixelData + FileMeta.TransferSyntaxUID.
 //
 // Supported targets: uncompressed (native), RLE Lossless, Deflated Image Frame
 // Compression, JPEG baseline/lossless/JPEG-LS, JPEG 2000 Lossless, JPEG 2000.
 //
 // Source frames are decoded with Raw=true (no photometric post-process).
-func (fd *FileDataset) CompressPixelData(transferSyntaxUID string, opts ...pixels.EncodeOption) error {
-	return fd.CompressPixelDataContext(context.Background(), transferSyntaxUID, opts...)
+func (fd *FileDataset) CompressPixelData(ts UID, opts ...pixels.EncodeOption) error {
+	return fd.CompressPixelDataContext(context.Background(), ts, opts...)
 }
 
 // CompressPixelDataContext is like CompressPixelData but uses ctx for logging.
-func (fd *FileDataset) CompressPixelDataContext(ctx context.Context, transferSyntaxUID string, opts ...pixels.EncodeOption) error {
-	ts := uid.UID(transferSyntaxUID)
+func (fd *FileDataset) CompressPixelDataContext(ctx context.Context, ts UID, opts ...pixels.EncodeOption) error {
 	if ts == "" {
 		return fmt.Errorf("godicom: TransferSyntaxUID required")
 	}
 	ctx = loggerContext(ctx, nil, ComponentPixels)
-	logDebug(ctx, "compress pixel data", AttrTransferSyntax, transferSyntaxUID)
+	logDebug(ctx, "compress pixel data", AttrTransferSyntax, string(ts))
 	desc, err := pixels.DescriptorFromFile(fd)
 	if err != nil {
 		return err

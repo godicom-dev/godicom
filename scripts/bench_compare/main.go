@@ -110,14 +110,14 @@ func pynetTestFiles() string {
 	return filepath.Join(gonetdicomRoot(), "pynetdicom", "pynetdicom", "tests", "dicom_files")
 }
 
-func loadCStorePayload(path string) (sopClass, sopInst, ts string, dataset []byte, err error) {
+func loadCStorePayload(path string) (sopClass, sopInst string, ts uid.UID, dataset []byte, err error) {
 	fd, err := godicom.ReadFile(path, nil)
 	if err != nil {
 		return "", "", "", nil, err
 	}
 	ts, ok := fd.TransferSyntaxUID()
 	if !ok {
-		ts = string(uid.ExplicitVRLittleEndian)
+		ts = uid.ExplicitVRLittleEndian
 	}
 	sopClass, _ = fd.GetString(godicom.MustTag("SOPClassUID"))
 	sopInst, _ = fd.GetString(godicom.MustTag("SOPInstanceUID"))

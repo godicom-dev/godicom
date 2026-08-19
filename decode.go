@@ -8,23 +8,22 @@ import (
 )
 
 // DecodeDataset decodes a DICOM dataset (no preamble / File Meta) using
-// transferSyntaxUID. Suitable for DIMSE Identifiers and C-STORE datasets.
-func DecodeDataset(data []byte, transferSyntaxUID string) (*Dataset, error) {
-	return DecodeDatasetContext(context.Background(), data, transferSyntaxUID)
+// transfer syntax ts. Suitable for DIMSE Identifiers and C-STORE datasets.
+func DecodeDataset(data []byte, ts UID) (*Dataset, error) {
+	return DecodeDatasetContext(context.Background(), data, ts)
 }
 
 // DecodeDatasetContext is like DecodeDataset but uses ctx for logging.
-func DecodeDatasetContext(ctx context.Context, data []byte, transferSyntaxUID string) (*Dataset, error) {
-	ts := uid.UID(transferSyntaxUID)
+func DecodeDatasetContext(ctx context.Context, data []byte, ts UID) (*Dataset, error) {
 	info, known := uid.Known[ts]
 	if !known || !info.IsTransferSyntax {
 		return nil, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a known transfer syntax; use DecodeDatasetEncoding",
-			transferSyntaxUID,
+			ts,
 		)
 	}
 	logDebug(loggerContext(ctx, nil, ComponentReader), "decode dataset",
-		AttrTransferSyntax, transferSyntaxUID,
+		AttrTransferSyntax, string(ts),
 		AttrLen, len(data),
 	)
 	payload := data

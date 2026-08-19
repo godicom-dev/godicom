@@ -8,7 +8,6 @@ import (
 	"github.com/godicom-dev/godicom"
 	"github.com/godicom-dev/godicom/pixels"
 	"github.com/godicom-dev/godicom/tag"
-	"github.com/godicom-dev/godicom/uid"
 )
 
 // Regression for https://github.com/godicom-dev/godicom/issues/45
@@ -18,7 +17,7 @@ func TestReadImplicitVR_PixelDataGetBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ts, ok := ds.TransferSyntaxUID(); !ok || uid.UID(ts).IsImplicitVR() {
+	if ts, ok := ds.TransferSyntaxUID(); !ok || ts.IsImplicitVR() {
 		t.Fatalf("source TS=%q, want explicit VR", ts)
 	}
 	orig, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -36,7 +35,7 @@ func TestReadImplicitVR_PixelDataGetBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ts, ok := reread.TransferSyntaxUID(); !ok || !uid.UID(ts).IsImplicitVR() {
+	if ts, ok := reread.TransferSyntaxUID(); !ok || !ts.IsImplicitVR() {
 		t.Fatalf("converted TS=%q, want implicit VR LE", ts)
 	}
 
