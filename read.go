@@ -19,6 +19,26 @@ type ReadOptions struct {
 	// Logger overrides the call-scoped slog logger for this read.
 	// When nil, LoggerFromContext / DefaultLogger is used.
 	Logger *slog.Logger
+	// OnDiagnostic observes parse anomalies the reader would otherwise recover
+	// from silently, such as a file that ends inside an element. Returning nil
+	// keeps the old behaviour (stop parsing, return what was read); returning a
+	// non-nil error fails the read with it, so
+	//
+	//	OnDiagnostic: func(d Diagnostic) error { return d }
+	//
+	// rejects anything a strict parser would reject.
+	//
+	// It is also called after the read returns, when a deferred value fails to
+	// load. Deferred loads are triggered by Dataset.Get, so a hook must be safe
+	// to call from wherever the dataset is used.
+	OnDiagnostic func(Diagnostic) error
+}
+
+func diagnosticHook(opts *ReadOptions) func(Diagnostic) error {
+	if opts == nil {
+		return nil
+	}
+	return opts.OnDiagnostic
 }
 
 func hasExplicitVRAt(data []byte, pos int64) bool {
@@ -156,7 +176,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
 	charsets := []string{DefaultCharacterSet}
-	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx}
+	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx, onDiag: diagnosticHook(opts)}
 
 	for pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
@@ -214,6 +234,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 
 		if isImplicit {
 			if pos+8 > int64(len(data)) {
+				if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
+					return nil, err
+				}
 				break
 			}
 			if isLittleEndian {
@@ -225,6 +248,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			vr = lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag))
 		} else {
 			if pos+8 > int64(len(data)) {
+				if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
+					return nil, err
+				}
 				break
 			}
 			vrBytes := data[pos+4 : pos+6]
@@ -250,6 +276,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				hdrSize = 8
 			} else {
 				if pos+12 > int64(len(data)) {
+					if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 12, int64(len(data)))); err != nil {
+						return nil, err
+					}
 					break
 				}
 				if isLittleEndian {
@@ -283,9 +312,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				}
 				logDebug(ctx, "Reading/parsing undefined length sequence",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
+				readCtx.pushSeq(currentTag)
 				seq, newPos := readSequenceItems(data, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
+				readCtx.popSeq()
 				elem.Value = seq
 				pos = newPos
+				if readCtx.failed() {
+					return nil, readCtx.diagErr
+				}
 			} else {
 				logDebug(ctx, "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
@@ -313,6 +347,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		}
 
 		if vr == VRSQ {
+			readCtx.pushSeq(currentTag)
 			seq, newPos := readDefinedLengthSequence(
 				data,
 				pos+int64(hdrSize),
@@ -323,8 +358,12 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				opts,
 				readCtx,
 			)
+			readCtx.popSeq()
 			elem.Value = seq
 			pos = newPos
+			if readCtx.failed() {
+				return nil, readCtx.diagErr
+			}
 			if shouldKeepElement(opts, elem.Tag) {
 				allElements = append(allElements, elem)
 			}
@@ -332,6 +371,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		}
 
 		if pos+int64(hdrSize+length) > int64(len(data)) {
+			if err := readCtx.diagnose(truncatedValue(currentTag, vr, pos+int64(hdrSize), int64(length), int64(len(data)))); err != nil {
+				return nil, err
+			}
 			break
 		}
 
@@ -518,6 +560,15 @@ func readSequenceItemsUntil(
 		}
 
 		if pos+8 > int64(len(data)) {
+			// The item header runs past the buffer: the enclosing element's
+			// length claimed more bytes than the file holds.
+			_ = ctx.diagnose(Diagnostic{
+				Kind:   DiagnosticTruncatedItem,
+				Tag:    currentTag,
+				Offset: pos,
+				Need:   8,
+				Have:   int64(len(data)) - pos,
+			})
 			break
 		}
 
@@ -593,6 +644,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 
 		if isImplicitVR {
 			if pos+8 > int64(len(data)) {
+				if err := ctx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
+					return pos, err
+				}
 				break
 			}
 			if isLittleEndian {
@@ -604,6 +658,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			vr = lookupVRDuringRead(currentTag, privateCreatorFromDataset(ds, currentTag))
 		} else {
 			if pos+8 > int64(len(data)) {
+				if err := ctx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
+					return pos, err
+				}
 				break
 			}
 			vrBytes := data[pos+4 : pos+6]
@@ -627,6 +684,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				hdrSize = 8
 			} else {
 				if pos+12 > int64(len(data)) {
+					if err := ctx.diagnose(truncatedHeader(currentTag, pos, 12, int64(len(data)))); err != nil {
+						return pos, err
+					}
 					break
 				}
 				if isLittleEndian {
@@ -660,9 +720,14 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				}
 				logDebug(ctx.logCtx(), "Reading/parsing undefined length sequence",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
+				ctx.pushSeq(currentTag)
 				seq, newPos := readSequenceItems(data, valueStart, isImplicitVR, isLittleEndian, charsets, opts, ctx)
+				ctx.popSeq()
 				elem.Value = seq
 				pos = newPos
+				if ctx.failed() {
+					return pos, ctx.diagErr
+				}
 			} else {
 				logDebug(ctx.logCtx(), "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
@@ -690,6 +755,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		}
 
 		if vr == VRSQ {
+			ctx.pushSeq(currentTag)
 			seq, newPos := readDefinedLengthSequence(
 				data,
 				pos+int64(hdrSize),
@@ -700,8 +766,12 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				opts,
 				ctx,
 			)
+			ctx.popSeq()
 			elem.Value = seq
 			pos = newPos
+			if ctx.failed() {
+				return pos, ctx.diagErr
+			}
 			if shouldKeepElement(opts, elem.Tag) {
 				ds.Set(elem)
 			}
@@ -709,6 +779,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		}
 
 		if pos+int64(hdrSize+length) > int64(len(data)) {
+			if err := ctx.diagnose(truncatedValue(currentTag, vr, pos+int64(hdrSize), int64(length), int64(len(data)))); err != nil {
+				return pos, err
+			}
 			break
 		}
 
