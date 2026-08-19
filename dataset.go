@@ -34,6 +34,19 @@ type readContext struct {
 	// moves the underlying reader's position and is not safe for concurrent use.
 	src io.ReaderAt
 	ctx context.Context
+
+	// onDiag is ReadOptions.OnDiagnostic, kept so deferred loads can report
+	// through the same hook after the read has returned.
+	onDiag func(Diagnostic) error
+	// seqPath is the sequence tags currently being descended into, used to
+	// stamp Diagnostic.Path.
+	seqPath []Tag
+	// baseOffset shifts diagnostic offsets back into source coordinates when a
+	// parser is handed a buffer copied out of the middle of the source.
+	baseOffset int64
+	// diagErr holds the first error a hook returned, so an anomaly inside a
+	// sequence can unwind call paths that return no error.
+	diagErr error
 }
 
 func (rc *readContext) logCtx() context.Context {
@@ -111,9 +124,29 @@ func (d *Dataset) loadDeferred(tag Tag) error {
 		return nil
 	}
 	if d.readCtx == nil {
-		return fmt.Errorf("godicom: deferred read requires source data")
+		return d.deferredFailed(elem, fmt.Errorf("godicom: deferred read requires source data"))
 	}
-	return loadDeferredElement(d.readCtx, d, elem)
+	if err := loadDeferredElement(d.readCtx, d, elem); err != nil {
+		return d.deferredFailed(elem, err)
+	}
+	return nil
+}
+
+// deferredFailed reports a deferred value that could not be loaded. Get turns
+// the error into a plain "absent", so without this the tag stays listed by
+// SortedTags while every read of it silently returns nothing.
+func (d *Dataset) deferredFailed(elem *DataElement, cause error) error {
+	if err := d.readCtx.report(Diagnostic{
+		Kind:   DiagnosticDeferredValueUnreadable,
+		Tag:    elem.Tag,
+		VR:     elem.VR,
+		Offset: elem.ValueTell,
+		Need:   int64(elem.ValueLength),
+		Err:    cause,
+	}); err != nil {
+		return err
+	}
+	return cause
 }
 
 func (d *Dataset) Set(element *DataElement) {

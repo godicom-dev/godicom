@@ -79,21 +79,47 @@ Context-aware variants (`ReadFileContext`, `WriteContext`,
 `DecodeDatasetContext`, …) accept a `context.Context` for cancellation and
 structured logging.
 
+**Truncated and malformed files**
+
+By default a read keeps whatever it parsed before the file stopped making sense,
+which is what most DICOM tooling does but hides the damage. Set
+`ReadOptions.OnDiagnostic` to see those anomalies — a value shorter than its
+length field, a header cut off mid-element, a deferred value whose source has
+gone away — each reported with its tag, VR, byte offset, and enclosing
+sequences:
+
+```go
+ds, err := godicom.ReadFile("truncated.dcm", &godicom.ReadOptions{
+	OnDiagnostic: func(d godicom.Diagnostic) error {
+		log.Printf("%s", d) // keep parsing
+		return nil
+	},
+})
+```
+
+`Diagnostic` is itself an `error`, so returning it rejects the file instead:
+
+```go
+opts := &godicom.ReadOptions{
+	OnDiagnostic: func(d godicom.Diagnostic) error { return d },
+}
+```
+
 **Dataset bytes (no File Meta)**
 
 Encode or decode a dataset without a Part 10 preamble — useful for DIMSE or
 multipart payloads:
 
 ```go
-data, err := ds.Encode(string(uid.ExplicitVRLittleEndian))
-parsed, err := godicom.DecodeDataset(data)
+data, err := ds.Encode(uid.ExplicitVRLittleEndian)
+parsed, err := godicom.DecodeDataset(data, uid.ExplicitVRLittleEndian)
 ```
 
 Part 10 files in memory:
 
 ```go
 bytes, err := ds.EncodeFile(nil)
-ds2, err := godicom.ReadBytes(bytes)
+ds2, err := godicom.ReadBytes(bytes, nil)
 ```
 
 ## *Pixel Data*

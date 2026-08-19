@@ -172,7 +172,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 	charsets := []string{DefaultCharacterSet}
 	// No in-memory copy of the file: deferred loads reopen filename, or re-read
 	// through ra when there is no path to reopen (a non-*os.File ReadSeeker).
-	readCtx := &readContext{filename: filename, modTime: modTime, size: size, src: ra, ctx: ctx}
+	readCtx := &readContext{filename: filename, modTime: modTime, size: size, src: ra, ctx: ctx, onDiag: diagnosticHook(opts)}
 
 	for pos+4 <= size {
 		currentTag, err := v.tag(pos, isLittleEndian)
@@ -236,6 +236,15 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 
 		vr, length, hdrSize, ok := readElementHeaderAt(v, pos, isImplicit, isLittleEndian, allElements, currentTag)
 		if !ok {
+			// An 8-byte header that reads fine means the 32-bit length field of a
+			// 12-byte header is what ran out.
+			need := int64(8)
+			if v.inRange(pos, 8) {
+				need = 12
+			}
+			if err := readCtx.diagnose(truncatedHeader(currentTag, pos, need, size)); err != nil {
+				return nil, err
+			}
 			break
 		}
 		header, herr := v.bytes(pos, int64(hdrSize))
@@ -265,9 +274,14 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				}
 				logDebug(ctx, "Reading/parsing undefined length sequence",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
+				readCtx.pushSeq(currentTag)
 				seq, endPos, err := readUndefinedSequenceAt(v, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
+				readCtx.popSeq()
 				if err != nil {
 					return nil, err
+				}
+				if readCtx.failed() {
+					return nil, readCtx.diagErr
 				}
 				if keep {
 					elem.Value = seq
@@ -307,7 +321,14 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				if err != nil {
 					break
 				}
+				restore := readCtx.setBase(valueStart)
+				readCtx.pushSeq(currentTag)
 				seq, _ := readDefinedLengthSequence(chunk, 0, length, isImplicit, isLittleEndian, charsets, opts, readCtx)
+				readCtx.popSeq()
+				restore()
+				if readCtx.failed() {
+					return nil, readCtx.diagErr
+				}
 				elem.Value = seq
 				allElements = append(allElements, elem)
 			}
@@ -316,6 +337,9 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		}
 
 		if next > size {
+			if err := readCtx.diagnose(truncatedValue(currentTag, vr, valueStart, int64(length), size)); err != nil {
+				return nil, err
+			}
 			break
 		}
 
@@ -425,6 +449,9 @@ func readUndefinedSequenceAt(
 ) (*Sequence, int64, error) {
 	// Walk defined-length items without buffering the rest of the file. Stop at
 	// SequenceDelimiter or the next non-Item tag (same rule as readSequenceItems).
+	// Every chunk below is copied from offset, so diagnostics raised by the byte
+	// parser are shifted back into source coordinates.
+	defer ctx.setBase(offset)()
 	pos := offset
 	for pos+8 <= v.size {
 		tag, err := v.tag(pos, littleEndian)
@@ -550,6 +577,7 @@ func finishDeflated(
 		sub.StopBeforePixels = opts.StopBeforePixels
 		sub.SpecificTags = opts.SpecificTags
 		sub.Logger = opts.Logger
+		sub.OnDiagnostic = opts.OnDiagnostic
 	}
 	rest, err := readBytes(ctx, inflated, filename, modTime, sub)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 )
 
@@ -23,7 +24,12 @@ const (
 	AttrValue          = "value"     // first ≤20 value bytes as Go quoted string
 	AttrTransferSyntax = "transfer_syntax"
 	AttrFrame          = "frame"
-	AttrPath           = "path"
+	AttrPath           = "path"          // file path
+	AttrKind           = "kind"          // DiagnosticKind
+	AttrSequencePath   = "sequence_path" // enclosing sequence tags, outermost first
+	AttrNeed           = "need"          // bytes the encoding called for
+	AttrHave           = "have"          // bytes actually available
+	AttrError          = "error"
 )
 
 // Component values for AttrComponent.
@@ -113,6 +119,41 @@ func logDebug(ctx context.Context, msg string, args ...any) {
 
 func offsetHex(off int64) string {
 	return fmt.Sprintf("%08x", uint64(off))
+}
+
+// logDiagnostic records a parse anomaly. Diagnostics are recovered from, so they
+// are logged at warn level rather than returned as errors; ReadOptions.OnDiagnostic
+// is what turns one into a read failure.
+func logDiagnostic(ctx context.Context, d Diagnostic) {
+	l := LoggerFromContext(ctx)
+	if !l.Enabled(ctx, slog.LevelWarn) {
+		return
+	}
+	args := []any{
+		AttrKind, string(d.Kind),
+		AttrOffset, d.Offset,
+		AttrOffsetHex, offsetHex(d.Offset),
+	}
+	if d.Tag != 0 {
+		args = append(args, AttrTag, d.Tag.String())
+	}
+	if d.VR != "" {
+		args = append(args, AttrVR, string(d.VR))
+	}
+	if len(d.Path) > 0 {
+		parts := make([]string, len(d.Path))
+		for i, t := range d.Path {
+			parts[i] = t.String()
+		}
+		args = append(args, AttrSequencePath, strings.Join(parts, " > "))
+	}
+	if d.Need != 0 || d.Have != 0 {
+		args = append(args, AttrNeed, d.Need, AttrHave, d.Have)
+	}
+	if d.Err != nil {
+		args = append(args, AttrError, d.Err.Error())
+	}
+	l.WarnContext(ctx, "parse diagnostic", args...)
 }
 
 func bytesHex(b []byte) string {
