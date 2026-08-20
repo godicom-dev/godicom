@@ -121,13 +121,6 @@ func privateCreatorFromDataset(ds *Dataset, tag Tag) string {
 	return ""
 }
 
-func lookupVRDuringRead(tag Tag, creator string) VR {
-	if tag.IsPrivate() {
-		return lookupVRWithCreator(tag, creator)
-	}
-	return LookupVR(tag)
-}
-
 // ReadBytes parses a Part 10 DICOM file from data (preamble optional when Force).
 func ReadBytes(data []byte, opts *ReadOptions) (*FileDataset, error) {
 	return ReadBytesContext(context.Background(), data, opts)
@@ -177,6 +170,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	allElements := make([]*DataElement, 0)
 	charsets := []string{DefaultCharacterSet}
 	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx, onDiag: diagnosticHook(opts)}
+	creator := elementsCreator(&allElements)
 
 	for pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
@@ -228,67 +222,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 
-		var vr VR
-		var length int
-		var hdrSize int
-
-		if isImplicit {
-			if pos+8 > int64(len(data)) {
-				if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
-					return nil, err
-				}
-				break
+		h, need, ok := decodeElementHeader(data, pos, currentTag, isImplicit, isLittleEndian, creator)
+		if !ok {
+			if err := readCtx.diagnose(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
+				return nil, err
 			}
-			if isLittleEndian {
-				length = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
-			} else {
-				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
-			}
-			hdrSize = 8
-			vr = lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag))
-		} else {
-			if pos+8 > int64(len(data)) {
-				if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
-					return nil, err
-				}
-				break
-			}
-			vrBytes := data[pos+4 : pos+6]
-			vrStr := string(vrBytes)
-			vr = VR(vrStr)
-
-			// Per pydicom: if VR is not valid ASCII uppercase (AA-ZZ),
-			// switch to implicit VR encoding (issue 1067, 1035)
-			if vrBytes[0] < 0x41 || vrBytes[0] > 0x5A || vrBytes[1] < 0x41 || vrBytes[1] > 0x5A {
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
-				} else {
-					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
-				}
-				hdrSize = 8
-				vr = lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag))
-			} else if ExplicitVRLength16[vr] {
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
-				} else {
-					length = int(binary.BigEndian.Uint16(data[pos+6 : pos+8]))
-				}
-				hdrSize = 8
-			} else {
-				if pos+12 > int64(len(data)) {
-					if err := readCtx.diagnose(truncatedHeader(currentTag, pos, 12, int64(len(data)))); err != nil {
-						return nil, err
-					}
-					break
-				}
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint32(data[pos+8 : pos+12]))
-				} else {
-					length = int(binary.BigEndian.Uint32(data[pos+8 : pos+12]))
-				}
-				hdrSize = 12
-			}
+			break
 		}
+		vr, length, hdrSize := h.VR, h.Length, h.Size
 
 		logElementHeader(ctx, pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
@@ -626,6 +567,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		charsets = []string{DefaultCharacterSet}
 	}
 	pos := offset
+	creator := datasetCreator(ds)
 
 	for pos+4 <= end && pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, isLittleEndian)
@@ -638,65 +580,14 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			return pos, nil
 		}
 
-		var vr VR
-		var length int
-		var hdrSize int
-
-		if isImplicitVR {
-			if pos+8 > int64(len(data)) {
-				if err := ctx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
-					return pos, err
-				}
-				break
+		h, need, ok := decodeElementHeader(data, pos, currentTag, isImplicitVR, isLittleEndian, creator)
+		if !ok {
+			if err := ctx.diagnose(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
+				return pos, err
 			}
-			if isLittleEndian {
-				length = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
-			} else {
-				length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
-			}
-			hdrSize = 8
-			vr = lookupVRDuringRead(currentTag, privateCreatorFromDataset(ds, currentTag))
-		} else {
-			if pos+8 > int64(len(data)) {
-				if err := ctx.diagnose(truncatedHeader(currentTag, pos, 8, int64(len(data)))); err != nil {
-					return pos, err
-				}
-				break
-			}
-			vrBytes := data[pos+4 : pos+6]
-			vrStr := string(vrBytes)
-			vr = VR(vrStr)
-
-			if vrBytes[0] < 0x41 || vrBytes[0] > 0x5A || vrBytes[1] < 0x41 || vrBytes[1] > 0x5A {
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
-				} else {
-					length = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
-				}
-				hdrSize = 8
-				vr = lookupVRDuringRead(currentTag, privateCreatorFromDataset(ds, currentTag))
-			} else if ExplicitVRLength16[vr] {
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
-				} else {
-					length = int(binary.BigEndian.Uint16(data[pos+6 : pos+8]))
-				}
-				hdrSize = 8
-			} else {
-				if pos+12 > int64(len(data)) {
-					if err := ctx.diagnose(truncatedHeader(currentTag, pos, 12, int64(len(data)))); err != nil {
-						return pos, err
-					}
-					break
-				}
-				if isLittleEndian {
-					length = int(binary.LittleEndian.Uint32(data[pos+8 : pos+12]))
-				} else {
-					length = int(binary.BigEndian.Uint32(data[pos+8 : pos+12]))
-				}
-				hdrSize = 12
-			}
+			break
 		}
+		vr, length, hdrSize := h.VR, h.Length, h.Size
 
 		logElementHeader(ctx.logCtx(), pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
