@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Diagnostics**: `ReadOptions.OnDiagnostic` reports parse anomalies — a value
+  shorter than its length field, a header cut off mid-element, a sequence item
+  header past the end of the file, a deferred value whose source has gone away —
+  each carrying its tag, VR, byte offset, and enclosing sequences. `Diagnostic`
+  is itself an `error`, so returning it from the hook rejects the file while
+  returning `nil` keeps the tolerant default
+- **Setters**: dictionary-VR setters `SetString` / `SetInt` / `SetFloat` /
+  `SetBytes` / `SetSequence`, the plural `SetStrings` / `SetInts` / `SetFloats`,
+  and `SetDA` / `SetTM` / `SetDT` / `SetPN` / `SetDS` / `SetIS`. Each resolves
+  the VR from the data dictionary and rejects value kinds that VR cannot hold.
+  Tags outside the dictionary still need
+  `Set(NewDataElement(tag, vr, value))`
+
+### Changed
+- **BREAKING**: transfer syntax parameters and returns are `uid.UID`, not
+  `string`: `EncodeDataset`, `WriteDataset`, `Dataset.Encode`, `DecodeDataset`,
+  `DecodeDatasetContext`, `CompressPixelData`, `CompressPixelDataContext`,
+  `FileDataset.TransferSyntaxUID`, and `pixels.FileSource`. String literals
+  still compile at call sites; `string` variables need an explicit `uid.UID(...)`
+- `Read` hands a reader that already offers `io.ReaderAt` plus `Size() int64`
+  (`*bytes.Reader`, `*strings.Reader`, `*io.SectionReader`) to the parser as-is
+  instead of wrapping it in Seek+Read, so neither the parse nor a later deferred
+  load moves the caller's offset
+- Internal: one shared data element header decoder for the streaming and
+  in-memory readers; the sequence readers return errors instead of latching
+  them on the read context
+
+### Fixed
+- Deferred values were permanently unreachable after `Read` from a seekable
+  reader that is not an `*os.File` (`bytes.Reader`, `io.SectionReader`,
+  range-request adapters): the tag stayed listed while `Get` / `GetBytes`
+  reported it absent
+- Deferred values in a Deflated dataset read through `ReadBytes` / `Read`
+  loaded from the still-compressed buffer, failing with a tag or VR mismatch.
+  `ReadFile` was unaffected
+- The streaming reader silently dropped a defined-length sequence whose length
+  ran past the end of the file, complete items included. It now parses the items
+  that are present and reports a truncated item, matching `ReadBytes` and
+  pydicom's `read_sequence_item`
+- A diagnostic raised inside a sequence — and a hook error rejecting it — now
+  reaches the caller instead of being swallowed by the sequence readers
+- `AT` elements were encoded as a single 32-bit value instead of the group /
+  element pair of 16-bit values required by PS3.5 7.1.1. The two coincide under
+  big endian and differ under little endian, so godicom wrote `AT` values that
+  it and every other implementation read back swapped: `(0018,1063)` came back
+  as `(1063,0018)`. `encodeAT` also accepts `[]Tag`, `[]int` and
+  `*MultiValue[int]` now, so `SetInts` on an `AT` tag encodes rather than
+  silently producing an empty value
+
 ## [0.26.0] - 2026-08-13
 
 ### Added

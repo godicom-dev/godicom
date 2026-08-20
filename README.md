@@ -84,9 +84,9 @@ structured logging.
 By default a read keeps whatever it parsed before the file stopped making sense,
 which is what most DICOM tooling does but hides the damage. Set
 `ReadOptions.OnDiagnostic` to see those anomalies — a value shorter than its
-length field, a header cut off mid-element, a deferred value whose source has
-gone away — each reported with its tag, VR, byte offset, and enclosing
-sequences:
+length field, a header cut off mid-element, a sequence whose declared length
+runs past the end of the file, a deferred value whose source has gone away —
+each reported with its tag, VR, byte offset, and enclosing sequences:
 
 ```go
 ds, err := godicom.ReadFile("truncated.dcm", &godicom.ReadOptions{
@@ -168,10 +168,10 @@ and Deflated transfer syntaxes need no extra plugins.
 ### Compressing *Pixel Data*
 
 ```go
-err := ds.CompressPixelData(string(uid.RLELossless))
-err = ds.CompressPixelData(string(uid.JPEGLSLossless))
-err = ds.CompressPixelData(string(uid.JPEG2000Lossless))
-err = ds.CompressPixelData(string(uid.JPEG2000)) // lossy JPEG 2000
+err := ds.CompressPixelData(uid.RLELossless)
+err = ds.CompressPixelData(uid.JPEGLSLossless)
+err = ds.CompressPixelData(uid.JPEG2000Lossless)
+err = ds.CompressPixelData(uid.JPEG2000) // lossy JPEG 2000
 ```
 
 Supported encode paths: native, RLE Lossless, Deflated, JPEG (baseline /
