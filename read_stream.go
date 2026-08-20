@@ -237,7 +237,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 
 		h, header, need, ok := readElementHeaderAt(v, pos, isImplicit, isLittleEndian, currentTag, creator)
 		if !ok {
-			if err := readCtx.diagnose(truncatedHeader(currentTag, pos, need, size)); err != nil {
+			if err := readCtx.report(truncatedHeader(currentTag, pos, need, size)); err != nil {
 				return nil, err
 			}
 			break
@@ -271,9 +271,6 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				readCtx.popSeq()
 				if err != nil {
 					return nil, err
-				}
-				if readCtx.failed() {
-					return nil, readCtx.diagErr
 				}
 				if keep {
 					elem.Value = seq
@@ -315,11 +312,11 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 				}
 				restore := readCtx.setBase(valueStart)
 				readCtx.pushSeq(currentTag)
-				seq, _ := readDefinedLengthSequence(chunk, 0, length, isImplicit, isLittleEndian, charsets, opts, readCtx)
+				seq, _, err := readDefinedLengthSequence(chunk, 0, length, isImplicit, isLittleEndian, charsets, opts, readCtx)
 				readCtx.popSeq()
 				restore()
-				if readCtx.failed() {
-					return nil, readCtx.diagErr
+				if err != nil {
+					return nil, err
 				}
 				elem.Value = seq
 				allElements = append(allElements, elem)
@@ -329,7 +326,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		}
 
 		if next > size {
-			if err := readCtx.diagnose(truncatedValue(currentTag, vr, valueStart, int64(length), size)); err != nil {
+			if err := readCtx.report(truncatedValue(currentTag, vr, valueStart, int64(length), size)); err != nil {
 				return nil, err
 			}
 			break
@@ -411,16 +408,16 @@ func readUndefinedSequenceAt(
 			if err != nil {
 				return nil, pos, err
 			}
-			seq, _ := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
-			return seq, pos + 8, nil
+			seq, _, err := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
+			return seq, pos + 8, err
 		}
 		if tag != ItemTag {
 			chunk, err := v.bytes(offset, pos-offset)
 			if err != nil {
 				return nil, pos, err
 			}
-			seq, _ := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
-			return seq, pos, nil
+			seq, _, err := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
+			return seq, pos, err
 		}
 		b, err := v.bytes(pos+4, 4)
 		if err != nil {
@@ -439,8 +436,8 @@ func readUndefinedSequenceAt(
 			if err != nil {
 				return nil, pos, err
 			}
-			seq, end := readSequenceItems(rest, 0, isImplicit, littleEndian, charsets, opts, ctx)
-			return seq, offset + end, nil
+			seq, end, err := readSequenceItems(rest, 0, isImplicit, littleEndian, charsets, opts, ctx)
+			return seq, offset + end, err
 		}
 		pos += 8 + int64(itemLen)
 	}
@@ -448,8 +445,8 @@ func readUndefinedSequenceAt(
 	if err != nil {
 		return nil, pos, err
 	}
-	seq, end := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
-	return seq, offset + end, nil
+	seq, end, err := readSequenceItems(chunk, 0, isImplicit, littleEndian, charsets, opts, ctx)
+	return seq, offset + end, err
 }
 
 // readOrSkipEncapsulated finds the end of encapsulated pixel data.

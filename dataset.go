@@ -44,9 +44,6 @@ type readContext struct {
 	// baseOffset shifts diagnostic offsets back into source coordinates when a
 	// parser is handed a buffer copied out of the middle of the source.
 	baseOffset int64
-	// diagErr holds the first error a hook returned, so an anomaly inside a
-	// sequence can unwind call paths that return no error.
-	diagErr error
 }
 
 func (rc *readContext) logCtx() context.Context {
