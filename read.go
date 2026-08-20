@@ -185,6 +185,12 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 						return nil, err
 					}
 					data = inflated
+					// Every offset from here on -- including the ValueTell of a
+					// deferred element -- is relative to the inflated bytes, so the
+					// deferred source has to follow. Leaving it on the compressed
+					// buffer made a deferred load read whatever byte happened to
+					// live at that offset before decompression.
+					readCtx.data = data
 					pos = 0
 					isImplicit = false
 					isLittleEndian = true
