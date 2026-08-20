@@ -306,7 +306,15 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 
 		if vr == VRSQ {
 			if keep {
-				chunk, err := v.bytes(valueStart, int64(length))
+				// The declared length can run past the end of the file. Hand the item
+				// loop the bytes that are there but keep the declared length as its
+				// end bound, so it walks the items that are present and reports the
+				// shortfall as a truncated item: the diagnostic ReadBytes already
+				// raises from the same bytes, and the point pydicom fails at
+				// (read_sequence_item, "No tag to read at file position"). Asking for
+				// the declared length instead got ErrUnexpectedEOF and dropped the
+				// whole element without a word.
+				chunk, err := v.bytes(valueStart, min(int64(length), size-valueStart))
 				if err != nil {
 					break
 				}

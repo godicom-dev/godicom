@@ -275,6 +275,122 @@ func TestReadBytes_TruncatedItemHookErrorFailsTheRead(t *testing.T) {
 	}
 }
 
+// overlongSequenceBytes returns the same shape as truncatedItemBytes with one
+// complete item ahead of the cut, so a reader that gives up on the declared
+// length loses an item it could have parsed.
+func overlongSequenceBytes() []byte {
+	return []byte{
+		// (0008,1140) SQ, reserved, length 0x40 -- 64 bytes, only 24 are there
+		0x08, 0x00, 0x40, 0x11, 'S', 'Q', 0x00, 0x00, 0x40, 0x00, 0x00, 0x00,
+		// (FFFE,E000) Item, length 12
+		0xFE, 0xFF, 0x00, 0xE0, 0x0C, 0x00, 0x00, 0x00,
+		// (0008,0018) UI "1.2\0" -- the item's whole content
+		0x08, 0x00, 0x18, 0x00, 'U', 'I', 0x04, 0x00, '1', '.', '2', 0x00,
+		// (FFFE,E000) Item, and then the file ends
+		0xFE, 0xFF, 0x00, 0xE0,
+	}
+}
+
+// A defined-length sequence whose length runs past the end of the file is what a
+// truncated transfer looks like when the cut lands inside a sequence. The
+// streaming reader asked for the declared length, got ErrUnexpectedEOF and
+// dropped the whole element without reporting anything, while ReadBytes kept the
+// items it had and reported a truncated item. Both now do the latter.
+func TestReadersAgreeOnOverlongSequenceLength(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		data      []byte
+		itemStart int64 // offset of the item header that is cut short
+		items     int   // items that were complete and must survive
+	}{
+		"no complete item":  {data: truncatedItemBytes(), itemStart: 12, items: 0},
+		"one complete item": {data: overlongSequenceBytes(), itemStart: 32, items: 1},
+	}
+	seqTag := MustTag("ReferencedImageSequence")
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "overlong.dcm")
+			if err := os.WriteFile(path, tc.data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			readers := map[string]func(*ReadOptions) (*FileDataset, error){
+				"ReadBytes": func(o *ReadOptions) (*FileDataset, error) { return ReadBytes(tc.data, o) },
+				"ReadFile":  func(o *ReadOptions) (*FileDataset, error) { return ReadFile(path, o) },
+			}
+
+			for reader, read := range readers {
+				t.Run(reader, func(t *testing.T) {
+					t.Parallel()
+					rec := &diagRecorder{}
+					fd, err := read(&ReadOptions{Force: true, OnDiagnostic: rec.hook})
+					if err != nil {
+						t.Fatalf("tolerant read must succeed: %v", err)
+					}
+
+					// ReadBytes resumes at the cut item and reports a second,
+					// redundant truncated header for the same bytes; only the
+					// first diagnostic is the two readers' shared contract.
+					d := rec.first(t)
+					want := Diagnostic{
+						Kind:   DiagnosticTruncatedItem,
+						Tag:    ItemTag,
+						Offset: tc.itemStart,
+						Need:   8,
+						Have:   4,
+					}
+					if d.Kind != want.Kind || d.Tag != want.Tag || d.Offset != want.Offset ||
+						d.Need != want.Need || d.Have != want.Have {
+						t.Errorf("got %+v, want kind/tag/offset/need/have %s/%s/%d/%d/%d",
+							d, want.Kind, want.Tag, want.Offset, want.Need, want.Have)
+					}
+					if len(d.Path) != 1 || d.Path[0] != seqTag {
+						t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+					}
+
+					elem, ok := fd.Get(seqTag)
+					if !ok {
+						t.Fatal("the sequence element itself must still be kept")
+					}
+					seq, ok := elem.Value.(*Sequence)
+					if !ok {
+						t.Fatalf("value type %T, want *Sequence", elem.Value)
+					}
+					if seq.Len() != tc.items {
+						t.Fatalf("sequence has %d items, want %d", seq.Len(), tc.items)
+					}
+					for i, item := range seq.Items() {
+						uid, ok := item.GetString(MustTag("SOPInstanceUID"))
+						if !ok || uid != "1.2" {
+							t.Errorf("item %d SOPInstanceUID = %q (present %v), want %q", i, uid, ok, "1.2")
+						}
+					}
+				})
+
+				t.Run(reader+"/strict", func(t *testing.T) {
+					t.Parallel()
+					_, err := read(&ReadOptions{Force: true, OnDiagnostic: (&diagRecorder{reject: true}).hook})
+					if err == nil {
+						t.Fatal("strict read must fail")
+					}
+					var d Diagnostic
+					if !errors.As(err, &d) {
+						t.Fatalf("error %v does not carry a Diagnostic", err)
+					}
+					if d.Kind != DiagnosticTruncatedItem {
+						t.Errorf("Kind = %q, want %q", d.Kind, DiagnosticTruncatedItem)
+					}
+					if len(d.Path) != 1 || d.Path[0] != seqTag {
+						t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+					}
+				})
+			}
+		})
+	}
+}
+
 // ReadFile takes the streaming parser, a separate code path from ReadBytes;
 // both have to report the same anomaly.
 func TestReadFile_TruncatedValueReportsDiagnostic(t *testing.T) {
