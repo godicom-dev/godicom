@@ -212,6 +212,69 @@ func TestReadBytes_HookErrorInsideSequenceFailsTheRead(t *testing.T) {
 	}
 }
 
+// truncatedItemBytes returns an explicit VR little endian buffer holding a
+// defined-length sequence whose declared length overruns the buffer, cut so the
+// last thing present is an Item tag with no room for its length. That is the one
+// anomaly raised by the item loop itself rather than by the element reader.
+func truncatedItemBytes() []byte {
+	return []byte{
+		// (0008,1140) SQ, reserved, length 0x20 -- 32 bytes that are not there
+		0x08, 0x00, 0x40, 0x11, 'S', 'Q', 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
+		// (FFFE,E000) Item, and then the file ends
+		0xFE, 0xFF, 0x00, 0xE0,
+	}
+}
+
+// The item loop reports the anomaly and, by default, keeps the empty sequence.
+func TestReadBytes_TruncatedItemReportsDiagnostic(t *testing.T) {
+	t.Parallel()
+	rec := &diagRecorder{}
+
+	fd, err := ReadBytes(truncatedItemBytes(), &ReadOptions{Force: true, OnDiagnostic: rec.hook})
+	if err != nil {
+		t.Fatalf("tolerant read must succeed: %v", err)
+	}
+
+	d := rec.first(t)
+	if d.Kind != DiagnosticTruncatedItem {
+		t.Errorf("Kind = %q, want %q", d.Kind, DiagnosticTruncatedItem)
+	}
+	if d.Tag != ItemTag {
+		t.Errorf("Tag = %s, want %s", d.Tag, ItemTag)
+	}
+	if d.Offset != 12 {
+		t.Errorf("Offset = %d, want 12", d.Offset)
+	}
+	if d.Need != 8 || d.Have != 4 {
+		t.Errorf("Need/Have = %d/%d, want 8/4", d.Need, d.Have)
+	}
+	if !fd.Has(MustTag("ReferencedImageSequence")) {
+		t.Error("the sequence element itself must still be kept")
+	}
+}
+
+// The same anomaly, raised two frames below the element loop, has to reach the
+// caller as an error now that the sequence readers return one.
+func TestReadBytes_TruncatedItemHookErrorFailsTheRead(t *testing.T) {
+	t.Parallel()
+	rec := &diagRecorder{reject: true}
+
+	_, err := ReadBytes(truncatedItemBytes(), &ReadOptions{Force: true, OnDiagnostic: rec.hook})
+	if err == nil {
+		t.Fatal("strict read must fail")
+	}
+	var d Diagnostic
+	if !errors.As(err, &d) {
+		t.Fatalf("error %v does not carry a Diagnostic", err)
+	}
+	if d.Kind != DiagnosticTruncatedItem {
+		t.Errorf("Kind = %q, want %q", d.Kind, DiagnosticTruncatedItem)
+	}
+	if len(d.Path) != 1 || d.Path[0] != MustTag("ReferencedImageSequence") {
+		t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+	}
+}
+
 // ReadFile takes the streaming parser, a separate code path from ReadBytes;
 // both have to report the same anomaly.
 func TestReadFile_TruncatedValueReportsDiagnostic(t *testing.T) {

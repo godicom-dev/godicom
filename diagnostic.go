@@ -121,7 +121,8 @@ func truncatedValue(tag Tag, vr VR, valueStart, need, total int64) Diagnostic {
 
 // report logs d and offers it to the OnDiagnostic hook, returning whatever the
 // hook returns. A nil return means "keep what was parsed so far", which is also
-// the behaviour when no hook is set.
+// the behaviour when no hook is set. A non-nil return aborts the parse, so every
+// caller propagates it.
 func (rc *readContext) report(d Diagnostic) error {
 	if rc == nil {
 		return nil
@@ -135,17 +136,6 @@ func (rc *readContext) report(d Diagnostic) error {
 		return nil
 	}
 	return rc.onDiag(d)
-}
-
-// diagnose is report plus a latch. Sequence parsing returns no error, so an
-// anomaly raised inside a sequence records the hook's error here and the
-// enclosing loops check failed() to unwind.
-func (rc *readContext) diagnose(d Diagnostic) error {
-	err := rc.report(d)
-	if err != nil && rc != nil && rc.diagErr == nil {
-		rc.diagErr = err
-	}
-	return err
 }
 
 // pushSeq records that parsing has descended into sequence tag t, so
@@ -172,9 +162,4 @@ func (rc *readContext) setBase(base int64) func() {
 	prev := rc.baseOffset
 	rc.baseOffset = base
 	return func() { rc.baseOffset = prev }
-}
-
-// failed reports whether a diagnostic hook has already aborted this parse.
-func (rc *readContext) failed() bool {
-	return rc != nil && rc.diagErr != nil
 }
