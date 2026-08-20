@@ -35,8 +35,10 @@ type readContext struct {
 	size     int64 // file size when filename is used without data
 	// src is the random-access source a seekable Read parsed from, kept so
 	// deferred values remain loadable when there is no path to reopen (for
-	// example an io.ReadSeeker that is not an *os.File). Reading through it
-	// moves the underlying reader's position and is not safe for concurrent use.
+	// example an io.ReadSeeker that is not an *os.File). When it is the
+	// seekerReaderAt wrapper, reading through it moves the underlying reader's
+	// position and is not safe for concurrent use; a reader that was already an
+	// io.ReaderAt is held as-is and keeps whatever guarantees it makes.
 	src io.ReaderAt
 	ctx context.Context
 

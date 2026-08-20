@@ -15,9 +15,13 @@ import (
 // can skip large values without buffering them. Deferred elements are reloaded
 // later by reopening the path when r is an *os.File (see ReadFile).
 //
-// For any other io.ReadSeeker there is no path to reopen, so the returned
-// dataset retains r itself for deferred loads: keep it open and do not move its
-// offset or read from it concurrently until every deferred value is loaded.
+// For any other seekable reader there is no path to reopen, so the returned
+// dataset retains r itself for deferred loads: keep it open until every deferred
+// value has been loaded. When r is only an io.ReadSeeker that also means not
+// moving its offset or reading from it concurrently, because each deferred load
+// seeks it. A reader that already offers io.ReaderAt plus Size() int64
+// (*bytes.Reader, *strings.Reader, *io.SectionReader) is used as-is and carries
+// neither restriction.
 //
 // Non-seekable readers fall back to buffering the stream (then ReadBytes).
 func Read(r io.Reader, opts *ReadOptions) (*FileDataset, error) {
@@ -35,6 +39,16 @@ func ReadContext(ctx context.Context, r io.Reader, opts *ReadOptions) (*FileData
 			return nil, err
 		}
 		return readReaderAt(ctx, f, info.Size(), f.Name(), info.ModTime().Unix(), opts)
+	}
+	if sized, ok := r.(interface {
+		io.ReaderAt
+		Size() int64
+	}); ok {
+		// *bytes.Reader, *strings.Reader and *io.SectionReader already offer
+		// random access over a known extent, which is all the parser wants. Using
+		// them directly skips the seekerReaderAt wrapper below, so parsing and
+		// deferred loads leave the caller's offset alone.
+		return readReaderAt(ctx, sized, sized.Size(), "", 0, opts)
 	}
 	if rs, ok := r.(io.ReadSeeker); ok {
 		size, err := rs.Seek(0, io.SeekEnd)
