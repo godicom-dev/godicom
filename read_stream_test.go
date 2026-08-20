@@ -155,6 +155,68 @@ func TestRead_SpecificTagsSkipsLargeValues(t *testing.T) {
 	}
 }
 
+// A reader that already offers random access over a known extent is handed to
+// the parser as-is rather than wrapped in seekerReaderAt, so nothing ever seeks
+// it and the caller's offset survives the parse -- and the deferred loads after
+// it, which go back through the same retained source.
+func TestRead_SizedReaderAtLeavesOffsetAlone(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(testFilePath("CT_small.dcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ReadBytes(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := bytes.NewReader(data)
+	ds, err := Read(r, &ReadOptions{DeferSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Len() != len(data) {
+		t.Errorf("the parse consumed %d bytes of the reader; a source it can ReadAt must not be seeked",
+			len(data)-r.Len())
+	}
+
+	// Get loads every deferred element through readCtx.src on the way past.
+	if err := datasetsEqual(ds, want); err != nil {
+		t.Errorf("dataset differs from ReadBytes: %v", err)
+	}
+	if r.Len() != len(data) {
+		t.Errorf("deferred loads consumed %d bytes of the reader", len(data)-r.Len())
+	}
+}
+
+// An io.SectionReader reports the section's Size and takes section-relative
+// offsets in ReadAt. Reading one directly has to honour both, so surrounding
+// bytes stay invisible.
+func TestRead_SectionReaderIgnoresSurroundingBytes(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(testFilePath("CT_small.dcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ReadBytes(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const lead = "junk-before-"
+	padded := append([]byte(lead), data...)
+	padded = append(padded, "-junk-after"...)
+	section := io.NewSectionReader(bytes.NewReader(padded), int64(len(lead)), int64(len(data)))
+
+	ds, err := Read(section, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := datasetsEqual(ds, want); err != nil {
+		t.Errorf("dataset differs from ReadBytes: %v", err)
+	}
+}
+
 func TestRead_NilReader(t *testing.T) {
 	t.Parallel()
 	_, err := Read(nil, nil)
