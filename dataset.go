@@ -24,7 +24,12 @@ type Dataset struct {
 // readContext holds the source used for deferred element loading and the
 // call-scoped logger context for this parse.
 type readContext struct {
-	data     []byte // in-memory source (ReadBytes / non-seekable Read)
+	// data is the in-memory source (ReadBytes / non-seekable Read). Deferred
+	// element offsets are relative to it, so for a Deflated transfer syntax it
+	// holds the inflated dataset rather than the file's bytes -- and is then the
+	// only source that can serve a deferred load, since filename and src still
+	// hold compressed bytes.
+	data     []byte
 	filename string // reopen path for streaming ReadFile
 	modTime  int64
 	size     int64 // file size when filename is used without data
