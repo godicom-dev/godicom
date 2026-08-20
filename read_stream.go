@@ -173,6 +173,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 	// No in-memory copy of the file: deferred loads reopen filename, or re-read
 	// through ra when there is no path to reopen (a non-*os.File ReadSeeker).
 	readCtx := &readContext{filename: filename, modTime: modTime, size: size, src: ra, ctx: ctx, onDiag: diagnosticHook(opts)}
+	creator := elementsCreator(&allElements)
 
 	for pos+4 <= size {
 		currentTag, err := v.tag(pos, isLittleEndian)
@@ -234,23 +235,14 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 			break
 		}
 
-		vr, length, hdrSize, ok := readElementHeaderAt(v, pos, isImplicit, isLittleEndian, allElements, currentTag)
+		h, header, need, ok := readElementHeaderAt(v, pos, isImplicit, isLittleEndian, currentTag, creator)
 		if !ok {
-			// An 8-byte header that reads fine means the 32-bit length field of a
-			// 12-byte header is what ran out.
-			need := int64(8)
-			if v.inRange(pos, 8) {
-				need = 12
-			}
 			if err := readCtx.diagnose(truncatedHeader(currentTag, pos, need, size)); err != nil {
 				return nil, err
 			}
 			break
 		}
-		header, herr := v.bytes(pos, int64(hdrSize))
-		if herr != nil {
-			break
-		}
+		vr, length, hdrSize := h.VR, h.Length, h.Size
 		logElementHeader(ctx, pos, header, currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
@@ -369,74 +361,30 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 	return assembleFileDataset(allElements, preamble, filename, modTime, isImplicit, isLittleEndian, readCtx), nil
 }
 
+// readElementHeaderAt decodes the header at pos by pulling the at most 12 bytes
+// a header can occupy and handing them to the shared decoder, so the streaming
+// reader and the in-memory reader agree on every malformed case. The header
+// bytes are returned for logging, saving a second read.
 func readElementHeaderAt(
 	v atView,
 	pos int64,
 	isImplicit, isLittleEndian bool,
-	allElements []*DataElement,
 	currentTag Tag,
-) (vr VR, length, hdrSize int, ok bool) {
-	if isImplicit {
-		if !v.inRange(pos, 8) {
-			return "", 0, 0, false
-		}
-		b, err := v.bytes(pos+4, 4)
-		if err != nil {
-			return "", 0, 0, false
-		}
-		if isLittleEndian {
-			length = int(binary.LittleEndian.Uint32(b))
-		} else {
-			length = int(binary.BigEndian.Uint32(b))
-		}
-		return lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag)), length, 8, true
+	creator creatorFunc,
+) (h elementHeader, header []byte, need int64, ok bool) {
+	n := int64(12)
+	if pos+n > v.size {
+		n = v.size - pos
 	}
-
-	if !v.inRange(pos, 8) {
-		return "", 0, 0, false
-	}
-	vrBytes, err := v.bytes(pos+4, 2)
+	buf, err := v.bytes(pos, n)
 	if err != nil {
-		return "", 0, 0, false
+		return elementHeader{}, nil, 8, false
 	}
-	vr = VR(string(vrBytes))
-	if vrBytes[0] < 0x41 || vrBytes[0] > 0x5A || vrBytes[1] < 0x41 || vrBytes[1] > 0x5A {
-		b, err := v.bytes(pos+4, 4)
-		if err != nil {
-			return "", 0, 0, false
-		}
-		if isLittleEndian {
-			length = int(binary.LittleEndian.Uint32(b))
-		} else {
-			length = int(binary.BigEndian.Uint32(b))
-		}
-		return lookupVRDuringRead(currentTag, privateCreatorFromElements(allElements, currentTag)), length, 8, true
+	h, need, ok = decodeElementHeader(buf, 0, currentTag, isImplicit, isLittleEndian, creator)
+	if !ok {
+		return elementHeader{}, nil, need, false
 	}
-	if ExplicitVRLength16[vr] {
-		b, err := v.bytes(pos+6, 2)
-		if err != nil {
-			return "", 0, 0, false
-		}
-		if isLittleEndian {
-			length = int(binary.LittleEndian.Uint16(b))
-		} else {
-			length = int(binary.BigEndian.Uint16(b))
-		}
-		return vr, length, 8, true
-	}
-	if !v.inRange(pos, 12) {
-		return "", 0, 0, false
-	}
-	b, err := v.bytes(pos+8, 4)
-	if err != nil {
-		return "", 0, 0, false
-	}
-	if isLittleEndian {
-		length = int(binary.LittleEndian.Uint32(b))
-	} else {
-		length = int(binary.BigEndian.Uint32(b))
-	}
-	return vr, length, 12, true
+	return h, buf[:h.Size], need, true
 }
 
 func readUndefinedSequenceAt(
