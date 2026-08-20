@@ -840,7 +840,7 @@ func encodeNumberString(elem *DataElement) []byte {
 	case int:
 		return []byte(fmt.Sprintf("%d", v))
 	case float64:
-		return []byte(fmt.Sprintf("%g", v))
+		return []byte(formatDecimalString(elem.VR, v))
 	case DS:
 		return []byte(v.String())
 	case IS:
@@ -860,7 +860,7 @@ func encodeNumberString(elem *DataElement) []byte {
 			if i > 0 {
 				s += "\\"
 			}
-			s += fmt.Sprintf("%g", val)
+			s += formatDecimalString(elem.VR, val)
 		}
 		return []byte(s)
 	case *MultiValue[DS]:
@@ -887,11 +887,42 @@ func encodeNumberString(elem *DataElement) []byte {
 			if i > 0 {
 				s += "\\"
 			}
+			if f, ok := val.(float64); ok {
+				s += formatDecimalString(elem.VR, f)
+				continue
+			}
 			s += fmt.Sprintf("%v", val)
 		}
 		return []byte(s)
 	}
 	return []byte(fmt.Sprintf("%v", elem.Value))
+}
+
+// formatDecimalString renders a float for a DS element the way the DS type
+// already does, so a value stored as a plain float64 reaches the file
+// identically to the same value stored as a DS.
+//
+// fmt's %g has no length bound, but PS3.5 caps DS at 16 bytes, so %g overran it
+// for anything needing more than 16 significant characters: SetFloat with 1.0/3.0
+// wrote "0.3333333333333333" (18 bytes), which godicom's own IsValidDS rejects
+// and a strict receiver is entitled to refuse. FormatNumberAsDS is the same
+// truncation pydicom's format_number_as_ds applies.
+//
+// Only VRDS gets the DS rules. A float in an IS is a caller error rather than a
+// representable value, and encodeNumberString has no error channel to report it
+// through, so that case keeps its old formatting instead of silently rounding to
+// an integer the caller never asked for.
+func formatDecimalString(vr VR, val float64) string {
+	if vr != VRDS {
+		return fmt.Sprintf("%g", val)
+	}
+	s, err := FormatNumberAsDS(val)
+	if err != nil {
+		// NaN or ±Inf: no valid DS exists and there is no way to report that
+		// from here, so leave today's output rather than inventing a value.
+		return fmt.Sprintf("%g", val)
+	}
+	return s
 }
 
 func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {

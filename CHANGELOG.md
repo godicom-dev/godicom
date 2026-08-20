@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A `DS` element holding a plain `float64` — what `SetFloat` / `SetFloats`
+  store, since `DS` is a float VR — was written with an unbounded `%g` while
+  PS3.5 caps `DS` at 16 bytes. `SetFloat(SliceThickness, 1.0/3.0)` wrote
+  `"0.3333333333333333"` (18 bytes), which godicom's own `IsValidDS` rejects
+  and a strict receiver may refuse. The writer now applies the same
+  `FormatNumberAsDS` truncation the `DS` type and pydicom's
+  `format_number_as_ds` use, so a value stored as a `float64` reaches the file
+  identically to the same value stored as a `DS`. A `DS` parsed from a file
+  still round-trips its original string byte for byte, over-long or not
+
 ## [0.27.0] - 2026-08-20
 
 ### Added
