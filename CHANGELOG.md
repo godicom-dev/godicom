@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Write diagnostics**: `WriteOptions.OnDiagnostic func(Diagnostic) error`
+  mirrors `ReadOptions.OnDiagnostic` and reports values the writer would
+  otherwise encode silently even though godicom's own reader raises a
+  diagnostic on the result — a fractional `float64` in an `IS` (`1.5` is not an
+  integer string), a `DS` longer than the 16 bytes PS3.5 allows, an `IS`
+  outside `[-2^31, 2^31)`. The new `DiagnosticInvalidValue` kind identifies
+  them; they carry no `Offset`, since nothing was read. Returning `nil` keeps
+  the old behaviour and writes the value as it stands, so no existing caller
+  changes; returning the diagnostic fails the write:
+
+  ```go
+  opts := &WriteOptions{OnDiagnostic: func(d Diagnostic) error { return d }}
+  ```
+
+  This is the three-way choice pydicom spells `IGNORE` / `WARN` / `RAISE` in
+  `config.settings.writing_validation_mode`, without a mode enum: whether the
+  hook is set, and what it returns, says which one the caller wants. Values
+  written back from the bytes they were read as are not offered — they are not
+  re-encoded, and the read had its own chance to report them
+
 ### Fixed
 - A `DS` element holding a plain `float64` — what `SetFloat` / `SetFloats`
   store, since `DS` is a float VR — was written with an unbounded `%g` while

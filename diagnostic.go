@@ -1,12 +1,13 @@
 package godicom
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
 
-// DiagnosticKind classifies a parse anomaly reported to
-// ReadOptions.OnDiagnostic.
+// DiagnosticKind classifies an anomaly reported to ReadOptions.OnDiagnostic or
+// WriteOptions.OnDiagnostic.
 type DiagnosticKind string
 
 const (
@@ -26,14 +27,30 @@ const (
 	// be loaded when its value was finally requested. The tag stays visible to
 	// SortedTags and Elements while Get reports it as absent.
 	DiagnosticDeferredValueUnreadable DiagnosticKind = "deferred_value_unreadable"
+
+	// DiagnosticInvalidValue: a value handed to the writer cannot be spelled the
+	// way its VR requires, so writing it produces a file godicom's own reader
+	// would raise a diagnostic on. Raised while writing, not parsing, so it
+	// carries no offset.
+	DiagnosticInvalidValue DiagnosticKind = "invalid_value"
 )
 
-// Diagnostic describes an anomaly found while parsing that the reader recovered
-// from by keeping what it had already parsed and stopping there. Set
-// ReadOptions.OnDiagnostic to observe them.
+// raisedWhileWriting reports whether k comes from the writer rather than the
+// parser. A write diagnostic has no source offset -- nothing was read, and the
+// output position is not something the caller can act on -- so the offset is
+// left out of its message and its log line. Extend this alongside any further
+// write-side kind.
+func (k DiagnosticKind) raisedWhileWriting() bool {
+	return k == DiagnosticInvalidValue
+}
+
+// Diagnostic describes an anomaly godicom recovered from rather than failed on:
+// while parsing, by keeping what it had already read and stopping there; while
+// writing, by encoding the value as it stands. Set ReadOptions.OnDiagnostic or
+// WriteOptions.OnDiagnostic to observe them.
 //
 // Diagnostic implements error, so returning the diagnostic itself from the hook
-// turns any anomaly into a read failure:
+// turns any anomaly into a failure:
 //
 //	opts := &ReadOptions{OnDiagnostic: func(d Diagnostic) error { return d }}
 type Diagnostic struct {
@@ -48,7 +65,8 @@ type Diagnostic struct {
 
 	// Offset is the byte offset, in the dataset being parsed, where the
 	// anomaly starts. For a Deflated transfer syntax this is an offset into
-	// the inflated bytes, not the file.
+	// the inflated bytes, not the file. It is zero for a diagnostic raised
+	// while writing, which has no source to point into.
 	Offset int64
 
 	// Path holds the tags of the enclosing sequences, outermost first. It is
@@ -75,7 +93,9 @@ func (d Diagnostic) Error() string {
 			fmt.Fprintf(&b, " %s", d.VR)
 		}
 	}
-	fmt.Fprintf(&b, " (offset %d/%s)", d.Offset, offsetHex(d.Offset))
+	if !d.Kind.raisedWhileWriting() {
+		fmt.Fprintf(&b, " (offset %d/%s)", d.Offset, offsetHex(d.Offset))
+	}
 	if len(d.Path) > 0 {
 		parts := make([]string, len(d.Path))
 		for i, t := range d.Path {
@@ -162,4 +182,44 @@ func (rc *readContext) setBase(base int64) func() {
 	prev := rc.baseOffset
 	rc.baseOffset = base
 	return func() { rc.baseOffset = prev }
+}
+
+// report is writeState's counterpart to readContext.report: it logs d and offers
+// it to the OnDiagnostic hook, returning whatever the hook returns. A nil return
+// means "write the value as it stands", which is also the behaviour when no hook
+// is set, so nothing an existing caller writes changes. A non-nil return aborts
+// the write, so every caller propagates it.
+func (st *writeState) report(d Diagnostic) error {
+	if st == nil {
+		return nil
+	}
+	if len(st.seqPath) > 0 {
+		d.Path = append([]Tag(nil), st.seqPath...)
+	}
+	logDiagnostic(st.logCtx(), d)
+	if st.onDiag == nil {
+		return nil
+	}
+	return st.onDiag(d)
+}
+
+// pushSeq records that writing has descended into sequence tag t, so diagnostics
+// raised inside it carry the enclosing path.
+func (st *writeState) pushSeq(t Tag) {
+	if st != nil {
+		st.seqPath = append(st.seqPath, t)
+	}
+}
+
+func (st *writeState) popSeq() {
+	if st != nil && len(st.seqPath) > 0 {
+		st.seqPath = st.seqPath[:len(st.seqPath)-1]
+	}
+}
+
+func (st *writeState) logCtx() context.Context {
+	if st != nil && st.ctx != nil {
+		return st.ctx
+	}
+	return context.Background()
 }

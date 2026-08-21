@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/godicom-dev/godicom/uid"
@@ -19,6 +20,12 @@ type writeState struct {
 	sqDepth           int
 	visitingSequences map[*Sequence]struct{}
 	ctx               context.Context
+
+	// onDiag and seqPath are the write side of readContext's diagnostic
+	// bookkeeping: the hook to offer a rejected value to, and the sequences
+	// enclosing whatever is being written, so a Diagnostic can name its Path.
+	onDiag  func(Diagnostic) error
+	seqPath []Tag
 }
 
 func newWriteState() *writeState {
@@ -40,6 +47,23 @@ type WriteOptions struct {
 	// Logger overrides the call-scoped slog logger for this write.
 	// When nil, LoggerFromContext / DefaultLogger is used.
 	Logger *slog.Logger
+	// OnDiagnostic observes values the writer would otherwise encode silently
+	// even though godicom's own reader would raise a diagnostic on the result --
+	// a fractional float in an IS, a DS longer than the 16 bytes PS3.5 allows.
+	// Returning nil keeps the old behaviour (write the value as it stands);
+	// returning a non-nil error fails the write with it, so
+	//
+	//	OnDiagnostic: func(d Diagnostic) error { return d }
+	//
+	// refuses to produce a file a strict receiver would reject. It mirrors
+	// ReadOptions.OnDiagnostic and receives the same Diagnostic type, with Kind
+	// DiagnosticInvalidValue and no Offset -- nothing has been read.
+	//
+	// Values written straight from the bytes they were read as are not offered:
+	// re-encoding is skipped for them, and the read that produced them already
+	// had its own chance to report. Only write paths that take a *WriteOptions
+	// can carry a hook, so EncodeDataset and WriteDataset never call one.
+	OnDiagnostic func(Diagnostic) error
 }
 
 type writeSource struct {
@@ -188,11 +212,17 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	cc := codecContext{EncodingInfo: enc}
 	reencode := encodingChanged(source.dataset, enc)
 
+	// The write state, not codecContext, carries the diagnostic hook: it is not
+	// encoding state, and writeState already exists to hold what spans one write
+	// the way readContext does for one parse.
+	st := newWriteStateCtx(ctx)
+	st.onDiag = opts.OnDiagnostic
+
 	if tsUID.IsDeflated() {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
 		dsWriter.SetByteOrder(enc.IsLittleEndian)
-		if err := writeDataset(ctx, dsWriter, source.dataset, cc, reencode); err != nil {
+		if err := writeDatasetState(dsWriter, source.dataset, cc, reencode, st); err != nil {
 			return fmt.Errorf("godicom: error writing dataset: %w", err)
 		}
 		var deflated bytes.Buffer
@@ -216,7 +246,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 		return nil
 	}
 
-	if err := writeDataset(ctx, fp, source.dataset, cc, reencode); err != nil {
+	if err := writeDatasetState(fp, source.dataset, cc, reencode, st); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
@@ -377,6 +407,9 @@ func charsetChanged(ds *Dataset) bool {
 	return false
 }
 
+// writeDataset writes ds with a fresh write state, and so with no diagnostic
+// hook. Callers that have a *WriteOptions build the state themselves and use
+// writeDatasetState, so their hook survives the recursion into sequence items.
 func writeDataset(ctx context.Context, fp *dicomIO, ds *Dataset, cc codecContext, reencodeValues bool) error {
 	return writeDatasetState(fp, ds, cc, reencodeValues, newWriteStateCtx(ctx))
 }
@@ -561,7 +594,10 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 				var itemBuf bytes.Buffer
 				itemFp := newDicomWriter(&itemBuf)
 				itemFp.SetByteOrder(cc.IsLittleEndian)
-				if err := writeDatasetState(itemFp, item, cc, reencodeValues, st); err != nil {
+				st.pushSeq(elem.Tag)
+				err := writeDatasetState(itemFp, item, cc, reencodeValues, st)
+				st.popSeq()
+				if err != nil {
 					return err
 				}
 				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
@@ -580,7 +616,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 	}
 
 	// Get encoded value (nil for SQ)
-	encoded, err := encodeValue(elem, cc)
+	encoded, err := encodeValue(elem, cc, st)
 	if err != nil {
 		return err
 	}
@@ -648,7 +684,10 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
 					itemFp.SetByteOrder(cc.IsLittleEndian)
-					if err := writeDatasetState(itemFp, item, cc, reencodeValues, st); err != nil {
+					st.pushSeq(elem.Tag)
+					err := writeDatasetState(itemFp, item, cc, reencodeValues, st)
+					st.popSeq()
+					if err != nil {
 						return err
 					}
 					if err := fp.WriteTag(ItemTag); err != nil {
@@ -706,8 +745,9 @@ func padToEven(vr VR, encoded []byte) []byte {
 // encodeValue renders elem's value to its on-the-wire bytes. It returns an error
 // only when the value cannot be represented in elem's VR at all -- a non-finite
 // float in a DS, say -- rather than letting a value godicom's own validators
-// reject reach the file.
-func encodeValue(elem *DataElement, cc codecContext) ([]byte, error) {
+// reject reach the file. A value that is merely misspelled for its VR goes to
+// st's diagnostic hook instead, which decides whether to write it or fail.
+func encodeValue(elem *DataElement, cc codecContext, st *writeState) ([]byte, error) {
 	if elem.Value == nil {
 		return nil, nil
 	}
@@ -716,10 +756,15 @@ func encodeValue(elem *DataElement, cc codecContext) ([]byte, error) {
 	switch elem.VR {
 	case VRAE, VRAS, VRCS, VRDA, VRDT, VRLO, VRLT, VRSH, VRST, VRTM, VRUC, VRUR, VRUT:
 		return encodeStringWithCharsets(elem, cc.Charsets), nil
-	case VRDS:
-		return encodeNumberString(elem)
-	case VRIS:
-		return encodeNumberString(elem)
+	case VRDS, VRIS:
+		encoded, err := encodeNumberString(elem)
+		if err != nil {
+			return nil, err
+		}
+		if err := reportInvalidNumberString(elem, encoded, st); err != nil {
+			return nil, err
+		}
+		return encoded, nil
 	case VRUI:
 		return encodeStringWithCharsets(elem, cc.Charsets), nil
 	case VRPN:
@@ -937,8 +982,10 @@ func encodeNumberString(elem *DataElement) ([]byte, error) {
 // caller asked for does not exist.
 //
 // Only VRDS gets the DS length and precision rules. A fractional float in an IS
-// is also invalid, but whether to refuse it or round it is an API question, so
-// that case keeps its old formatting until it is settled; see #51.
+// is invalid too, but it has no correct spelling to fall back on -- rounding it
+// would silently change the value -- so it keeps its %g form and is reported to
+// WriteOptions.OnDiagnostic, which is where the caller decides between writing
+// it and failing. See reportInvalidNumberString.
 func formatDecimalString(vr VR, val float64) (string, error) {
 	if math.IsNaN(val) || math.IsInf(val, 0) {
 		return "", fmt.Errorf("%g has no valid %s representation", val, vr)
@@ -947,6 +994,78 @@ func formatDecimalString(vr VR, val float64) (string, error) {
 		return fmt.Sprintf("%g", val), nil
 	}
 	return FormatNumberAsDS(val)
+}
+
+// reportInvalidNumberString offers every part of an encoded DS or IS value that
+// godicom's own reader would raise a diagnostic on to the write-side hook.
+//
+// The writer used to hand these to the file with nothing said. A float64 of 1.5
+// in an IS was formatted "1.5", which no IS parser accepts. A DS handed in as an
+// 18-character string went out at 18 characters, over the 16 PS3.5 allows. An
+// int of 3000000000 in an IS is spelled correctly but outside the range PS3.5
+// gives the VR.
+//
+// The value is still written when the hook returns nil, or when there is no hook
+// at all, which is what every existing caller gets: a caller round-tripping a
+// file it did not create should not be forced to repair values it never chose.
+// Returning the diagnostic makes it a write failure instead. This is the same
+// three-way choice pydicom spells IGNORE / WARN / RAISE in
+// config.settings.writing_validation_mode, without a mode enum: the hook's
+// presence and its return value say which one the caller wants.
+//
+// The parts are split on the value multiplicity backslash, which neither a DS
+// nor an IS may contain, and each is checked on its own -- the joined string
+// would fail every check for the separator alone. An empty part is not reported:
+// PS3.5 allows an absent value in a multi-valued element, and pydicom's
+// validators skip it too.
+func reportInvalidNumberString(elem *DataElement, encoded []byte, st *writeState) error {
+	if len(encoded) == 0 || (elem.VR != VRDS && elem.VR != VRIS) {
+		return nil
+	}
+	for _, part := range strings.Split(string(encoded), "\\") {
+		reason := numberStringReason(elem.VR, part)
+		if reason == nil {
+			continue
+		}
+		if err := st.report(Diagnostic{
+			Kind: DiagnosticInvalidValue,
+			Tag:  elem.Tag,
+			VR:   elem.VR,
+			Err:  reason,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// numberStringReason returns why part is not a valid value for a DS or IS
+// element, or nil when it is one. The checks are the ones godicom already
+// applies when reading: IsValidDS and IsValidIS for length and spelling, plus
+// ISInRange for the range PS3.5 gives an IS but its spelling does not.
+func numberStringReason(vr VR, part string) error {
+	if part == "" {
+		return nil
+	}
+	if vr == VRDS {
+		if IsValidDS(part) {
+			return nil
+		}
+		if len(part) > maxDSLength {
+			return fmt.Errorf("%q is %d bytes, over the %d a DS allows", part, len(part), maxDSLength)
+		}
+		return fmt.Errorf("%q is not a decimal string", part)
+	}
+	if !IsValidIS(part) {
+		if len(part) > maxISLength {
+			return fmt.Errorf("%q is %d bytes, over the %d an IS allows", part, len(part), maxISLength)
+		}
+		return fmt.Errorf("%q is not an integer string", part)
+	}
+	if n, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64); err == nil && !ISInRange(n) {
+		return fmt.Errorf("%q is outside [%d, %d], the range an IS allows", part, minISValue, maxISValue)
+	}
+	return nil
 }
 
 func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {
