@@ -93,7 +93,10 @@ func TestDecodeElementHeader(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h, need, ok := decodeElementHeader(tc.data, 0, tc.tag, tc.implicitVR, !tc.bigEndian, nil)
+			h, need, ok := decodeElementHeader(tc.data, 0, tc.tag, EncodingInfo{
+				IsImplicitVR:   tc.implicitVR,
+				IsLittleEndian: !tc.bigEndian,
+			}, nil)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -123,7 +126,9 @@ func TestDecodeElementHeader_PrivateVRNeedsTheCreator(t *testing.T) {
 	tag := MustTag(0x00191015)
 	data := []byte{0x19, 0x00, 0x15, 0x10, 4, 0, 0, 0}
 
-	h, _, ok := decodeElementHeader(data, 0, tag, true, true, nil)
+	implicitLE := EncodingInfo{IsImplicitVR: true, IsLittleEndian: true}
+
+	h, _, ok := decodeElementHeader(data, 0, tag, implicitLE, nil)
 	if !ok {
 		t.Fatal("decode failed")
 	}
@@ -131,7 +136,7 @@ func TestDecodeElementHeader_PrivateVRNeedsTheCreator(t *testing.T) {
 		t.Errorf("without a creator VR = %s, want UN", h.VR)
 	}
 
-	h, _, ok = decodeElementHeader(data, 0, tag, true, true, func(Tag) string { return "Canon Inc." })
+	h, _, ok = decodeElementHeader(data, 0, tag, implicitLE, func(Tag) string { return "Canon Inc." })
 	if !ok {
 		t.Fatal("decode failed")
 	}
