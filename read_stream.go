@@ -241,7 +241,6 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		}
 
 		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
-			pos += 8
 			break
 		}
 
