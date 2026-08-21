@@ -337,7 +337,7 @@ func TestWriteCharsetRoundtrip(t *testing.T) {
 
 	readDS := NewDataset()
 	ctx := &readContext{data: buf.Bytes()}
-	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, false, true, []string{DefaultCharacterSet}, nil, ctx); err != nil {
+	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}, Charsets: []string{DefaultCharacterSet}}, nil, ctx); err != nil {
 		t.Fatal(err)
 	}
 	elem, ok := readDS.Get(MustTag(0x00100010))
@@ -370,7 +370,7 @@ func TestSequenceCharsetInheritance(t *testing.T) {
 
 	readDS := NewDataset()
 	ctx := &readContext{data: buf.Bytes()}
-	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, false, true, []string{DefaultCharacterSet}, nil, ctx); err != nil {
+	if _, err := readDatasetElements(buf.Bytes(), 0, int64(buf.Len()), readDS, codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}, Charsets: []string{DefaultCharacterSet}}, nil, ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -408,7 +408,7 @@ func TestReadWithSpecificCharacterSet(t *testing.T) {
 	}
 	ds := NewDataset()
 	ctx := &readContext{data: data}
-	_, err := readDatasetElements(data, 0, int64(len(data)), ds, false, true, []string{DefaultCharacterSet}, nil, ctx)
+	_, err := readDatasetElements(data, 0, int64(len(data)), ds, codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}, Charsets: []string{DefaultCharacterSet}}, nil, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -158,22 +158,21 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	} else {
 		logDebug(ctx, "reading without DICM prefix", AttrPath, filename)
 	}
-	isLittleEndian := true
-	isImplicit := false
+	cc := codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}}
 	inFileMeta := true
 
 	if pos+6 <= int64(len(data)) {
-		isImplicit = !hasExplicitVRAt(data, pos)
+		cc.IsImplicitVR = !hasExplicitVRAt(data, pos)
 	}
 
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
-	charsets := []string{DefaultCharacterSet}
+	cc.Charsets = []string{DefaultCharacterSet}
 	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx, onDiag: diagnosticHook(opts)}
 	creator := elementsCreator(&allElements)
 
 	for pos+4 <= int64(len(data)) {
-		currentTag := readTagBytes(data, pos, isLittleEndian)
+		currentTag := readTagBytes(data, pos, cc.IsLittleEndian)
 		if inFileMeta && currentTag.Group() != 0x0002 {
 			inFileMeta = false
 			if len(allElements) > 0 {
@@ -192,28 +191,27 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 					// live at that offset before decompression.
 					readCtx.data = data
 					pos = 0
-					isImplicit = false
-					isLittleEndian = true
-					currentTag = readTagBytes(data, pos, isLittleEndian)
+					cc.EncodingInfo = EncodingInfo{IsImplicitVR: false, IsLittleEndian: true}
+					currentTag = readTagBytes(data, pos, cc.IsLittleEndian)
 				} else {
-					isImplicit = ts.IsImplicitVR()
-					isLittleEndian = ts.IsLittleEndian()
-					currentTag = readTagBytes(data, pos, isLittleEndian)
+					cc.EncodingInfo = EncodingInfo{
+						IsImplicitVR:   ts.IsImplicitVR(),
+						IsLittleEndian: ts.IsLittleEndian(),
+					}
+					currentTag = readTagBytes(data, pos, cc.IsLittleEndian)
 				}
 			} else {
 				littleTag := readTagBytes(data, pos, true)
 				bigTag := readTagBytes(data, pos, false)
 				switch {
 				case hasExplicitVRAt(data, pos) && !dictionaryHasTag(littleTag) && dictionaryHasTag(bigTag):
-					isImplicit = false
-					isLittleEndian = false
+					cc.EncodingInfo = EncodingInfo{IsImplicitVR: false, IsLittleEndian: false}
 					currentTag = bigTag
 				case hasExplicitVRAt(data, pos):
-					isImplicit = false
+					cc.IsImplicitVR = false
 					currentTag = littleTag
 				default:
-					isImplicit = true
-					isLittleEndian = true
+					cc.EncodingInfo = EncodingInfo{IsImplicitVR: true, IsLittleEndian: true}
 					currentTag = littleTag
 				}
 			}
@@ -227,7 +225,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 
-		h, need, ok := decodeElementHeader(data, pos, currentTag, isImplicit, isLittleEndian, creator)
+		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, creator)
 		if !ok {
 			if err := readCtx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
 				return nil, err
@@ -259,7 +257,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				logDebug(ctx, "Reading/parsing undefined length sequence",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				readCtx.pushSeq(currentTag)
-				seq, newPos, err := readSequenceItems(data, valueStart, isImplicit, isLittleEndian, charsets, opts, readCtx)
+				seq, newPos, err := readSequenceItems(data, valueStart, cc, opts, readCtx)
 				readCtx.popSeq()
 				elem.Value = seq
 				pos = newPos
@@ -269,18 +267,18 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			} else {
 				logDebug(ctx, "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
-				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
+				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, cc.IsLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
 						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
 							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
-						markElementDeferred(elem, valueStart, len(encapsulated), isImplicit, isLittleEndian, charsets)
+						markElementDeferred(elem, valueStart, len(encapsulated), cc)
 					} else {
 						logElementValue(ctx, valueStart, encapsulated)
-						assignElementBytes(elem, encapsulated, vr, isImplicit, isLittleEndian, charsets)
+						assignElementBytes(elem, encapsulated, vr, cc)
 					}
 					pos = endPos
 				} else {
-					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, cc.IsLittleEndian)
 					logElementValue(ctx, valueStart, raw)
 					elem.RawValue = raw
 					pos = newPos
@@ -298,9 +296,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				data,
 				pos+int64(hdrSize),
 				length,
-				isImplicit,
-				isLittleEndian,
-				charsets,
+				cc,
 				opts,
 				readCtx,
 			)
@@ -329,10 +325,10 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
 			logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
 				AttrTag, currentTag.String(), AttrLen, length)
-			markElementDeferred(elem, valueTell, length, isImplicit, isLittleEndian, charsets)
+			markElementDeferred(elem, valueTell, length, cc)
 		} else {
 			logElementValue(ctx, valueTell, value)
-			assignElementBytes(elem, value, vr, isImplicit, isLittleEndian, charsets)
+			assignElementBytes(elem, value, vr, cc)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -341,7 +337,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		pos += int64(hdrSize + length)
 
 		if currentTag == TagCharset {
-			charsets = ParseCharacterSets(elem.Value)
+			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 		}
 	}
 
@@ -364,10 +360,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			IsLittleEndian: ts.IsLittleEndian(),
 		}
 	} else {
-		ds.originalEnc = EncodingInfo{
-			IsImplicitVR:   isImplicit,
-			IsLittleEndian: isLittleEndian,
-		}
+		ds.originalEnc = cc.EncodingInfo
 	}
 	propagateEncoding(ds, ds.originalEnc)
 	captureOriginalCharsets(ds)
@@ -461,21 +454,19 @@ func determineTransferSyntax(fileMeta *FileMetaDataset) UID {
 // Delimiter or the first non-Item tag. An error means a diagnostic hook rejected
 // something inside the sequence and the whole parse is being abandoned; the
 // partial sequence is still returned so callers need not special-case it.
-func readSequenceItems(data []byte, offset int64, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
-	seq, newPos, err := readSequenceItemsUntil(data, offset, int64(len(data)), true, isImplicitVR, isLittleEndian, charsets, opts, ctx)
+func readSequenceItems(data []byte, offset int64, cc codecContext, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
+	seq, newPos, err := readSequenceItemsUntil(data, offset, int64(len(data)), true, cc, opts, ctx)
 	seq.IsUndefinedLength = true
 	return seq, newPos, err
 }
 
-func readDefinedLengthSequence(data []byte, offset int64, length int, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
+func readDefinedLengthSequence(data []byte, offset int64, length int, cc codecContext, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
 	return readSequenceItemsUntil(
 		data,
 		offset,
 		offset+int64(length),
 		false,
-		isImplicitVR,
-		isLittleEndian,
-		charsets,
+		cc,
 		opts,
 		ctx,
 	)
@@ -486,9 +477,7 @@ func readSequenceItemsUntil(
 	offset int64,
 	end int64,
 	undefinedLength bool,
-	isImplicitVR bool,
-	isLittleEndian bool,
-	charsets []string,
+	cc codecContext,
 	opts *ReadOptions,
 	ctx *readContext,
 ) (*Sequence, int64, error) {
@@ -497,7 +486,7 @@ func readSequenceItemsUntil(
 	pos := offset
 
 	for pos+8 <= end && pos+4 <= int64(len(data)) {
-		currentTag := readTagBytes(data, pos, isLittleEndian)
+		currentTag := readTagBytes(data, pos, cc.IsLittleEndian)
 
 		if currentTag == SequenceDelimiterTag {
 			logDebug(ctx.logCtx(), "End of Sequence", AttrOffset, pos, AttrOffsetHex, offsetHex(pos))
@@ -523,7 +512,7 @@ func readSequenceItemsUntil(
 		}
 
 		var itemLength int
-		if isLittleEndian {
+		if cc.IsLittleEndian {
 			itemLength = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
 		} else {
 			itemLength = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
@@ -545,14 +534,14 @@ func readSequenceItemsUntil(
 		if itemLength == 0xFFFFFFFF {
 			item.IsUndefinedLengthSequenceItem = true
 			var err error
-			pos, err = readDatasetElements(data, pos, int64(len(data)), item, isImplicitVR, isLittleEndian, charsets, opts, ctx)
+			pos, err = readDatasetElements(data, pos, int64(len(data)), item, cc, opts, ctx)
 			if err != nil {
 				return seq, pos, err
 			}
 		} else if itemLength > 0 {
 			itemEnd := pos + int64(itemLength)
 			var err error
-			pos, err = readDatasetElements(data, pos, itemEnd, item, isImplicitVR, isLittleEndian, charsets, opts, ctx)
+			pos, err = readDatasetElements(data, pos, itemEnd, item, cc, opts, ctx)
 			if err != nil {
 				return seq, pos, err
 			}
@@ -570,16 +559,16 @@ func readSequenceItemsUntil(
 	return seq, pos, nil
 }
 
-func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isImplicitVR, isLittleEndian bool, charsets []string, opts *ReadOptions, ctx *readContext) (int64, error) {
+func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc codecContext, opts *ReadOptions, ctx *readContext) (int64, error) {
 	ds.readCtx = ctx
-	if len(charsets) == 0 {
-		charsets = []string{DefaultCharacterSet}
+	if len(cc.Charsets) == 0 {
+		cc.Charsets = []string{DefaultCharacterSet}
 	}
 	pos := offset
 	creator := datasetCreator(ds)
 
 	for pos+4 <= end && pos+4 <= int64(len(data)) {
-		currentTag := readTagBytes(data, pos, isLittleEndian)
+		currentTag := readTagBytes(data, pos, cc.IsLittleEndian)
 
 		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
 			return pos + 8, nil
@@ -589,7 +578,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			return pos, nil
 		}
 
-		h, need, ok := decodeElementHeader(data, pos, currentTag, isImplicitVR, isLittleEndian, creator)
+		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, creator)
 		if !ok {
 			if err := ctx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
 				return pos, err
@@ -621,7 +610,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				logDebug(ctx.logCtx(), "Reading/parsing undefined length sequence",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				ctx.pushSeq(currentTag)
-				seq, newPos, err := readSequenceItems(data, valueStart, isImplicitVR, isLittleEndian, charsets, opts, ctx)
+				seq, newPos, err := readSequenceItems(data, valueStart, cc, opts, ctx)
 				ctx.popSeq()
 				elem.Value = seq
 				pos = newPos
@@ -631,18 +620,18 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 			} else {
 				logDebug(ctx.logCtx(), "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
-				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, isLittleEndian); ok {
+				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, cc.IsLittleEndian); ok {
 					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
 						logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
 							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
-						markElementDeferred(elem, valueStart, len(encapsulated), isImplicitVR, isLittleEndian, charsets)
+						markElementDeferred(elem, valueStart, len(encapsulated), cc)
 					} else {
 						logElementValue(ctx.logCtx(), valueStart, encapsulated)
-						assignElementBytes(elem, encapsulated, vr, isImplicitVR, isLittleEndian, charsets)
+						assignElementBytes(elem, encapsulated, vr, cc)
 					}
 					pos = endPos
 				} else {
-					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, isLittleEndian)
+					raw, newPos := readBytesUntilDelimiter(data, valueStart, SequenceDelimiterTag, cc.IsLittleEndian)
 					logElementValue(ctx.logCtx(), valueStart, raw)
 					elem.RawValue = raw
 					pos = newPos
@@ -660,9 +649,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 				data,
 				pos+int64(hdrSize),
 				length,
-				isImplicitVR,
-				isLittleEndian,
-				charsets,
+				cc,
 				opts,
 				ctx,
 			)
@@ -691,10 +678,10 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
 			logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
 				AttrTag, currentTag.String(), AttrLen, length)
-			markElementDeferred(elem, valueTell, length, isImplicitVR, isLittleEndian, charsets)
+			markElementDeferred(elem, valueTell, length, cc)
 		} else {
 			logElementValue(ctx.logCtx(), valueTell, value)
-			assignElementBytes(elem, value, vr, isImplicitVR, isLittleEndian, charsets)
+			assignElementBytes(elem, value, vr, cc)
 		}
 
 		if shouldKeepElement(opts, elem.Tag) {
@@ -703,7 +690,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, isIm
 		pos += int64(hdrSize + length)
 
 		if currentTag == TagCharset {
-			charsets = ParseCharacterSets(elem.Value)
+			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 		}
 	}
 
@@ -773,19 +760,19 @@ func cloneElementBytes(value []byte) []byte {
 	return append([]byte(nil), value...)
 }
 
-func assignElementBytes(elem *DataElement, value []byte, vr VR, isImplicit, isLittleEndian bool, charsets []string) {
+func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext) {
 	elem.RawValue = cloneElementBytes(value)
 	var decodeCharsets []string
 	if vrUsesCharacterSet(vr) {
-		decodeCharsets = charsets
+		decodeCharsets = cc.Charsets
 	}
 	raw := &RawDataElement{
 		Tag:            elem.Tag,
 		VR:             vr,
 		Length:         uint32(len(value)),
 		Value:          value,
-		IsImplicitVR:   isImplicit,
-		IsLittleEndian: isLittleEndian,
+		IsImplicitVR:   cc.IsImplicitVR,
+		IsLittleEndian: cc.IsLittleEndian,
 		IsRaw:          true,
 	}
 	converted, err := convertValueWithCharsets(raw, decodeCharsets)

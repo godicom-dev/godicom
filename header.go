@@ -26,6 +26,9 @@ type creatorFunc func(Tag) string
 // Both cases fall back to the data dictionary, which for a private tag needs the
 // private creator -- hence creator, which may be nil.
 //
+// enc is the encoding pair rather than a codecContext: a header holds no text,
+// so no character set can change what it means.
+//
 // When the header runs past data, ok is false and need is how many bytes it
 // would have taken: 8, or 12 once the VR is known to use a 32-bit length.
 // Callers turn that into a DiagnosticTruncatedHeader.
@@ -33,17 +36,17 @@ func decodeElementHeader(
 	data []byte,
 	pos int64,
 	tag Tag,
-	implicitVR, littleEndian bool,
+	enc EncodingInfo,
 	creator creatorFunc,
 ) (h elementHeader, need int64, ok bool) {
 	if pos+8 > int64(len(data)) {
 		return elementHeader{}, 8, false
 	}
 
-	if implicitVR {
+	if enc.IsImplicitVR {
 		return elementHeader{
 			VR:     dictionaryVRForRead(tag, creator),
-			Length: uint32At(data, pos+4, littleEndian),
+			Length: uint32At(data, pos+4, enc.IsLittleEndian),
 			Size:   8,
 		}, 8, true
 	}
@@ -54,14 +57,14 @@ func decodeElementHeader(
 	if !isVRByte(vrBytes[0]) || !isVRByte(vrBytes[1]) {
 		return elementHeader{
 			VR:     dictionaryVRForRead(tag, creator),
-			Length: uint32At(data, pos+4, littleEndian),
+			Length: uint32At(data, pos+4, enc.IsLittleEndian),
 			Size:   8,
 		}, 8, true
 	}
 
 	if ExplicitVRLength16[vr] {
 		var length int
-		if littleEndian {
+		if enc.IsLittleEndian {
 			length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
 		} else {
 			length = int(binary.BigEndian.Uint16(data[pos+6 : pos+8]))
@@ -73,7 +76,7 @@ func decodeElementHeader(
 	if pos+12 > int64(len(data)) {
 		return elementHeader{}, 12, false
 	}
-	return elementHeader{VR: vr, Length: uint32At(data, pos+8, littleEndian), Size: 12}, 12, true
+	return elementHeader{VR: vr, Length: uint32At(data, pos+8, enc.IsLittleEndian), Size: 12}, 12, true
 }
 
 // isVRByte reports whether b is one of the two uppercase ASCII letters a valid

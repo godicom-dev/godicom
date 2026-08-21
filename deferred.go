@@ -31,15 +31,14 @@ func markElementDeferred(
 	elem *Element,
 	valueTell int64,
 	length int,
-	isImplicit, isLittleEndian bool,
-	charsets []string,
+	cc codecContext,
 ) {
 	elem.Deferred = true
 	elem.ValueTell = valueTell
 	elem.ValueLength = uint32(length)
-	elem.IsImplicitVR = isImplicit
-	elem.IsLittleEndian = isLittleEndian
-	elem.readCharsets = append([]string(nil), charsets...)
+	elem.IsImplicitVR = cc.IsImplicitVR
+	elem.IsLittleEndian = cc.IsLittleEndian
+	elem.readCharsets = append([]string(nil), cc.Charsets...)
 	elem.Value = nil
 	elem.RawValue = nil
 }
@@ -75,6 +74,17 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 		}
 	}
 
+	// The encoding a deferred element is reloaded under is the one it was first
+	// read under, which markElementDeferred stored on the element itself -- the
+	// enclosing parse is long over by now.
+	cc := codecContext{
+		EncodingInfo: EncodingInfo{
+			IsImplicitVR:   elem.IsImplicitVR,
+			IsLittleEndian: elem.IsLittleEndian,
+		},
+		Charsets: elem.readCharsets,
+	}
+
 	elementStart := elem.ValueTell - dataElementOffsetToValue(elem.IsImplicitVR, elem.VR)
 
 	data := ctx.data
@@ -97,7 +107,7 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 
 	// The private creator lives in the dataset, not necessarily in data: a
 	// deferred load may have re-read only the element's own bytes.
-	raw, err := readRawDataElementAt(data, elementStart, elem.IsImplicitVR, elem.IsLittleEndian, datasetCreator(ds))
+	raw, err := readRawDataElementAt(data, elementStart, cc.EncodingInfo, datasetCreator(ds))
 	if err != nil {
 		return err
 	}
@@ -108,7 +118,7 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 		return fmt.Errorf("godicom: deferred read VR %s does not match original %s", raw.VR, elem.VR)
 	}
 
-	assignElementBytes(elem, raw.Value, raw.VR, raw.IsImplicitVR, raw.IsLittleEndian, elem.readCharsets)
+	assignElementBytes(elem, raw.Value, raw.VR, cc)
 	elem.Deferred = false
 	elem.ValueLength = 0
 	elem.ValueTell = 0
@@ -123,11 +133,11 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 func readRawDataElementAt(
 	data []byte,
 	pos int64,
-	isImplicit, isLittleEndian bool,
+	enc EncodingInfo,
 	creator creatorFunc,
 ) (*RawDataElement, error) {
-	tag := readTagBytes(data, pos, isLittleEndian)
-	h, need, ok := decodeElementHeader(data, pos, tag, isImplicit, isLittleEndian, creator)
+	tag := readTagBytes(data, pos, enc.IsLittleEndian)
+	h, need, ok := decodeElementHeader(data, pos, tag, enc, creator)
 	if !ok {
 		return nil, fmt.Errorf("godicom: unexpected EOF reading deferred element header for %s: need %d bytes, have %d",
 			tag, need, int64(len(data))-pos)
@@ -153,8 +163,8 @@ func readRawDataElementAt(
 		Length:         uint32(h.Length),
 		Value:          value,
 		ValueTell:      valueTell,
-		IsImplicitVR:   isImplicit,
-		IsLittleEndian: isLittleEndian,
+		IsImplicitVR:   enc.IsImplicitVR,
+		IsLittleEndian: enc.IsLittleEndian,
 		IsRaw:          true,
 	}, nil
 }

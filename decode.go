@@ -55,11 +55,12 @@ func DecodeDatasetEncodingContext(ctx context.Context, data []byte, isImplicitVR
 	}
 	ds := NewDataset()
 	rc := &readContext{data: data, ctx: ctx}
-	_, err := readDatasetElements(data, 0, int64(len(data)), ds, isImplicitVR, isLittleEndian, nil, nil, rc)
+	enc := EncodingInfo{IsImplicitVR: isImplicitVR, IsLittleEndian: isLittleEndian}
+	_, err := readDatasetElements(data, 0, int64(len(data)), ds, codecContext{EncodingInfo: enc}, nil, rc)
 	if err != nil {
 		return nil, fmt.Errorf("godicom: error decoding dataset: %w", err)
 	}
-	ds.originalEnc = EncodingInfo{IsImplicitVR: isImplicitVR, IsLittleEndian: isLittleEndian}
+	ds.originalEnc = enc
 	propagateEncoding(ds, ds.originalEnc)
 	captureOriginalCharsets(ds)
 	return ds, nil
