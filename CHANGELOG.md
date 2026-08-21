@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `format_number_as_ds` use, so a value stored as a `float64` reaches the file
   identically to the same value stored as a `DS`. A `DS` parsed from a file
   still round-trips its original string byte for byte, over-long or not
+- `NaN` and the infinities were written into a `DS` as the literal bytes
+  `"NaN"` / `"+Inf"` / `"-Inf"` with no error reported anywhere, and godicom's
+  tolerant `ParseDS` read them back — a decimal string has no spelling for any
+  of them. `SetFloat` / `SetFloats` now reject them for a `DS` tag at the call
+  site, and the writer refuses them rather than emitting an invalid `DS` or
+  `IS`. `FD` and `FL` are unaffected: they represent all three exactly, per
+  IEEE 754
 
 ## [0.27.0] - 2026-08-20
 

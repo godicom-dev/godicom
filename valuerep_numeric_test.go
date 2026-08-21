@@ -1,6 +1,7 @@
 package godicom
 
 import (
+	"math"
 	"testing"
 )
 
@@ -62,10 +63,22 @@ func TestDSWriteRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := encodeNumberString(NewDataElement(MustTag("SliceThickness"), VRDS, val))
-	if string(out) != "2.260000" {
-		t.Fatalf("encoded = %q", string(out))
+	out := mustEncodeNumberString(t, NewDataElement(MustTag("SliceThickness"), VRDS, val))
+	if out != "2.260000" {
+		t.Fatalf("encoded = %q", out)
 	}
+}
+
+// mustEncodeNumberString is encodeNumberString for the values that must encode.
+// encodeNumberString only errors on a value its VR cannot represent at all; the
+// tests that exercise that path call it directly.
+func mustEncodeNumberString(t *testing.T, elem *DataElement) string {
+	t.Helper()
+	out, err := encodeNumberString(elem)
+	if err != nil {
+		t.Fatalf("encodeNumberString(%s %s): %v", elem.Tag, elem.VR, err)
+	}
+	return string(out)
 }
 
 // A DS element holding a plain float64 -- what SetFloat stores -- has to reach
@@ -92,7 +105,7 @@ func TestDSFloatWriteObeysDSLength(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			got := string(encodeNumberString(NewDataElement(MustTag("SliceThickness"), VRDS, c.val)))
+			got := mustEncodeNumberString(t, NewDataElement(MustTag("SliceThickness"), VRDS, c.val))
 			if got != c.want {
 				t.Errorf("encoded %v as %q, want %q", c.val, got, c.want)
 			}
@@ -180,7 +193,7 @@ func TestDSFromFileKeepsOverlongOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := string(encodeNumberString(NewDataElement(MustTag("SliceThickness"), VRDS, val)))
+	got := mustEncodeNumberString(t, NewDataElement(MustTag("SliceThickness"), VRDS, val))
 	if got != overlong {
 		t.Errorf("rewrote a parsed DS as %q, want the original %q", got, overlong)
 	}
@@ -191,11 +204,99 @@ func TestDSFromFileKeepsOverlongOriginal(t *testing.T) {
 // did not leak across VRs.
 func TestISFloatFormattingUnchanged(t *testing.T) {
 	t.Parallel()
-	got := string(encodeNumberString(NewDataElement(MustTag("EchoNumbers"), VRIS, 1.5)))
+	got := mustEncodeNumberString(t, NewDataElement(MustTag("EchoNumbers"), VRIS, 1.5))
 	if got != "1.5" {
 		t.Errorf("IS float encoded as %q, want %q", got, "1.5")
 	}
 	if err := NewDataset().SetFloat(MustTag("EchoNumbers"), 1.5); err == nil {
 		t.Error("SetFloat on an IS tag should be rejected by the dictionary VR check")
+	}
+}
+
+// A decimal string has no spelling for NaN or an infinity, but DS is a float VR,
+// so the setters used to admit them and the writer used to render them with %g:
+// SetFloat(SliceThickness, math.NaN()) wrote the literal bytes "NaN" into a DS
+// field with no error anywhere, and godicom's tolerant ParseDS read them back.
+// Every path that can put one in a DS now refuses it.
+func TestDSRejectsNonFiniteFloat(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		val  float64
+	}{
+		{"NaN", math.NaN()},
+		{"+Inf", math.Inf(1)},
+		{"-Inf", math.Inf(-1)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			// The setter, single and multi-valued, fails at the call site.
+			if err := NewDataset().SetFloat(MustTag("SliceThickness"), c.val); err == nil {
+				t.Errorf("SetFloat accepted %v for a DS tag", c.val)
+			}
+			if err := NewDataset().SetFloats(MustTag("PixelSpacing"), 1.0, c.val); err == nil {
+				t.Errorf("SetFloats accepted %v for a DS tag", c.val)
+			}
+			// The raw Set path bypasses the setters, so the writer refuses too
+			// rather than emitting an invalid DS.
+			ds := NewDataset()
+			ds.Set(NewDataElement(MustTag("SliceThickness"), VRDS, c.val))
+			if _, err := EncodeDataset(ds, ExplicitVRLittleEndian); err == nil {
+				t.Errorf("EncodeDataset wrote %v into a DS", c.val)
+			}
+			// Same for a multi-value carrying one bad entry.
+			ds2 := NewDataset()
+			ds2.Set(NewDataElement(MustTag("PixelSpacing"), VRDS, NewMultiValue([]float64{1.0, c.val})))
+			if _, err := EncodeDataset(ds2, ExplicitVRLittleEndian); err == nil {
+				t.Errorf("EncodeDataset wrote a DS multi-value containing %v", c.val)
+			}
+			// IS shares encodeNumberString and is just as unable to spell these.
+			// A fractional float in an IS still encodes as before -- whether to
+			// refuse or round that is an open API question -- but a non-finite
+			// one has no integer string at all, so it is refused here too.
+			ds3 := NewDataset()
+			ds3.Set(NewDataElement(MustTag("EchoNumbers"), VRIS, c.val))
+			if _, err := EncodeDataset(ds3, ExplicitVRLittleEndian); err == nil {
+				t.Errorf("EncodeDataset wrote %v into an IS", c.val)
+			}
+		})
+	}
+}
+
+// FD and FL are float VRs too, and unlike DS they represent NaN and the
+// infinities exactly, per IEEE 754. The DS rejection above must not reach them.
+func TestBinaryFloatVRsKeepNonFinite(t *testing.T) {
+	t.Parallel()
+	for _, kw := range []string{"DiffusionBValue", "SelectorFLValue"} {
+		t.Run(kw, func(t *testing.T) {
+			t.Parallel()
+			tg, err := TagFromKeyword(kw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds := NewDataset()
+			if err := ds.SetFloat(tg, math.Inf(1)); err != nil {
+				t.Fatalf("SetFloat(+Inf) on %s: %v", kw, err)
+			}
+			data, err := EncodeDataset(ds, ExplicitVRLittleEndian)
+			if err != nil {
+				t.Fatalf("EncodeDataset: %v", err)
+			}
+			back, err := DecodeDataset(data, ExplicitVRLittleEndian)
+			if err != nil {
+				t.Fatalf("DecodeDataset: %v", err)
+			}
+			elem, ok := back.Get(tg)
+			if !ok {
+				t.Fatalf("%s absent after round trip", kw)
+			}
+			f, ok := elem.Value.(float64)
+			if !ok {
+				t.Fatalf("%s came back as %T", kw, elem.Value)
+			}
+			if !math.IsInf(f, 1) {
+				t.Errorf("%s came back as %v, want +Inf", kw, f)
+			}
+		})
 	}
 }
