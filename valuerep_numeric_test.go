@@ -201,7 +201,8 @@ func TestDSFromFileKeepsOverlongOriginal(t *testing.T) {
 
 // IS is the other VR encodeNumberString serves, and it has its own rules. The
 // setters reject a float for an IS tag, so this only guards that the DS change
-// did not leak across VRs.
+// did not leak across VRs: the bytes an IS float produces are unchanged, and
+// WriteOptions.OnDiagnostic is what reports them (TestWriteReportsFractionalIS).
 func TestISFloatFormattingUnchanged(t *testing.T) {
 	t.Parallel()
 	got := mustEncodeNumberString(t, NewDataElement(MustTag("EchoNumbers"), VRIS, 1.5))
@@ -251,9 +252,11 @@ func TestDSRejectsNonFiniteFloat(t *testing.T) {
 				t.Errorf("EncodeDataset wrote a DS multi-value containing %v", c.val)
 			}
 			// IS shares encodeNumberString and is just as unable to spell these.
-			// A fractional float in an IS still encodes as before -- whether to
-			// refuse or round that is an open API question -- but a non-finite
-			// one has no integer string at all, so it is refused here too.
+			// A fractional float in an IS still encodes as before, because it has
+			// no correct integer spelling to fall back on and rounding would
+			// change the value; it is reported to WriteOptions.OnDiagnostic
+			// instead (TestWriteReportsFractionalIS). A non-finite one has no
+			// spelling at all, so it is refused outright here.
 			ds3 := NewDataset()
 			ds3.Set(NewDataElement(MustTag("EchoNumbers"), VRIS, c.val))
 			if _, err := EncodeDataset(ds3, ExplicitVRLittleEndian); err == nil {

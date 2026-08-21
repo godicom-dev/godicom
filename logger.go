@@ -121,9 +121,10 @@ func offsetHex(off int64) string {
 	return fmt.Sprintf("%08x", uint64(off))
 }
 
-// logDiagnostic records a parse anomaly. Diagnostics are recovered from, so they
-// are logged at warn level rather than returned as errors; ReadOptions.OnDiagnostic
-// is what turns one into a read failure.
+// logDiagnostic records an anomaly godicom recovered from. Diagnostics are
+// recovered from, so they are logged at warn level rather than returned as
+// errors; ReadOptions.OnDiagnostic / WriteOptions.OnDiagnostic is what turns one
+// into a failure.
 func logDiagnostic(ctx context.Context, d Diagnostic) {
 	l := LoggerFromContext(ctx)
 	if !l.Enabled(ctx, slog.LevelWarn) {
@@ -131,8 +132,9 @@ func logDiagnostic(ctx context.Context, d Diagnostic) {
 	}
 	args := []any{
 		AttrKind, string(d.Kind),
-		AttrOffset, d.Offset,
-		AttrOffsetHex, offsetHex(d.Offset),
+	}
+	if !d.Kind.raisedWhileWriting() {
+		args = append(args, AttrOffset, d.Offset, AttrOffsetHex, offsetHex(d.Offset))
 	}
 	if d.Tag != 0 {
 		args = append(args, AttrTag, d.Tag.String())
@@ -153,7 +155,11 @@ func logDiagnostic(ctx context.Context, d Diagnostic) {
 	if d.Err != nil {
 		args = append(args, AttrError, d.Err.Error())
 	}
-	l.WarnContext(ctx, "parse diagnostic", args...)
+	msg := "parse diagnostic"
+	if d.Kind.raisedWhileWriting() {
+		msg = "write diagnostic"
+	}
+	l.WarnContext(ctx, msg, args...)
 }
 
 func bytesHex(b []byte) string {
