@@ -127,7 +127,7 @@ func encodeElementImplicitLittle(elem *DataElement) []byte {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	_ = writeElement(fp, elem, true, true, nil, false)
+	_ = writeElement(fp, elem, codecContext{EncodingInfo: EncodingInfo{IsImplicitVR: true, IsLittleEndian: true}}, false)
 	return buf.Bytes()
 }
 
@@ -135,7 +135,7 @@ func encodeElementExplicitLittle(elem *DataElement) []byte {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	_ = writeElement(fp, elem, false, true, nil, false)
+	_ = writeElement(fp, elem, codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}}, false)
 	return buf.Bytes()
 }
 
@@ -441,7 +441,7 @@ func TestWriteElementRawUndefinedExplicitLongVR(t *testing.T) {
 	elem.RawValue = []byte{0x01, 0x02}
 	elem.IsUndefinedLength = true
 
-	if err := writeElement(fp, elem, false, true, nil, false); err != nil {
+	if err := writeElement(fp, elem, codecContext{EncodingInfo: EncodingInfo{IsLittleEndian: true}}, false); err != nil {
 		t.Fatal(err)
 	}
 
