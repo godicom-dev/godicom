@@ -88,7 +88,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	}
 
 	// Determine encoding (transfer syntax in file meta takes priority over originalEnc).
-	isImplicit, isLittleEndian, encErr := determineWriteEncoding(fileMeta, source.dataset, opts)
+	enc, encErr := determineWriteEncoding(fileMeta, source.dataset, opts)
 	if encErr != nil {
 		return encErr
 	}
@@ -96,12 +96,12 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 		logDebug(ctx, "write encoding", AttrTransferSyntax, string(ts))
 	} else {
 		logDebug(ctx, "write encoding",
-			"implicit_vr", isImplicit,
-			"little_endian", isLittleEndian,
+			"implicit_vr", enc.IsImplicitVR,
+			"little_endian", enc.IsLittleEndian,
 		)
 	}
 
-	if !opts.EnforceFileFormat && isImplicit && !isLittleEndian {
+	if !opts.EnforceFileFormat && enc.IsImplicitVR && !enc.IsLittleEndian {
 		return fmt.Errorf("godicom: implicit VR and big endian is not a valid encoding combination")
 	}
 
@@ -116,11 +116,11 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 		// defaults to that encoding.
 		ts, _ := transferSyntaxUID(fileMeta)
 		if ts == "" {
-			if isImplicit && isLittleEndian {
+			if enc.IsImplicitVR && enc.IsLittleEndian {
 				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ImplicitVRLittleEndian))
-			} else if !isImplicit && isLittleEndian {
+			} else if !enc.IsImplicitVR && enc.IsLittleEndian {
 				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRLittleEndian))
-			} else if !isImplicit && !isLittleEndian {
+			} else if !enc.IsImplicitVR && !enc.IsLittleEndian {
 				fileMeta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, ExplicitVRBigEndian))
 			}
 		}
@@ -178,18 +178,21 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	}
 
 	// Write dataset
-	fp.SetByteOrder(isLittleEndian)
+	fp.SetByteOrder(enc.IsLittleEndian)
 
 	tsUID := UID("")
 	if fileMeta != nil {
 		tsUID, _ = transferSyntaxUID(fileMeta)
 	}
 
+	cc := codecContext{EncodingInfo: enc}
+	reencode := encodingChanged(source.dataset, enc)
+
 	if tsUID.IsDeflated() {
 		var datasetBuf bytes.Buffer
 		dsWriter := newDicomWriter(&datasetBuf)
-		dsWriter.SetByteOrder(isLittleEndian)
-		if err := writeDataset(ctx, dsWriter, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
+		dsWriter.SetByteOrder(enc.IsLittleEndian)
+		if err := writeDataset(ctx, dsWriter, source.dataset, cc, reencode); err != nil {
 			return fmt.Errorf("godicom: error writing dataset: %w", err)
 		}
 		var deflated bytes.Buffer
@@ -213,7 +216,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 		return nil
 	}
 
-	if err := writeDataset(ctx, fp, source.dataset, isImplicit, isLittleEndian, nil, encodingChanged(source.dataset, isImplicit, isLittleEndian)); err != nil {
+	if err := writeDataset(ctx, fp, source.dataset, cc, reencode); err != nil {
 		return fmt.Errorf("godicom: error writing dataset: %w", err)
 	}
 
@@ -241,7 +244,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 		if elem.Tag.Group() != 0x0002 {
 			continue
 		}
-		if err := writeElement(metaWriter, elem, false, true, nil, false); err != nil {
+		if err := writeElement(metaWriter, elem, fileMetaCodec, false); err != nil {
 			return err
 		}
 	}
@@ -257,7 +260,7 @@ func writeFileMetaInfo(fp *dicomIO, fileMeta *FileMetaDataset, enforceStandard b
 				if e.Tag.Group() != 0x0002 {
 					continue
 				}
-				if err := writeElement(metaWriter, e, false, true, nil, false); err != nil {
+				if err := writeElement(metaWriter, e, fileMetaCodec, false); err != nil {
 					return err
 				}
 			}
@@ -280,7 +283,7 @@ func transferSyntaxUID(fileMeta *FileMetaDataset) (UID, bool) {
 
 // determineWriteEncoding selects implicit VR and endianness for writing.
 // Mirrors pydicom.filewriter._determine_encoding (non-force path).
-func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteOptions) (isImplicit, isLittleEndian bool, err error) {
+func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteOptions) (EncodingInfo, error) {
 	if opts == nil {
 		opts = &WriteOptions{}
 	}
@@ -310,32 +313,32 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 	ts, hasTS := transferSyntaxUID(fileMeta)
 	if !hasTS || ts == "" {
 		if !hasFallback {
-			return false, false, fmt.Errorf(
+			return EncodingInfo{}, fmt.Errorf(
 				"godicom: unable to determine the encoding to use for writing the dataset; set FileMeta TransferSyntaxUID or WriteOptions ImplicitVR/LittleEndian",
 			)
 		}
-		return fallbackImp, fallbackLit, nil
+		return EncodingInfo{IsImplicitVR: fallbackImp, IsLittleEndian: fallbackLit}, nil
 	}
 
 	info, known := uid.Known[ts]
 	if known && info.IsTransferSyntax {
 		if opts.ImplicitVR != nil && *opts.ImplicitVR != info.IsImplicitVR {
-			return false, false, fmt.Errorf(
+			return EncodingInfo{}, fmt.Errorf(
 				"godicom: ImplicitVR=%t is inconsistent with transfer syntax %q",
 				*opts.ImplicitVR, ts,
 			)
 		}
 		if opts.LittleEndian != nil && *opts.LittleEndian != info.IsLittleEndian {
-			return false, false, fmt.Errorf(
+			return EncodingInfo{}, fmt.Errorf(
 				"godicom: LittleEndian=%t is inconsistent with transfer syntax %q",
 				*opts.LittleEndian, ts,
 			)
 		}
-		return info.IsImplicitVR, info.IsLittleEndian, nil
+		return EncodingInfo{IsImplicitVR: info.IsImplicitVR, IsLittleEndian: info.IsLittleEndian}, nil
 	}
 
 	if known && !info.IsTransferSyntax {
-		return false, false, fmt.Errorf(
+		return EncodingInfo{}, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a valid transfer syntax",
 			ts,
 		)
@@ -343,15 +346,15 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 
 	// Private / unknown UID: require both encoding options.
 	if opts.ImplicitVR == nil || opts.LittleEndian == nil {
-		return false, false, fmt.Errorf(
+		return EncodingInfo{}, fmt.Errorf(
 			"godicom: ImplicitVR and LittleEndian are required when using a private transfer syntax",
 		)
 	}
-	return *opts.ImplicitVR, *opts.LittleEndian, nil
+	return EncodingInfo{IsImplicitVR: *opts.ImplicitVR, IsLittleEndian: *opts.LittleEndian}, nil
 }
 
-func encodingChanged(ds *Dataset, isImplicit, isLittleEndian bool) bool {
-	return isImplicit != ds.originalEnc.IsImplicitVR || isLittleEndian != ds.originalEnc.IsLittleEndian
+func encodingChanged(ds *Dataset, enc EncodingInfo) bool {
+	return enc != ds.originalEnc
 }
 
 // charsetChanged reports whether SpecificCharacterSet differs from the value
@@ -374,25 +377,25 @@ func charsetChanged(ds *Dataset) bool {
 	return false
 }
 
-func writeDataset(ctx context.Context, fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
-	return writeDatasetState(fp, ds, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteStateCtx(ctx))
+func writeDataset(ctx context.Context, fp *dicomIO, ds *Dataset, cc codecContext, reencodeValues bool) error {
+	return writeDatasetState(fp, ds, cc, reencodeValues, newWriteStateCtx(ctx))
 }
 
-func writeDatasetState(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool, st *writeState) error {
+func writeDatasetState(fp *dicomIO, ds *Dataset, cc codecContext, reencodeValues bool, st *writeState) error {
 	if st == nil {
 		st = newWriteState()
 	}
-	if len(charsets) == 0 {
-		charsets = []string{DefaultCharacterSet}
+	if len(cc.Charsets) == 0 {
+		cc.Charsets = []string{DefaultCharacterSet}
 	}
-	localCharsets := append([]string(nil), charsets...)
+	cc.Charsets = append([]string(nil), cc.Charsets...)
 
 	reencode := reencodeValues || charsetChanged(ds)
-	if !isImplicit || reencode {
-		if err := CorrectAmbiguousVR(ds, isLittleEndian, nil); err != nil {
+	if !cc.IsImplicitVR || reencode {
+		if err := CorrectAmbiguousVR(ds, cc.IsLittleEndian, nil); err != nil {
 			return err
 		}
-	} else if err := CorrectAmbiguousVRPreservingRaw(ds, isLittleEndian, nil); err != nil {
+	} else if err := CorrectAmbiguousVRPreservingRaw(ds, cc.IsLittleEndian, nil); err != nil {
 		return err
 	}
 
@@ -404,18 +407,18 @@ func writeDatasetState(fp *dicomIO, ds *Dataset, isImplicit, isLittleEndian bool
 		if elem.Tag.Element() == 0 && elem.Tag.Group() > 6 {
 			continue
 		}
-		if err := writeElementState(fp, elem, isImplicit, isLittleEndian, localCharsets, reencode, st); err != nil {
+		if err := writeElementState(fp, elem, cc, reencode, st); err != nil {
 			return err
 		}
 		if elem.Tag == TagCharset {
-			localCharsets = ParseCharacterSets(elem.Value)
+			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 		}
 	}
 	return nil
 }
 
-func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool) error {
-	if !isImplicit && IsAmbiguousVR(elem.VR) {
+func writeElementFromRaw(fp *dicomIO, elem *DataElement, cc codecContext) error {
+	if !cc.IsImplicitVR && IsAmbiguousVR(elem.VR) {
 		return fmt.Errorf(
 			"godicom: cannot write ambiguous VR %q for tag %s; set the correct VR or use implicit VR transfer syntax",
 			elem.VR, elem.Tag,
@@ -428,7 +431,7 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 	valueLength := uint32(len(elem.RawValue))
 	isUndefinedLength := elem.IsUndefinedLength
 
-	if isImplicit {
+	if cc.IsImplicitVR {
 		length := valueLength
 		if isUndefinedLength {
 			length = 0xFFFFFFFF
@@ -484,11 +487,11 @@ func writeElementFromRaw(fp *dicomIO, elem *DataElement, isImplicit, isLittleEnd
 	return nil
 }
 
-func writeElement(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool) error {
-	return writeElementState(fp, elem, isImplicit, isLittleEndian, charsets, reencodeValues, newWriteState())
+func writeElement(fp *dicomIO, elem *DataElement, cc codecContext, reencodeValues bool) error {
+	return writeElementState(fp, elem, cc, reencodeValues, newWriteState())
 }
 
-func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndian bool, charsets []string, reencodeValues bool, st *writeState) error {
+func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencodeValues bool, st *writeState) error {
 	if st == nil {
 		st = newWriteState()
 	}
@@ -498,21 +501,21 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 		AttrUndefined, elem.IsUndefinedLength,
 	)
 	if elem.RawValue != nil && elem.VR != VRSQ && !reencodeValues {
-		return writeElementFromRaw(fp, elem, isImplicit, isLittleEndian)
+		return writeElementFromRaw(fp, elem, cc)
 	}
 
 	if !StandardVRs[elem.VR] && !IsAmbiguousVR(elem.VR) {
 		return fmt.Errorf("godicom: unknown Value Representation %q", elem.VR)
 	}
 
-	if !isImplicit && IsAmbiguousVR(elem.VR) {
+	if !cc.IsImplicitVR && IsAmbiguousVR(elem.VR) {
 		return fmt.Errorf(
 			"godicom: cannot write ambiguous VR %q for tag %s; set the correct VR or use implicit VR transfer syntax",
 			elem.VR, elem.Tag,
 		)
 	}
 
-	fp.SetByteOrder(isLittleEndian)
+	fp.SetByteOrder(cc.IsLittleEndian)
 
 	isSQ := elem.VR == VRSQ
 	var seq *Sequence
@@ -549,7 +552,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 		if ok && seq != nil && !seq.IsEmpty() {
 			sqBuf = new(bytes.Buffer)
 			sqFp := newDicomWriter(sqBuf)
-			sqFp.SetByteOrder(isLittleEndian)
+			sqFp.SetByteOrder(cc.IsLittleEndian)
 
 			for _, item := range seq.Items() {
 				if err := sqFp.WriteTag(ItemTag); err != nil {
@@ -557,8 +560,8 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 				}
 				var itemBuf bytes.Buffer
 				itemFp := newDicomWriter(&itemBuf)
-				itemFp.SetByteOrder(isLittleEndian)
-				if err := writeDatasetState(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues, st); err != nil {
+				itemFp.SetByteOrder(cc.IsLittleEndian)
+				if err := writeDatasetState(itemFp, item, cc, reencodeValues, st); err != nil {
 					return err
 				}
 				if err := sqFp.WriteUint32(uint32(itemBuf.Len())); err != nil {
@@ -577,7 +580,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 	}
 
 	// Get encoded value (nil for SQ)
-	encoded, err := encodeValue(elem, isLittleEndian, charsets)
+	encoded, err := encodeValue(elem, cc)
 	if err != nil {
 		return err
 	}
@@ -586,7 +589,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 	encoded = padToEven(elem.VR, encoded)
 
 	// Write VR + length
-	if isImplicit {
+	if cc.IsImplicitVR {
 		length := uint32(len(encoded))
 		if sqBuf != nil {
 			length = uint32(sqBuf.Len())
@@ -644,8 +647,8 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 				for _, item := range seq.Items() {
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
-					itemFp.SetByteOrder(isLittleEndian)
-					if err := writeDatasetState(itemFp, item, isImplicit, isLittleEndian, charsets, reencodeValues, st); err != nil {
+					itemFp.SetByteOrder(cc.IsLittleEndian)
+					if err := writeDatasetState(itemFp, item, cc, reencodeValues, st); err != nil {
 						return err
 					}
 					if err := fp.WriteTag(ItemTag); err != nil {
@@ -704,22 +707,23 @@ func padToEven(vr VR, encoded []byte) []byte {
 // only when the value cannot be represented in elem's VR at all -- a non-finite
 // float in a DS, say -- rather than letting a value godicom's own validators
 // reject reach the file.
-func encodeValue(elem *DataElement, le bool, charsets []string) ([]byte, error) {
+func encodeValue(elem *DataElement, cc codecContext) ([]byte, error) {
 	if elem.Value == nil {
 		return nil, nil
 	}
 
+	le := cc.IsLittleEndian
 	switch elem.VR {
 	case VRAE, VRAS, VRCS, VRDA, VRDT, VRLO, VRLT, VRSH, VRST, VRTM, VRUC, VRUR, VRUT:
-		return encodeStringWithCharsets(elem, charsets), nil
+		return encodeStringWithCharsets(elem, cc.Charsets), nil
 	case VRDS:
 		return encodeNumberString(elem)
 	case VRIS:
 		return encodeNumberString(elem)
 	case VRUI:
-		return encodeStringWithCharsets(elem, charsets), nil
+		return encodeStringWithCharsets(elem, cc.Charsets), nil
 	case VRPN:
-		return encodePNWithCharsets(elem, charsets), nil
+		return encodePNWithCharsets(elem, cc.Charsets), nil
 	case VRFD:
 		return encodeFloats(elem, le, 8), nil
 	case VRFL:
@@ -743,7 +747,7 @@ func encodeValue(elem *DataElement, le bool, charsets []string) ([]byte, error) 
 	case VRSQ:
 		return nil, nil // Handled separately
 	default:
-		return encodeStringWithCharsets(elem, charsets), nil
+		return encodeStringWithCharsets(elem, cc.Charsets), nil
 	}
 }
 
@@ -1249,7 +1253,8 @@ func encodeDataset(ds *Dataset, isImplicit, isLittleEndian, deflated bool) ([]by
 	var datasetBuf bytes.Buffer
 	fp := newDicomWriter(&datasetBuf)
 	fp.SetByteOrder(isLittleEndian)
-	if err := writeDataset(context.Background(), fp, ds, isImplicit, isLittleEndian, nil, encodingChanged(ds, isImplicit, isLittleEndian)); err != nil {
+	enc := EncodingInfo{IsImplicitVR: isImplicit, IsLittleEndian: isLittleEndian}
+	if err := writeDataset(context.Background(), fp, ds, codecContext{EncodingInfo: enc}, encodingChanged(ds, enc)); err != nil {
 		return nil, fmt.Errorf("godicom: error encoding dataset: %w", err)
 	}
 

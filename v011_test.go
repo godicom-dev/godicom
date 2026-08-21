@@ -32,7 +32,7 @@ func TestWriteUnknownVRRaises(t *testing.T) {
 	var buf bytes.Buffer
 	fp := newDicomWriter(&buf)
 	fp.SetByteOrder(true)
-	err := writeElement(fp, elem, true, true, nil, false)
+	err := writeElement(fp, elem, codecContext{EncodingInfo: EncodingInfo{IsImplicitVR: true, IsLittleEndian: true}}, false)
 	if err == nil {
 		t.Fatal("expected error for unknown VR")
 	}
@@ -238,7 +238,7 @@ func TestDetermineEncodingInvalidTransferSyntax(t *testing.T) {
 	meta := NewFileMetaDataset()
 	meta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, CTImageStorage))
 	ds := NewDataset()
-	_, _, err := determineWriteEncoding(meta, ds, nil)
+	_, err := determineWriteEncoding(meta, ds, nil)
 	if err == nil {
 		t.Fatal("expected error for non-transfer-syntax UID")
 	}
@@ -252,19 +252,19 @@ func TestDetermineEncodingPrivateTransferSyntaxRequiresArgs(t *testing.T) {
 	meta := NewFileMetaDataset()
 	meta.Set(NewDataElement(MustTag("TransferSyntaxUID"), VRUI, UID("1.2.3")))
 	ds := NewDataset()
-	_, _, err := determineWriteEncoding(meta, ds, nil)
+	_, err := determineWriteEncoding(meta, ds, nil)
 	if err == nil {
 		t.Fatal("expected error for private transfer syntax without args")
 	}
 
 	implicit := true
 	little := true
-	imp, lit, err := determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
+	enc, err := determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !imp || !lit {
-		t.Fatalf("encoding = (%t,%t), want (true,true)", imp, lit)
+	if !enc.IsImplicitVR || !enc.IsLittleEndian {
+		t.Fatalf("encoding = %+v, want implicit little-endian", enc)
 	}
 }
 
@@ -276,14 +276,14 @@ func TestDetermineEncodingMismatchRaises(t *testing.T) {
 
 	implicit := true
 	little := false
-	_, _, err := determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
+	_, err := determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
 	if err == nil || !strings.Contains(err.Error(), "LittleEndian") {
 		t.Fatalf("error = %v, want LittleEndian mismatch", err)
 	}
 
 	implicit = false
 	little = true
-	_, _, err = determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
+	_, err = determineWriteEncoding(meta, ds, &WriteOptions{ImplicitVR: &implicit, LittleEndian: &little})
 	if err == nil || !strings.Contains(err.Error(), "ImplicitVR") {
 		t.Fatalf("error = %v, want ImplicitVR mismatch", err)
 	}
