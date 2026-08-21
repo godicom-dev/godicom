@@ -220,7 +220,6 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		}
 
 		if currentTag == ItemDelimiterTag || currentTag == SequenceDelimiterTag {
-			pos += 8
 			break
 		}
 
