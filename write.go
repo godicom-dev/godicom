@@ -577,7 +577,10 @@ func writeElementState(fp *dicomIO, elem *DataElement, isImplicit, isLittleEndia
 	}
 
 	// Get encoded value (nil for SQ)
-	encoded := encodeValue(elem, isLittleEndian, charsets)
+	encoded, err := encodeValue(elem, isLittleEndian, charsets)
+	if err != nil {
+		return err
+	}
 
 	// Pad to even length per PS3.5
 	encoded = padToEven(elem.VR, encoded)
@@ -697,46 +700,50 @@ func padToEven(vr VR, encoded []byte) []byte {
 	return append(encoded, padByte)
 }
 
-func encodeValue(elem *DataElement, le bool, charsets []string) []byte {
+// encodeValue renders elem's value to its on-the-wire bytes. It returns an error
+// only when the value cannot be represented in elem's VR at all -- a non-finite
+// float in a DS, say -- rather than letting a value godicom's own validators
+// reject reach the file.
+func encodeValue(elem *DataElement, le bool, charsets []string) ([]byte, error) {
 	if elem.Value == nil {
-		return nil
+		return nil, nil
 	}
 
 	switch elem.VR {
 	case VRAE, VRAS, VRCS, VRDA, VRDT, VRLO, VRLT, VRSH, VRST, VRTM, VRUC, VRUR, VRUT:
-		return encodeStringWithCharsets(elem, charsets)
+		return encodeStringWithCharsets(elem, charsets), nil
 	case VRDS:
 		return encodeNumberString(elem)
 	case VRIS:
 		return encodeNumberString(elem)
 	case VRUI:
-		return encodeStringWithCharsets(elem, charsets)
+		return encodeStringWithCharsets(elem, charsets), nil
 	case VRPN:
-		return encodePNWithCharsets(elem, charsets)
+		return encodePNWithCharsets(elem, charsets), nil
 	case VRFD:
-		return encodeFloats(elem, le, 8)
+		return encodeFloats(elem, le, 8), nil
 	case VRFL:
-		return encodeFloats(elem, le, 4)
+		return encodeFloats(elem, le, 4), nil
 	case VRUL:
-		return encodeInts(elem, le, 4, false)
+		return encodeInts(elem, le, 4, false), nil
 	case VRUS:
-		return encodeInts(elem, le, 2, false)
+		return encodeInts(elem, le, 2, false), nil
 	case VRUV:
-		return encodeInts(elem, le, 8, false)
+		return encodeInts(elem, le, 8, false), nil
 	case VRSL:
-		return encodeInts(elem, le, 4, true)
+		return encodeInts(elem, le, 4, true), nil
 	case VRSS:
-		return encodeInts(elem, le, 2, true)
+		return encodeInts(elem, le, 2, true), nil
 	case VRSV:
-		return encodeInts(elem, le, 8, true)
+		return encodeInts(elem, le, 8, true), nil
 	case VRAT:
-		return encodeAT(elem, le)
+		return encodeAT(elem, le), nil
 	case VROB, VROD, VROF, VROL, VROW, VROV, VRUN:
-		return encodeBytes(elem)
+		return encodeBytes(elem), nil
 	case VRSQ:
-		return nil // Handled separately
+		return nil, nil // Handled separately
 	default:
-		return encodeStringWithCharsets(elem, charsets)
+		return encodeStringWithCharsets(elem, charsets), nil
 	}
 }
 
@@ -830,21 +837,25 @@ func joinStringParts(n int, part func(int) string) string {
 	return s
 }
 
-func encodeNumberString(elem *DataElement) []byte {
+func encodeNumberString(elem *DataElement) ([]byte, error) {
 	if elem.Value == nil {
-		return nil
+		return nil, nil
 	}
 	switch v := elem.Value.(type) {
 	case string:
-		return []byte(v)
+		return []byte(v), nil
 	case int:
-		return []byte(fmt.Sprintf("%d", v))
+		return []byte(fmt.Sprintf("%d", v)), nil
 	case float64:
-		return []byte(formatDecimalString(elem.VR, v))
+		s, err := formatDecimalString(elem.VR, v)
+		if err != nil {
+			return nil, fmt.Errorf("godicom: %s %s: %w", elem.Tag, elem.VR, err)
+		}
+		return []byte(s), nil
 	case DS:
-		return []byte(v.String())
+		return []byte(v.String()), nil
 	case IS:
-		return []byte(v.String())
+		return []byte(v.String()), nil
 	case *MultiValue[int]:
 		s := ""
 		for i, val := range v.Values() {
@@ -853,16 +864,20 @@ func encodeNumberString(elem *DataElement) []byte {
 			}
 			s += fmt.Sprintf("%d", val)
 		}
-		return []byte(s)
+		return []byte(s), nil
 	case *MultiValue[float64]:
 		s := ""
 		for i, val := range v.Values() {
 			if i > 0 {
 				s += "\\"
 			}
-			s += formatDecimalString(elem.VR, val)
+			part, err := formatDecimalString(elem.VR, val)
+			if err != nil {
+				return nil, fmt.Errorf("godicom: %s %s value %d: %w", elem.Tag, elem.VR, i, err)
+			}
+			s += part
 		}
-		return []byte(s)
+		return []byte(s), nil
 	case *MultiValue[DS]:
 		s := ""
 		for i, val := range v.Values() {
@@ -871,7 +886,7 @@ func encodeNumberString(elem *DataElement) []byte {
 			}
 			s += val.String()
 		}
-		return []byte(s)
+		return []byte(s), nil
 	case *MultiValue[IS]:
 		s := ""
 		for i, val := range v.Values() {
@@ -880,7 +895,7 @@ func encodeNumberString(elem *DataElement) []byte {
 			}
 			s += val.String()
 		}
-		return []byte(s)
+		return []byte(s), nil
 	case *MultiValue[interface{}]:
 		s := ""
 		for i, val := range v.Values() {
@@ -888,14 +903,18 @@ func encodeNumberString(elem *DataElement) []byte {
 				s += "\\"
 			}
 			if f, ok := val.(float64); ok {
-				s += formatDecimalString(elem.VR, f)
+				part, err := formatDecimalString(elem.VR, f)
+				if err != nil {
+					return nil, fmt.Errorf("godicom: %s %s value %d: %w", elem.Tag, elem.VR, i, err)
+				}
+				s += part
 				continue
 			}
 			s += fmt.Sprintf("%v", val)
 		}
-		return []byte(s)
+		return []byte(s), nil
 	}
-	return []byte(fmt.Sprintf("%v", elem.Value))
+	return []byte(fmt.Sprintf("%v", elem.Value)), nil
 }
 
 // formatDecimalString renders a float for a DS element the way the DS type
@@ -908,21 +927,22 @@ func encodeNumberString(elem *DataElement) []byte {
 // and a strict receiver is entitled to refuse. FormatNumberAsDS is the same
 // truncation pydicom's format_number_as_ds applies.
 //
-// Only VRDS gets the DS rules. A float in an IS is a caller error rather than a
-// representable value, and encodeNumberString has no error channel to report it
-// through, so that case keeps its old formatting instead of silently rounding to
-// an integer the caller never asked for.
-func formatDecimalString(vr VR, val float64) string {
+// A non-finite float has no DS or IS spelling at all -- %g renders it "NaN",
+// "+Inf" or "-Inf", none of which is a decimal or integer string -- so it is
+// refused rather than written. Refusing is the only honest option: the DS the
+// caller asked for does not exist.
+//
+// Only VRDS gets the DS length and precision rules. A fractional float in an IS
+// is also invalid, but whether to refuse it or round it is an API question, so
+// that case keeps its old formatting until it is settled; see #51.
+func formatDecimalString(vr VR, val float64) (string, error) {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return "", fmt.Errorf("%g has no valid %s representation", val, vr)
+	}
 	if vr != VRDS {
-		return fmt.Sprintf("%g", val)
+		return fmt.Sprintf("%g", val), nil
 	}
-	s, err := FormatNumberAsDS(val)
-	if err != nil {
-		// NaN or ±Inf: no valid DS exists and there is no way to report that
-		// from here, so leave today's output rather than inventing a value.
-		return fmt.Sprintf("%g", val)
-	}
-	return s
+	return FormatNumberAsDS(val)
 }
 
 func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {

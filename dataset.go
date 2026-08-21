@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -577,7 +578,38 @@ func (d *Dataset) setDictionary(tag Tag, value interface{}, kind string, allow f
 	if allow != nil && !allow(vr) {
 		return fmt.Errorf("godicom: tag %s has VR %s, which does not hold %s values", tag, vr, kind)
 	}
+	if err := checkRepresentable(tag, vr, value); err != nil {
+		return err
+	}
 	d.Set(NewDataElement(tag, vr, value))
+	return nil
+}
+
+// checkRepresentable rejects values that pass the VR kind check but that the VR
+// still cannot spell, so the caller hears about it here rather than getting a
+// silently corrupt element -- or, since the write path now refuses these, an
+// error from a later Save.
+//
+// Only DS is affected today. DS is a float VR, so setsFloat admits NaN and ±Inf
+// for it, but a decimal string has no spelling for either. FD and FL are float
+// VRs too and do represent them exactly, per IEEE 754, so they are left alone.
+func checkRepresentable(tag Tag, vr VR, value interface{}) error {
+	if vr != VRDS {
+		return nil
+	}
+	bad := func(f float64) bool { return math.IsNaN(f) || math.IsInf(f, 0) }
+	switch v := value.(type) {
+	case float64:
+		if bad(v) {
+			return fmt.Errorf("godicom: tag %s has VR DS, which cannot represent %g", tag, v)
+		}
+	case *MultiValue[float64]:
+		for i, f := range v.Values() {
+			if bad(f) {
+				return fmt.Errorf("godicom: tag %s has VR DS, which cannot represent %g (value %d)", tag, f, i)
+			}
+		}
+	}
 	return nil
 }
 
