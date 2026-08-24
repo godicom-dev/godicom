@@ -18,7 +18,8 @@ const (
 	AttrHex            = "hex"        // header or sample bytes as hex
 	AttrTag            = "tag"        // "(GGGG,EEEE)"
 	AttrVR             = "vr"
-	AttrLen            = "len" // element length; -1 means undefined (0xFFFFFFFF)
+	AttrExpectedVR     = "expected_vr" // the VR the data dictionary gives the tag
+	AttrLen            = "len"         // element length; -1 means undefined (0xFFFFFFFF)
 	AttrUndefined      = "undefined_length"
 	AttrValueHex       = "value_hex" // first ≤20 value bytes as hex
 	AttrValue          = "value"     // first ≤20 value bytes as Go quoted string
@@ -141,6 +142,9 @@ func logDiagnostic(ctx context.Context, d Diagnostic) {
 	}
 	if d.VR != "" {
 		args = append(args, AttrVR, string(d.VR))
+	}
+	if d.ExpectedVR != "" {
+		args = append(args, AttrExpectedVR, string(d.ExpectedVR))
 	}
 	if len(d.Path) > 0 {
 		parts := make([]string, len(d.Path))
