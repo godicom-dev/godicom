@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Docs: README covers the two diagnostics v0.28.0 added — `WriteOptions.OnDiagnostic`
+  was not mentioned at all, and the read section predated both the VR
+  disagreement kind and `Diagnostic.Path` naming the sequence item
+
 ## [0.28.0] - 2026-08-24
 
 ### Changed
