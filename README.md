@@ -126,8 +126,8 @@ if err := ds.SetInt(tag.EchoNumbers, 3000000000); err != nil {
 err := godicom.WriteFile("out.dcm", ds, &godicom.WriteOptions{
 	OnDiagnostic: func(d godicom.Diagnostic) error { return d },
 })
-// godicom: invalid_value at (0018,0086) IS: "3000000000" is outside
-// [-2147483648, 2147483647], the range an IS allows
+// err: godicom: error writing dataset: godicom: invalid_value at (0018,0086)
+// IS: "3000000000" is outside [-2147483648, 2147483647], the range an IS allows
 ```
 
 Returning `nil` writes the value as it stands, so nothing an existing caller
