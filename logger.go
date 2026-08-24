@@ -27,7 +27,7 @@ const (
 	AttrFrame          = "frame"
 	AttrPath           = "path"          // file path
 	AttrKind           = "kind"          // DiagnosticKind
-	AttrSequencePath   = "sequence_path" // enclosing sequence tags, outermost first
+	AttrSequencePath   = "sequence_path" // enclosing sequences as "(gggg,eeee)[i]", outermost first
 	AttrNeed           = "need"          // bytes the encoding called for
 	AttrHave           = "have"          // bytes actually available
 	AttrError          = "error"
@@ -148,8 +148,8 @@ func logDiagnostic(ctx context.Context, d Diagnostic) {
 	}
 	if len(d.Path) > 0 {
 		parts := make([]string, len(d.Path))
-		for i, t := range d.Path {
-			parts[i] = t.String()
+		for i, step := range d.Path {
+			parts[i] = step.String()
 		}
 		args = append(args, AttrSequencePath, strings.Join(parts, " > "))
 	}

@@ -30,6 +30,10 @@ func (r *diagRecorder) first(t *testing.T) Diagnostic {
 	return r.got[0]
 }
 
+// pathStep spells one step of Diagnostic.Path, so an assertion says which item of
+// the sequence the anomaly was in and not merely which sequence.
+func pathStep(tag Tag, i int) PathStep { return PathStep{Tag: tag, Item: i} }
+
 // encodeBare returns ds as a headerless explicit VR little endian dataset, so a
 // test can truncate it at a byte offset it computed itself. ReadOptions.Force
 // reads it back without a preamble or File Meta.
@@ -170,8 +174,8 @@ func TestReadBytes_DiagnosticCarriesSequencePath(t *testing.T) {
 	}
 
 	d := rec.first(t)
-	if len(d.Path) != 1 || d.Path[0] != MustTag("ReferencedImageSequence") {
-		t.Fatalf("Path = %v, want [ReferencedImageSequence]", d.Path)
+	if len(d.Path) != 1 || d.Path[0] != pathStep(MustTag("ReferencedImageSequence"), 0) {
+		t.Fatalf("Path = %v, want [ReferencedImageSequence[0]]", d.Path)
 	}
 	if d.Tag != MustTag("ReferencedSOPInstanceUID") {
 		t.Errorf("Tag = %s, want ReferencedSOPInstanceUID", d.Tag)
@@ -204,8 +208,8 @@ func TestReadBytes_HookErrorInsideSequenceFailsTheRead(t *testing.T) {
 	if !errors.As(err, &d) {
 		t.Fatalf("error %v does not carry a Diagnostic", err)
 	}
-	if len(d.Path) != 1 || d.Path[0] != MustTag("ReferencedImageSequence") {
-		t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+	if len(d.Path) != 1 || d.Path[0] != pathStep(MustTag("ReferencedImageSequence"), 0) {
+		t.Errorf("Path = %v, want [ReferencedImageSequence[0]]", d.Path)
 	}
 	if len(rec.got) != 1 {
 		t.Errorf("reported %d diagnostics, want 1: the read must stop at the first", len(rec.got))
@@ -270,8 +274,8 @@ func TestReadBytes_TruncatedItemHookErrorFailsTheRead(t *testing.T) {
 	if d.Kind != DiagnosticTruncatedItem {
 		t.Errorf("Kind = %q, want %q", d.Kind, DiagnosticTruncatedItem)
 	}
-	if len(d.Path) != 1 || d.Path[0] != MustTag("ReferencedImageSequence") {
-		t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+	if len(d.Path) != 1 || d.Path[0] != pathStep(MustTag("ReferencedImageSequence"), 0) {
+		t.Errorf("Path = %v, want [ReferencedImageSequence[0]]", d.Path)
 	}
 }
 
@@ -303,9 +307,10 @@ func TestReadersAgreeOnOverlongSequenceLength(t *testing.T) {
 		data      []byte
 		itemStart int64 // offset of the item header that is cut short
 		items     int   // items that were complete and must survive
+		wantItem  int   // index the cut item occupies in Diagnostic.Path
 	}{
-		"no complete item":  {data: truncatedItemBytes(), itemStart: 12, items: 0},
-		"one complete item": {data: overlongSequenceBytes(), itemStart: 32, items: 1},
+		"no complete item":  {data: truncatedItemBytes(), itemStart: 12, items: 0, wantItem: 0},
+		"one complete item": {data: overlongSequenceBytes(), itemStart: 32, items: 1, wantItem: 1},
 	}
 	seqTag := MustTag("ReferencedImageSequence")
 
@@ -346,8 +351,11 @@ func TestReadersAgreeOnOverlongSequenceLength(t *testing.T) {
 						t.Errorf("got %+v, want kind/tag/offset/need/have %s/%s/%d/%d/%d",
 							d, want.Kind, want.Tag, want.Offset, want.Need, want.Have)
 					}
-					if len(d.Path) != 1 || d.Path[0] != seqTag {
-						t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+					// The cut item is the one after however many completed, so the
+					// two cases here disagree about the index -- which is the whole
+					// point of carrying it.
+					if len(d.Path) != 1 || d.Path[0] != pathStep(seqTag, tc.wantItem) {
+						t.Errorf("Path = %v, want [ReferencedImageSequence[%d]]", d.Path, tc.wantItem)
 					}
 
 					elem, ok := fd.Get(seqTag)
@@ -382,8 +390,8 @@ func TestReadersAgreeOnOverlongSequenceLength(t *testing.T) {
 					if d.Kind != DiagnosticTruncatedItem {
 						t.Errorf("Kind = %q, want %q", d.Kind, DiagnosticTruncatedItem)
 					}
-					if len(d.Path) != 1 || d.Path[0] != seqTag {
-						t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+					if len(d.Path) != 1 || d.Path[0] != pathStep(seqTag, tc.wantItem) {
+						t.Errorf("Path = %v, want [ReferencedImageSequence[%d]]", d.Path, tc.wantItem)
 					}
 				})
 			}
@@ -571,8 +579,8 @@ func TestTruncationInsideSequence_OffsetIsFileRelative(t *testing.T) {
 			if d.Need != 8 || d.Have != 2 {
 				t.Errorf("Need/Have = %d/%d, want 8/2", d.Need, d.Have)
 			}
-			if len(d.Path) != 1 || d.Path[0] != MustTag("ReferencedImageSequence") {
-				t.Errorf("Path = %v, want [ReferencedImageSequence]", d.Path)
+			if len(d.Path) != 1 || d.Path[0] != pathStep(MustTag("ReferencedImageSequence"), 0) {
+				t.Errorf("Path = %v, want [ReferencedImageSequence[0]]", d.Path)
 			}
 		})
 	}
@@ -585,13 +593,26 @@ func TestDiagnostic_ErrorMessage(t *testing.T) {
 		Tag:    MustTag("PatientName"),
 		VR:     VRPN,
 		Offset: 0x1234,
-		Path:   []Tag{MustTag("ReferencedImageSequence")},
+		Path:   []PathStep{pathStep(MustTag("ReferencedImageSequence"), 2)},
 		Need:   16,
 		Have:   4,
 	}
 	want := "godicom: truncated_value at (0010,0010) PN (offset 4660/00001234) " +
-		"in (0008,1140): need 16 bytes, have 4"
+		"in (0008,1140)[2]: need 16 bytes, have 4"
 	if got := d.Error(); got != want {
 		t.Fatalf("Error() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A sequence entered without any item reached renders without a subscript: there
+// is no item to name, and "[-1]" would name one that does not exist.
+func TestPathStep_StringWithoutAnItem(t *testing.T) {
+	t.Parallel()
+	seq := MustTag("ReferencedImageSequence")
+	if got := (PathStep{Tag: seq, Item: -1}).String(); got != "(0008,1140)" {
+		t.Errorf("String() = %q, want %q", got, "(0008,1140)")
+	}
+	if got := pathStep(seq, 0).String(); got != "(0008,1140)[0]" {
+		t.Errorf("String() = %q, want %q", got, "(0008,1140)[0]")
 	}
 }

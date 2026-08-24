@@ -207,8 +207,8 @@ func TestWriteDiagnosticCarriesSequencePath(t *testing.T) {
 				t.Fatalf("write failed: %v", err)
 			}
 			d := wantOneInvalidValue(t, rec, inner, VRIS, "not an integer string")
-			if len(d.Path) != 1 || d.Path[0] != seqTag {
-				t.Errorf("Path = %v, want [%s]", d.Path, seqTag)
+			if len(d.Path) != 1 || d.Path[0] != pathStep(seqTag, 0) {
+				t.Errorf("Path = %v, want [%s[0]]", d.Path, seqTag)
 			}
 		})
 	}
@@ -241,8 +241,8 @@ func TestWriteDiagnosticPathIsPoppedAfterASequence(t *testing.T) {
 	}
 	if d, ok := byTag[inner]; !ok {
 		t.Errorf("nothing reported for the element inside the sequence")
-	} else if len(d.Path) != 1 || d.Path[0] != seqTag {
-		t.Errorf("inside the sequence Path = %v, want [%s]", d.Path, seqTag)
+	} else if len(d.Path) != 1 || d.Path[0] != pathStep(seqTag, 0) {
+		t.Errorf("inside the sequence Path = %v, want [%s[0]]", d.Path, seqTag)
 	}
 	if d, ok := byTag[after]; !ok {
 		t.Errorf("nothing reported for the element after the sequence")

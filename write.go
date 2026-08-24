@@ -25,7 +25,7 @@ type writeState struct {
 	// bookkeeping: the hook to offer a rejected value to, and the sequences
 	// enclosing whatever is being written, so a Diagnostic can name its Path.
 	onDiag  func(Diagnostic) error
-	seqPath []Tag
+	seqPath []PathStep
 }
 
 func newWriteState() *writeState {
@@ -587,7 +587,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 			sqFp := newDicomWriter(sqBuf)
 			sqFp.SetByteOrder(cc.IsLittleEndian)
 
-			for _, item := range seq.Items() {
+			for i, item := range seq.Items() {
 				if err := sqFp.WriteTag(ItemTag); err != nil {
 					return err
 				}
@@ -595,6 +595,7 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 				itemFp := newDicomWriter(&itemBuf)
 				itemFp.SetByteOrder(cc.IsLittleEndian)
 				st.pushSeq(elem.Tag)
+				st.setItem(i)
 				err := writeDatasetState(itemFp, item, cc, reencodeValues, st)
 				st.popSeq()
 				if err != nil {
@@ -680,11 +681,12 @@ func writeElementState(fp *dicomIO, elem *DataElement, cc codecContext, reencode
 		st.sqDepth++
 		if !isCircular && st.sqDepth <= 100 {
 			if seq, ok := elem.Value.(*Sequence); ok && seq != nil && !seq.IsEmpty() {
-				for _, item := range seq.Items() {
+				for i, item := range seq.Items() {
 					var itemBuf bytes.Buffer
 					itemFp := newDicomWriter(&itemBuf)
 					itemFp.SetByteOrder(cc.IsLittleEndian)
 					st.pushSeq(elem.Tag)
+					st.setItem(i)
 					err := writeDatasetState(itemFp, item, cc, reencodeValues, st)
 					st.popSeq()
 					if err != nil {
