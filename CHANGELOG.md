@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-24
+
 ### Changed
 - **BREAKING: `Diagnostic.Path` is now `[]PathStep` instead of `[]Tag`**, so it
   names which *item* of each enclosing sequence the anomaly came from and not
@@ -19,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the sequence was entered but no item was: the item header itself was
   unreadable. Callers comparing `d.Path[0]` to a `Tag` compare it to
   `PathStep{Tag: t, Item: i}` instead, or read `d.Path[0].Tag`
+- Internal: the read and write chains carry the encoding triple
+  (`isImplicitVR`, `isLittleEndian`, `charsets`) as one `codecContext` instead of
+  three parameters threaded through fourteen signatures. The two bools are
+  adjacent and interchangeable, so a transposed call site used to compile and
+  silently encode or parse a file in the wrong byte order
 
 ### Added
 - **VR disagreement diagnostics**: reading now reports an explicit VR the data
@@ -423,7 +430,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/godicom-dev/godicom/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/godicom-dev/godicom/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/godicom-dev/godicom/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/godicom-dev/godicom/compare/v0.25.0...v0.25.1
