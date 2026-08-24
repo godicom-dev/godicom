@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: `Diagnostic.Path` is now `[]PathStep` instead of `[]Tag`**, so it
+  names which *item* of each enclosing sequence the anomaly came from and not
+  merely which sequence. PS3.5 gives sequence items an ordinal position and
+  nothing else to identify them by, so a forty-item sequence used to produce
+  forty diagnostics that read identically. `PathStep{Tag, Item}` renders the way
+  DICOM tooling spells it — `(0040,0100)[0]` — and a whole path reads
+  `in (0008,1140)[1] > (0008,1110)[1]` in `Diagnostic.Error()` and in the
+  `sequence_path` log attribute. `Item` is -1, and the subscript is dropped, when
+  the sequence was entered but no item was: the item header itself was
+  unreadable. Callers comparing `d.Path[0]` to a `Tag` compare it to
+  `PathStep{Tag: t, Item: i}` instead, or read `d.Path[0].Tag`
+
 ### Added
 - **VR disagreement diagnostics**: reading now reports an explicit VR the data
   dictionary cannot reconcile with its tag — a `(0010,0010)` encoded as `SH`

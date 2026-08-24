@@ -85,9 +85,10 @@ type Diagnostic struct {
 	// while writing, which has no source to point into.
 	Offset int64
 
-	// Path holds the tags of the enclosing sequences, outermost first. It is
-	// nil for an anomaly in the top-level dataset.
-	Path []Tag
+	// Path holds the enclosing sequences and the item of each that was being
+	// processed, outermost first. It is nil for an anomaly in the top-level
+	// dataset.
+	Path []PathStep
 
 	// Need and Have are the byte counts the encoding called for and the byte
 	// counts actually available. Both are zero when the anomaly is not about
@@ -117,8 +118,8 @@ func (d Diagnostic) Error() string {
 	}
 	if len(d.Path) > 0 {
 		parts := make([]string, len(d.Path))
-		for i, t := range d.Path {
-			parts[i] = t.String()
+		for i, step := range d.Path {
+			parts[i] = step.String()
 		}
 		fmt.Fprintf(&b, " in %s", strings.Join(parts, " > "))
 	}
@@ -132,6 +133,30 @@ func (d Diagnostic) Error() string {
 }
 
 func (d Diagnostic) Unwrap() error { return d.Err }
+
+// PathStep names one hop on the way down to a nested element: the sequence
+// descended into, and which of its items. PS3.5 gives sequence items an ordinal
+// position and nothing else to name them by, so without the index two items of
+// the same sequence produce diagnostics that read identically -- which is no help
+// at all when one item of forty is the malformed one.
+type PathStep struct {
+	// Tag is the sequence element descended into.
+	Tag Tag
+
+	// Item is the zero-based index of the item being processed, or -1 when the
+	// sequence has been entered but no item has: the item header itself was
+	// unreadable, or the anomaly concerns the sequence rather than any one item.
+	Item int
+}
+
+// String renders the step the way the DICOM tooling convention does,
+// "(0040,0100)[0]", dropping the subscript when there is no item to name.
+func (p PathStep) String() string {
+	if p.Item < 0 {
+		return p.Tag.String()
+	}
+	return fmt.Sprintf("%s[%d]", p.Tag, p.Item)
+}
 
 // truncatedHeader describes a header of need bytes starting at pos that runs
 // past total.
@@ -203,7 +228,7 @@ func (rc *readContext) report(d Diagnostic) error {
 		return nil
 	}
 	if len(rc.seqPath) > 0 {
-		d.Path = append([]Tag(nil), rc.seqPath...)
+		d.Path = append([]PathStep(nil), rc.seqPath...)
 	}
 	d.Offset += rc.baseOffset
 	logDiagnostic(rc.logCtx(), d)
@@ -214,10 +239,21 @@ func (rc *readContext) report(d Diagnostic) error {
 }
 
 // pushSeq records that parsing has descended into sequence tag t, so
-// diagnostics raised inside it carry the enclosing path.
+// diagnostics raised inside it carry the enclosing path. The item is unknown
+// until the item loop names it, because the sequence is entered where the
+// element is read and the items are walked somewhere else.
 func (rc *readContext) pushSeq(t Tag) {
 	if rc != nil {
-		rc.seqPath = append(rc.seqPath, t)
+		rc.seqPath = append(rc.seqPath, PathStep{Tag: t, Item: -1})
+	}
+}
+
+// setItem names which item of the innermost sequence is being processed. The
+// item loop calls it once per item, so a diagnostic can say which of forty items
+// is the malformed one.
+func (rc *readContext) setItem(i int) {
+	if rc != nil && len(rc.seqPath) > 0 {
+		rc.seqPath[len(rc.seqPath)-1].Item = i
 	}
 }
 
@@ -249,7 +285,7 @@ func (st *writeState) report(d Diagnostic) error {
 		return nil
 	}
 	if len(st.seqPath) > 0 {
-		d.Path = append([]Tag(nil), st.seqPath...)
+		d.Path = append([]PathStep(nil), st.seqPath...)
 	}
 	logDiagnostic(st.logCtx(), d)
 	if st.onDiag == nil {
@@ -262,7 +298,16 @@ func (st *writeState) report(d Diagnostic) error {
 // raised inside it carry the enclosing path.
 func (st *writeState) pushSeq(t Tag) {
 	if st != nil {
-		st.seqPath = append(st.seqPath, t)
+		st.seqPath = append(st.seqPath, PathStep{Tag: t, Item: -1})
+	}
+}
+
+// setItem names which item of the innermost sequence is being written. Unlike the
+// reader the writer knows the index at the moment it descends, but it says so
+// through the same two calls so both sides speak one vocabulary.
+func (st *writeState) setItem(i int) {
+	if st != nil && len(st.seqPath) > 0 {
+		st.seqPath[len(st.seqPath)-1].Item = i
 	}
 }
 

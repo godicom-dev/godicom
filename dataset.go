@@ -46,9 +46,9 @@ type readContext struct {
 	// onDiag is ReadOptions.OnDiagnostic, kept so deferred loads can report
 	// through the same hook after the read has returned.
 	onDiag func(Diagnostic) error
-	// seqPath is the sequence tags currently being descended into, used to
-	// stamp Diagnostic.Path.
-	seqPath []Tag
+	// seqPath is the sequences currently being descended into, and the item of
+	// each, used to stamp Diagnostic.Path.
+	seqPath []PathStep
 	// baseOffset shifts diagnostic offsets back into source coordinates when a
 	// parser is handed a buffer copied out of the middle of the source.
 	baseOffset int64

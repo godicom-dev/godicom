@@ -501,6 +501,12 @@ func readSequenceItemsUntil(
 			break
 		}
 
+		// Everything from here to the end of this iteration belongs to one item of
+		// this sequence: the one about to be appended, so its index is the count
+		// already there. Naming it is the difference between "something in this
+		// forty-item sequence is wrong" and knowing which one.
+		ctx.setItem(seq.Len())
+
 		if pos+8 > int64(len(data)) {
 			// The item header runs past the buffer: the enclosing element's
 			// length claimed more bytes than the file holds.
