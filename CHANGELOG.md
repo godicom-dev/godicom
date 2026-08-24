@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: README covers the two diagnostics v0.28.0 added — `WriteOptions.OnDiagnostic`
   was not mentioned at all, and the read section predated both the VR
   disagreement kind and `Diagnostic.Path` naming the sequence item
+- Docs: the README's snippets now exist as `Example` functions, so `go test`
+  compiles them and checks their output, and pkg.go.dev renders them. Written
+  the way a reader can run them: no fixture path, no filesystem — each builds
+  its own Part 10 bytes in memory. The write-diagnostic snippet is corrected
+  along the way; it showed the diagnostic's own message where the caller
+  actually gets it wrapped in `error writing dataset`
 
 ## [0.28.0] - 2026-08-24
 
