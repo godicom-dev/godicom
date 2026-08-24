@@ -3,6 +3,7 @@ package godicom
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -27,6 +28,13 @@ const (
 	// be loaded when its value was finally requested. The tag stays visible to
 	// SortedTags and Elements while Get reports it as absent.
 	DiagnosticDeferredValueUnreadable DiagnosticKind = "deferred_value_unreadable"
+
+	// DiagnosticVRMismatch: an explicit VR element carries a VR the data
+	// dictionary cannot reconcile with its tag. Nothing about the parse changes
+	// -- godicom keeps what the file said, because what the file says is what
+	// the file means -- so this is pure information, and it is the single most
+	// useful thing to know when a real device will not accept your output.
+	DiagnosticVRMismatch DiagnosticKind = "vr_mismatch"
 
 	// DiagnosticInvalidValue: a value handed to the writer cannot be spelled the
 	// way its VR requires, so writing it produces a file godicom's own reader
@@ -60,8 +68,16 @@ type Diagnostic struct {
 	// stream ended before a tag could be read.
 	Tag Tag
 
-	// VR is the VR in effect for Tag, empty when it was never determined.
+	// VR is the VR in effect for Tag, empty when it was never determined. For a
+	// DiagnosticVRMismatch this is the VR the file actually carried, since that
+	// is the one godicom went on to use.
 	VR VR
+
+	// ExpectedVR is the VR the data dictionary gives Tag, set only when it
+	// disagrees with VR. It is empty for every other kind, and also for a tag
+	// the dictionary has no entry for -- an unrecognised or private tag has no
+	// expectation to fall short of.
+	ExpectedVR VR
 
 	// Offset is the byte offset, in the dataset being parsed, where the
 	// anomaly starts. For a Deflated transfer syntax this is an offset into
@@ -91,6 +107,9 @@ func (d Diagnostic) Error() string {
 		fmt.Fprintf(&b, " at %s", d.Tag)
 		if d.VR != "" {
 			fmt.Fprintf(&b, " %s", d.VR)
+		}
+		if d.ExpectedVR != "" {
+			fmt.Fprintf(&b, ", dictionary says %s", d.ExpectedVR)
 		}
 	}
 	if !d.Kind.raisedWhileWriting() {
@@ -137,6 +156,42 @@ func truncatedValue(tag Tag, vr VR, valueStart, need, total int64) Diagnostic {
 		Need:   need,
 		Have:   total - valueStart,
 	}
+}
+
+// reportVRMismatch offers a disagreement between the VR encoded for tag at pos
+// and the VR the data dictionary gives it. Nothing about the parse changes, so
+// unlike the truncation diagnostics this one is pure information.
+//
+// Because it is only information, nobody who is not listening should pay for it:
+// the dictionary lookup runs once per explicit VR element, which is once per
+// element in most files, so it is skipped unless a hook is set or warn-level
+// logging is on. That keeps the invariant that every diagnostic godicom raises
+// is also logged, without charging the quiet default path for it.
+//
+// Implicit VR is not checked at all: it carries no VR of its own, so the value
+// decodeElementHeader resolved came from this same dictionary and cannot differ
+// from it.
+func (rc *readContext) reportVRMismatch(tag Tag, encoded VR, pos int64, isImplicitVR bool) error {
+	if rc == nil || isImplicitVR {
+		return nil
+	}
+	if rc.onDiag == nil {
+		ctx := rc.logCtx()
+		if !LoggerFromContext(ctx).Enabled(ctx, slog.LevelWarn) {
+			return nil
+		}
+	}
+	want := vrDisagreesWithDictionary(tag, encoded)
+	if want == "" {
+		return nil
+	}
+	return rc.report(Diagnostic{
+		Kind:       DiagnosticVRMismatch,
+		Tag:        tag,
+		VR:         encoded,
+		ExpectedVR: want,
+		Offset:     pos,
+	})
 }
 
 // report logs d and offers it to the OnDiagnostic hook, returning whatever the

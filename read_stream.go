@@ -255,6 +255,9 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+		if err := readCtx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
+			return nil, err
+		}
 		logElementHeader(ctx, pos, header, currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)

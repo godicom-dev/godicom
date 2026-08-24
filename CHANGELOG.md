@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **VR disagreement diagnostics**: reading now reports an explicit VR the data
+  dictionary cannot reconcile with its tag — a `(0010,0010)` encoded as `SH`
+  when the dictionary says `PN`, or a known tag sent as `UN`. The new
+  `DiagnosticVRMismatch` kind carries the encoded VR in `Diagnostic.VR` and the
+  dictionary's in the new `Diagnostic.ExpectedVR` field. The parse is
+  unchanged — godicom still keeps the VR the file gave it, because what the file
+  says is what the file means — so this is pure information about
+  interoperability, and returning the diagnostic from the hook turns it into a
+  read failure. Private tags, tags absent from the dictionary, and implicit VR
+  are excluded: they have no dictionary VR to fall short of. A dictionary entry
+  naming more than one permitted VR (`"OB or OW"`, `"US or SS"`) is satisfied by
+  any of them, so `PixelData` does not report on every image. The check costs a
+  dictionary lookup per element, so it is skipped unless an `OnDiagnostic` hook
+  is set or warn-level logging is on
 - **Write diagnostics**: `WriteOptions.OnDiagnostic func(Diagnostic) error`
   mirrors `ReadOptions.OnDiagnostic` and reports values the writer would
   otherwise encode silently even though godicom's own reader raises a

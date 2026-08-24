@@ -46,6 +46,37 @@ func dictionaryVR(tag Tag) (VR, error) {
 	return "", fmt.Errorf("godicom: tag %s not found in dictionary", tag)
 }
 
+// vrDisagreesWithDictionary returns the VR the data dictionary gives tag when
+// that VR and encoded cannot be the same thing, or "" when they are compatible.
+//
+// Only a tag the dictionary has an entry for can disagree with anything, so this
+// consults dictionaryVR rather than LookupVR: LookupVR launders a missing entry
+// into UN, which is a decoding default rather than an expectation. An
+// unrecognised standard tag and a private tag have no dictionary VR to be wrong
+// about, and reporting every one of them would bury the disagreements that
+// matter -- a real file is full of private elements carrying perfectly good
+// explicit VRs.
+//
+// A dictionary entry may name more than one permitted VR; PS3.6 spells these
+// "US or SS", "OB or OW" and "US or OW", and any of the alternatives is correct.
+// PixelData is one of them, so skipping this would mismatch on nearly every
+// image ever written.
+func vrDisagreesWithDictionary(tag Tag, encoded VR) VR {
+	if encoded == "" || tag.IsPrivate() {
+		return ""
+	}
+	want, err := dictionaryVR(tag)
+	if err != nil || want == "" || want == encoded {
+		return ""
+	}
+	for _, alt := range strings.Split(string(want), " or ") {
+		if VR(strings.TrimSpace(alt)) == encoded {
+			return ""
+		}
+	}
+	return want
+}
+
 // dictionaryDescription returns the name for a given tag.
 func dictionaryDescription(tag Tag) (string, bool) {
 	if entry, ok := DicomDictionaryGo[tag]; ok {

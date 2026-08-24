@@ -77,6 +77,35 @@ func TestReadFile_LoggerEmitsDebugElements(t *testing.T) {
 	}
 }
 
+// A VR the data dictionary disagrees with is logged even when no OnDiagnostic
+// hook is set. The check that raises it is skipped entirely on the quiet default
+// path -- it costs a dictionary lookup per element -- so it is gated on a hook
+// being present *or* warn logging being on, and this is the second half of that
+// gate. Without it, a caller who set up a logger and no hook would never hear
+// about the one thing most likely to explain a device rejecting their file.
+func TestVRMismatchIsLoggedWithoutAHook(t *testing.T) {
+	var buf bytes.Buffer
+	l := slog.New(&memHandler{level: slog.LevelWarn, buf: &buf})
+
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.MustTag("PatientName"), godicom.VRSH, "Doe^Jane"))
+	data, err := godicom.EncodeDataset(ds, godicom.ExplicitVRLittleEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := godicom.ReadBytes(data, &godicom.ReadOptions{Force: true, Logger: l}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"parse diagnostic", "kind=vr_mismatch", "vr=SH", "expected_vr=PN"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log is missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestReadFileContext_UsesContextLogger(t *testing.T) {
 	var buf bytes.Buffer
 	l := slog.New(&memHandler{level: slog.LevelDebug, buf: &buf})

@@ -233,6 +233,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+		if err := readCtx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
+			return nil, err
+		}
 
 		logElementHeader(ctx, pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
@@ -586,6 +589,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+		if err := ctx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
+			return pos, err
+		}
 
 		logElementHeader(ctx.logCtx(), pos, data[pos:pos+int64(hdrSize)], currentTag, vr, length)
 
