@@ -85,8 +85,10 @@ By default a read keeps whatever it parsed before the file stopped making sense,
 which is what most DICOM tooling does but hides the damage. Set
 `ReadOptions.OnDiagnostic` to see those anomalies — a value shorter than its
 length field, a header cut off mid-element, a sequence whose declared length
-runs past the end of the file, a deferred value whose source has gone away —
-each reported with its tag, VR, byte offset, and enclosing sequences:
+runs past the end of the file, a deferred value whose source has gone away, an
+explicit VR the data dictionary cannot reconcile with its tag — each reported
+with its tag, VR, byte offset, and the enclosing sequences down to the item it
+came from, `(0008,1140)[1] > (0008,1110)[1]`:
 
 ```go
 ds, err := godicom.ReadFile("truncated.dcm", &godicom.ReadOptions{
@@ -104,6 +106,41 @@ opts := &godicom.ReadOptions{
 	OnDiagnostic: func(d godicom.Diagnostic) error { return d },
 }
 ```
+
+A VR disagreement is the one anomaly that changes nothing about the parse:
+godicom keeps the VR the file gave it, because what the file says is what the
+file means. It is reported because it is the first thing worth knowing when a
+device refuses your files.
+
+**Values a strict receiver would reject**
+
+`WriteOptions.OnDiagnostic` is the same hook on the way out. It reports values
+the writer would otherwise encode silently even though godicom's own reader
+raises a diagnostic on the result — an `IS` outside `[-2^31, 2^31)`, a `DS`
+longer than the 16 bytes PS3.5 allows, a fractional value in an `IS`:
+
+```go
+if err := ds.SetInt(tag.EchoNumbers, 3000000000); err != nil {
+	log.Fatal(err)
+}
+err := godicom.WriteFile("out.dcm", ds, &godicom.WriteOptions{
+	OnDiagnostic: func(d godicom.Diagnostic) error { return d },
+})
+// godicom: invalid_value at (0018,0086) IS: "3000000000" is outside
+// [-2147483648, 2147483647], the range an IS allows
+```
+
+Returning `nil` writes the value as it stands, so nothing an existing caller
+writes changes; returning the diagnostic fails the write. That is the three-way
+choice pydicom spells `IGNORE` / `WARN` / `RAISE` in
+`config.settings.writing_validation_mode`, without a mode enum — whether the
+hook is set, and what it returns, says which one you want.
+
+The dictionary-VR setters reject at the call site whatever they can see on their
+own: `SetFloat(tag.EchoNumbers, 1.5)` fails immediately, because an `IS` holds
+no floating-point values. The hook is for what a setter cannot judge — a value
+in range for its Go type but not for its VR, or an element built directly with
+`Set(NewDataElement(tag, vr, value))`.
 
 **Dataset bytes (no File Meta)**
 
