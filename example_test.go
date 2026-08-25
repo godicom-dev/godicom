@@ -94,6 +94,54 @@ func ExampleAddPrivateDictEntry() {
 	// without a creator: false
 }
 
+// ExampleNewPrivateDictionary reads a vendor's private element as the vendor
+// meant it, without registering anything process-wide. AddPrivateDictEntry above
+// does the same job for a program that owns its process; this is the version a
+// library can use, because the dictionary belongs to the one read that was given
+// it.
+//
+// Implicit VR is what makes the difference visible: the file carries no VRs at
+// all, so every element's VR is whatever the dictionary says, and for a private
+// element that answer depends on who wrote the file.
+func ExampleNewPrivateDictionary() {
+	vendor := godicom.NewPrivateDictionary()
+	private := godicom.NewTag(0x0041, 0x1001)
+	if err := vendor.Add("ACME 3.2", private, godicom.VRUS, "Some Number"); err != nil {
+		log.Fatal(err)
+	}
+
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.NewTag(0x0041, 0x0010), godicom.VRLO, "ACME 3.2"))
+	ds.Set(godicom.NewDataElement(private, godicom.VRUS, 4095))
+	data, err := ds.Encode(uid.ImplicitVRLittleEndian)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	plain, err := godicom.ReadBytes(data, &godicom.ReadOptions{Force: true})
+	if err != nil {
+		log.Fatal(err)
+	}
+	elem, _ := plain.Get(private)
+	fmt.Println("read against PS3.6 alone:", elem.VR, elem.Value)
+
+	// Compose rather than replace. Standard behind the vendor dictionary is what
+	// keeps the other 5,189 entries; handing over the vendor's on its own would
+	// leave every standard element as UN.
+	reread, err := godicom.ReadBytes(data, &godicom.ReadOptions{
+		Force:      true,
+		Dictionary: godicom.NewDictionary(vendor, godicom.Standard()),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	elem, _ = reread.Get(private)
+	fmt.Println("read with the vendor's dictionary:", elem.VR, elem.Value)
+	// Output:
+	// read against PS3.6 alone: UN [255 15]
+	// read with the vendor's dictionary: US 4095
+}
+
 // ExampleReadOptions shows the diagnostic hook on the way in. A read keeps
 // whatever it parsed before the file stopped making sense; the hook is how you
 // find out that it did.

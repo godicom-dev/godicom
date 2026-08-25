@@ -104,6 +104,39 @@ entry, _ := godicom.Standard().Lookup(tag.PixelData, "")
 // entry.VRs() []VR{"OB", "OW"}
 ```
 
+**Your own dictionary**
+
+`AddPrivateDictEntry` mutates process-global state, which is right for a program
+that owns its process and wrong for a library. `NewPrivateDictionary` builds one
+that belongs to a single read instead, and `ReadOptions.Dictionary` is how it
+gets there:
+
+```go
+vendor := godicom.NewPrivateDictionary()
+if err := vendor.Add("ACME 3.2", godicom.NewTag(0x0041, 0x1001), godicom.VRUS, "Some Number"); err != nil {
+	return err
+}
+ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{
+	Dictionary: godicom.NewDictionary(vendor, godicom.Standard()),
+})
+```
+
+`NewDictionary` composes: each dictionary is tried in turn and the first entry
+found wins, so the order is the precedence. Compose rather than replace —
+`Standard()` behind the vendor's dictionary is what keeps the other 5,189
+entries, and handing over the vendor's on its own would leave every standard
+element as UN.
+
+This changes what an element *means*, not merely how it is described. An implicit
+VR file carries no VRs, so every element's VR is whatever the dictionary says it
+is; the dataset that comes back retains the dictionary, because a deferred value
+is decoded on `Get`, long after the read returned, and has to resolve to the VR
+it was first read under.
+
+There is no `WriteOptions.Dictionary`. The write path resolves an ambiguous VR
+from the dataset's own values — Pixel Representation decides between US and SS —
+and never asks the dictionary, so the field would have nothing to do.
+
 **Truncated and malformed files**
 
 By default a read keeps whatever it parsed before the file stopped making sense,

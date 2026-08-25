@@ -318,20 +318,20 @@ func TestVRDisagreesWithDictionaryAcceptsEveryAlternative(t *testing.T) {
 		t.Fatalf("(0028,1200) VR = %q, want the three-way compound form", entry.VR)
 	}
 	for _, vr := range []VR{"US", "SS", "OW"} {
-		if got := vrDisagreesWithDictionary(grayLUT, vr); got != "" {
+		if got := vrDisagreesWithDictionary(Standard(), grayLUT, vr); got != "" {
 			t.Errorf("vrDisagreesWithDictionary((0028,1200), %s) = %q, want no disagreement", vr, got)
 		}
 	}
 	// A VR outside the set still has to be reported, or this test would pass with
 	// the function stubbed out to return "".
-	if got := vrDisagreesWithDictionary(grayLUT, VRPN); got != "US or SS or OW" {
+	if got := vrDisagreesWithDictionary(Standard(), grayLUT, VRPN); got != "US or SS or OW" {
 		t.Errorf("vrDisagreesWithDictionary((0028,1200), PN) = %q, want the dictionary VR", got)
 	}
 	// PixelData is the two-way case, and the one that actually turns up: an image
 	// encoded OW and an image encoded OB are both right.
 	pixelData := MustTag(0x7FE00010)
 	for _, vr := range []VR{"OB", "OW"} {
-		if got := vrDisagreesWithDictionary(pixelData, vr); got != "" {
+		if got := vrDisagreesWithDictionary(Standard(), pixelData, vr); got != "" {
 			t.Errorf("vrDisagreesWithDictionary(PixelData, %s) = %q, want no disagreement", vr, got)
 		}
 	}

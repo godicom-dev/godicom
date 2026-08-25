@@ -171,7 +171,7 @@ func TestVRDisagreesWithDictionary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := vrDisagreesWithDictionary(tc.tag, tc.encoded); got != tc.want {
+			if got := vrDisagreesWithDictionary(Standard(), tc.tag, tc.encoded); got != tc.want {
 				t.Errorf("vrDisagreesWithDictionary(%s, %q) = %q, want %q", tc.tag, tc.encoded, got, tc.want)
 			}
 		})

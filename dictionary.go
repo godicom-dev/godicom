@@ -22,6 +22,57 @@ type Dictionary interface {
 // anything added by AddPrivateDictEntry.
 func Standard() Dictionary { return standardDictionary{} }
 
+// NewDictionary composes dicts into one, trying each in turn and returning the
+// first entry found. Later dictionaries are the fallback, so
+//
+//	godicom.NewDictionary(vendor, godicom.Standard())
+//
+// reads vendor's entries where it has them and PS3.6's everywhere else, and
+// reversing the arguments makes PS3.6 win instead. Composing rather than
+// replacing is the point: a caller that only wants to add a vendor block should
+// not have to carry the other 5,189 entries itself.
+//
+// First match wins, not most specific: a dictionary that answers for a tag ends
+// the search even when a later one has a better entry. That is the rule because
+// it is the only one a caller can reason about from the argument order alone.
+//
+// A dictionary with nothing in it is fine and answers nothing. NewDictionary()
+// with no arguments is that dictionary, and is not an error -- it is what an
+// options struct threading a caller-built list ends up with when the list is
+// empty.
+//
+// The result holds the slice, not a copy of what the dictionaries contain, so a
+// PrivateDictionary among them stays live: an Add after composition is visible
+// through the composite. dicts itself is copied, so appending to the caller's
+// slice afterwards is not.
+func NewDictionary(dicts ...Dictionary) Dictionary {
+	return multiDictionary(append([]Dictionary(nil), dicts...))
+}
+
+type multiDictionary []Dictionary
+
+func (m multiDictionary) Lookup(tag Tag, creator string) (DictEntry, bool) {
+	for _, d := range m {
+		if d == nil {
+			continue
+		}
+		if entry, ok := d.Lookup(tag, creator); ok {
+			return entry, true
+		}
+	}
+	return DictEntry{}, false
+}
+
+// dictionaryOrStandard is how every internal caller reaches the dictionary in
+// effect: nil means PS3.6, so the read path never has to nil-check and a caller
+// who set nothing gets exactly what godicom has always done.
+func dictionaryOrStandard(d Dictionary) Dictionary {
+	if d == nil {
+		return Standard()
+	}
+	return d
+}
+
 // standardDictionary has no fields because the tables it reads are package state.
 // It is a named type anyway: without one there is nothing for a caller to hold,
 // wrap, or count lookups on.
@@ -128,8 +179,8 @@ func dictionaryVR(tag Tag) (VR, error) {
 	return VR(entry.VR), nil
 }
 
-// vrDisagreesWithDictionary returns the VR the data dictionary gives tag when
-// that VR and encoded cannot be the same thing, or "" when they are compatible.
+// vrDisagreesWithDictionary returns the VR dict gives tag when that VR and
+// encoded cannot be the same thing, or "" when they are compatible.
 //
 // Only a tag the dictionary has an entry for can disagree with anything, so this
 // consults the dictionary directly rather than LookupVR: LookupVR launders a
@@ -139,14 +190,19 @@ func dictionaryVR(tag Tag) (VR, error) {
 // matter -- a real file is full of private elements carrying perfectly good
 // explicit VRs.
 //
+// Private tags stay exempt even when the read was given a private dictionary that
+// does have an entry: the creator that entry hangs off is not available here, and
+// resolving it per element would charge the quiet path for a diagnostic nobody
+// asked for.
+//
 // An entry may permit more than one VR, and any of them is correct. PixelData is
 // one such entry -- "OB or OW" -- so treating the whole string as a single VR
 // would mismatch on nearly every image ever written. VRs does that splitting.
-func vrDisagreesWithDictionary(tag Tag, encoded VR) VR {
+func vrDisagreesWithDictionary(dict Dictionary, tag Tag, encoded VR) VR {
 	if encoded == "" || tag.IsPrivate() {
 		return ""
 	}
-	entry, ok := Standard().Lookup(tag, "")
+	entry, ok := dict.Lookup(tag, "")
 	if !ok || entry.VR == "" {
 		return ""
 	}
@@ -179,6 +235,12 @@ func dictionaryDescription(tag Tag) (string, bool) {
 // No test in the suite currently tells the two apart on a real file, so nothing
 // would have caught this being widened; TestDictionaryHasTagIgnoresRepeaters is
 // what keeps the narrow question narrow.
+//
+// ReadOptions.Dictionary does not reach here either, and should not. This runs
+// before the transfer syntax is known, to guess a byte order from the first tag in
+// the dataset; a caller's private block cannot help -- a private tag is private in
+// both byte orders -- and letting a supplied dictionary answer would make the
+// guess depend on how many entries the caller happened to add.
 func dictionaryHasTag(tag Tag) bool {
 	_, ok := dicomDictionary[tag]
 	return ok
@@ -252,37 +314,66 @@ func TagFromKeyword(keyword string) (Tag, error) {
 	return tag, nil
 }
 
-// LookupVR returns the VR for a tag, with fallback for unknown tags.
+// LookupVR returns the VR the standard data dictionary gives tag, or UN when it
+// has none to give.
+//
+// A private tag other than a Private Creator element answers UN, because its VR
+// depends on the vendor who wrote it and this function is not told who that was.
+// The read path resolves those through the dictionary it was given, which has
+// the creator in hand; see ReadOptions.Dictionary.
 func LookupVR(tag Tag) VR {
-	if tag.IsPrivate() {
-		if tag.IsPrivateCreator() {
-			return VRLO
-		}
-		return VRUN
-	}
-	vr, err := dictionaryVR(tag)
-	if err != nil {
-		return VRUN
-	}
-	return vr
+	return vrResolver{}.vrFor(tag)
 }
 
-// lookupVRWithCreator resolves VR for a private tag using its creator string.
-// Mirrors pydicom datadict.dictionary_VR for private elements during implicit read.
-func lookupVRWithCreator(tag Tag, creator string) VR {
-	if !tag.IsPrivate() {
-		return LookupVR(tag)
-	}
+// vrResolver answers the one question a header decoder asks the dictionary: what
+// VR does this tag have, when the encoding did not carry one?
+//
+// It pairs the dictionary in effect with the means of finding a private tag's
+// Private Creator, because neither answers alone. A private tag's VR depends on
+// who wrote the file, and a creator is only worth resolving against a dictionary
+// that has that vendor's block in it -- which is the whole reason a caller
+// supplies one.
+//
+// The zero value resolves against Standard with no creator, which is what a
+// caller holding neither should get: a header decoded outside a parse, or a test.
+type vrResolver struct {
+	dict    Dictionary
+	creator creatorFunc
+}
+
+// vrFor resolves tag's VR, mirroring pydicom datadict.dictionary_VR plus the UN
+// fallback filereader relies on.
+//
+// A tag with no entry is UN rather than an error. PS3.5 reads an element of
+// unknown VR as UN, and a file full of one vendor's private elements stays
+// readable without that vendor's dictionary -- as UN byte strings, which is
+// exactly what they are to a reader that cannot name them.
+//
+// An entry that names no VR counts as no entry. The generated tables contain no
+// such thing, but a caller's Dictionary may, and "" is not a VR that anything
+// downstream matches, while UN is.
+func (r vrResolver) vrFor(tag Tag) VR {
+	// PS3.5 fixes the Private Creator element at LO whatever a dictionary says,
+	// and none of them list the (gggg,0010-00FF) block anyway, so asking would
+	// only ever answer UN.
 	if tag.IsPrivateCreator() {
 		return VRLO
 	}
-	if creator == "" {
+	// Resolving a creator costs a scan of what has been parsed so far, so it is
+	// only paid for by a private tag that needs it.
+	creator := ""
+	if tag.IsPrivate() && r.creator != nil {
+		creator = r.creator(tag)
+	}
+	entry, ok := dictionaryOrStandard(r.dict).Lookup(tag, creator)
+	if !ok || entry.VR == "" {
 		return VRUN
 	}
-	if vr, ok := privateDictionaryVR(tag, creator); ok {
-		return vr
-	}
-	return VRUN
+	// Returned as it stands, compound forms included: an implicit-VR PixelData
+	// resolves to "OB or OW", and vr.go's ambiguous-VR handling is what reads
+	// that. Splitting it here would pick one of two the dictionary declines to
+	// choose between.
+	return VR(entry.VR)
 }
 
 // IsRepeaterTag returns true if the tag matches a repeater pattern.
