@@ -53,6 +53,7 @@ func TestPixelBytes_J2K_MR_small(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 64*64*2 {
@@ -94,6 +95,7 @@ func TestPixelBytes_JPEGLS_lossless_MR_small(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 64*64*2 {
@@ -114,6 +116,7 @@ func TestPixelBytes_JPEGLS_nearLossless_08(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 45*10 {
@@ -149,6 +152,7 @@ func TestPixelBytes_JPEG_baseline_SC_rgb_lossy(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 100*100*3 {
@@ -172,6 +176,7 @@ func TestPixelBytes_JPEG_losslessSV1_SC_rgb(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 100*100*3 {
@@ -195,6 +200,7 @@ func TestPixelFrames_singleIndex(t *testing.T) {
 	}
 	frames, err := ds.PixelFrames(pixels.WithRaw(true), pixels.WithFrameIndex(0))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(frames) != 1 || len(frames[0]) != 64*64*2 {
@@ -302,6 +308,7 @@ func TestPixelBytes_JPEGLS_emri_small_10frame(t *testing.T) {
 	}
 	frames, err := ds.PixelFrames(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(frames) != len(nativeFrames) {
@@ -329,6 +336,7 @@ func TestPixelBytes_J2K_emri_small_10frame(t *testing.T) {
 	}
 	frames, err := ds.PixelFrames(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(frames) != len(nativeFrames) {
@@ -365,6 +373,7 @@ func TestPixelBytes_JPEG_extended_JPGExtended(t *testing.T) {
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(raw) != 1024*256*2 {

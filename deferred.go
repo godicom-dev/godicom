@@ -16,7 +16,7 @@ func dataElementOffsetToValue(isImplicit bool, vr VR) int64 {
 	return 8
 }
 
-func shouldDeferElement(tag Tag, length int, deferSize uint32) bool {
+func shouldDeferElement(tag Tag, length uint32, deferSize uint32) bool {
 	if deferSize == 0 {
 		return false
 	}
@@ -24,18 +24,18 @@ func shouldDeferElement(tag Tag, length int, deferSize uint32) bool {
 	if tag == TagCharset {
 		return false
 	}
-	return uint32(length) > deferSize
+	return length > deferSize
 }
 
 func markElementDeferred(
 	elem *Element,
 	valueTell int64,
-	length int,
+	length uint32,
 	cc codecContext,
 ) {
 	elem.Deferred = true
 	elem.ValueTell = valueTell
-	elem.ValueLength = uint32(length)
+	elem.ValueLength = length
 	elem.IsImplicitVR = cc.IsImplicitVR
 	elem.IsLittleEndian = cc.IsLittleEndian
 	elem.readCharsets = append([]string(nil), cc.Charsets...)

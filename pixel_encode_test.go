@@ -71,6 +71,7 @@ func TestCompressPixelData_JPEGLSLossless_CT_small(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ds.CompressPixelData(uid.JPEGLSLossless); err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	ts, ok := ds.TransferSyntaxUID()
@@ -97,6 +98,7 @@ func TestCompressPixelData_JPEGLossless_CT_small(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ds.CompressPixelData(uid.JPEGLossless); err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	got, err := ds.PixelBytes(pixels.WithRaw(true))
@@ -141,6 +143,7 @@ func TestCompressPixelData_J2KLossless_CT_small(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ds.CompressPixelData(uid.JPEG2000Lossless); err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	ts, ok := ds.TransferSyntaxUID()

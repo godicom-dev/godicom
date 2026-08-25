@@ -271,10 +271,10 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				logDebug(ctx, "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, cc.IsLittleEndian); ok {
-					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+					if shouldDeferElement(currentTag, uint32(len(encapsulated)), readDeferSize(opts)) {
 						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
 							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
-						markElementDeferred(elem, valueStart, len(encapsulated), cc)
+						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx, valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, cc)
@@ -315,14 +315,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			continue
 		}
 
-		if pos+int64(hdrSize+length) > int64(len(data)) {
+		if pos+int64(hdrSize)+int64(length) > int64(len(data)) {
 			if err := readCtx.report(truncatedValue(currentTag, vr, pos+int64(hdrSize), int64(length), int64(len(data)))); err != nil {
 				return nil, err
 			}
 			break
 		}
 
-		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
+		value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
 		valueTell := pos + int64(hdrSize)
 
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
@@ -337,7 +337,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		if shouldKeepElement(opts, elem.Tag) {
 			allElements = append(allElements, elem)
 		}
-		pos += int64(hdrSize + length)
+		pos += int64(hdrSize) + int64(length)
 
 		if currentTag == TagCharset {
 			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
@@ -463,7 +463,7 @@ func readSequenceItems(data []byte, offset int64, cc codecContext, opts *ReadOpt
 	return seq, newPos, err
 }
 
-func readDefinedLengthSequence(data []byte, offset int64, length int, cc codecContext, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
+func readDefinedLengthSequence(data []byte, offset int64, length uint32, cc codecContext, opts *ReadOptions, ctx *readContext) (*Sequence, int64, error) {
 	return readSequenceItemsUntil(
 		data,
 		offset,
@@ -520,11 +520,11 @@ func readSequenceItemsUntil(
 			return seq, pos, err
 		}
 
-		var itemLength int
+		var itemLength uint32
 		if cc.IsLittleEndian {
-			itemLength = int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
+			itemLength = binary.LittleEndian.Uint32(data[pos+4 : pos+8])
 		} else {
-			itemLength = int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
+			itemLength = binary.BigEndian.Uint32(data[pos+4 : pos+8])
 		}
 		pos += 8
 
@@ -633,10 +633,10 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 				logDebug(ctx.logCtx(), "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
 				if encapsulated, endPos, ok := readEncapsulatedPixelData(data, valueStart, cc.IsLittleEndian); ok {
-					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+					if shouldDeferElement(currentTag, uint32(len(encapsulated)), readDeferSize(opts)) {
 						logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
 							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
-						markElementDeferred(elem, valueStart, len(encapsulated), cc)
+						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx.logCtx(), valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, cc)
@@ -677,14 +677,14 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			continue
 		}
 
-		if pos+int64(hdrSize+length) > int64(len(data)) {
+		if pos+int64(hdrSize)+int64(length) > int64(len(data)) {
 			if err := ctx.report(truncatedValue(currentTag, vr, pos+int64(hdrSize), int64(length), int64(len(data)))); err != nil {
 				return pos, err
 			}
 			break
 		}
 
-		value := data[pos+int64(hdrSize) : pos+int64(hdrSize+length)]
+		value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
 		valueTell := pos + int64(hdrSize)
 
 		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
@@ -699,7 +699,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 		if shouldKeepElement(opts, elem.Tag) {
 			ds.Set(elem)
 		}
-		pos += int64(hdrSize + length)
+		pos += int64(hdrSize) + int64(length)
 
 		if currentTag == TagCharset {
 			cc = cc.withCharsets(ParseCharacterSets(elem.Value))

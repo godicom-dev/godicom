@@ -301,10 +301,10 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 					return nil, err
 				}
 				if keep {
-					if shouldDeferElement(currentTag, len(encapsulated), readDeferSize(opts)) {
+					if shouldDeferElement(currentTag, uint32(len(encapsulated)), readDeferSize(opts)) {
 						logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
 							AttrTag, currentTag.String(), AttrLen, len(encapsulated))
-						markElementDeferred(elem, valueStart, len(encapsulated), cc)
+						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx, valueStart, encapsulated)
 						assignElementBytes(elem, encapsulated, vr, cc)

@@ -175,7 +175,7 @@ func bytesHex(b []byte) string {
 
 // logElementHeader mirrors pydicom's per-element header line:
 // offset + header hex + tag + VR + Length / Undefined length.
-func logElementHeader(ctx context.Context, offset int64, header []byte, tag Tag, vr VR, length int) {
+func logElementHeader(ctx context.Context, offset int64, header []byte, tag Tag, vr VR, length uint32) {
 	l := LoggerFromContext(ctx)
 	if !l.Enabled(ctx, slog.LevelDebug) {
 		return

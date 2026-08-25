@@ -7,7 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The data dictionary answered the wrong VR for nearly every tag on a 32-bit
+  platform.** The 88 repeater masks were parsed with `fmt.Sscanf` into `int`
+  fields with the error discarded; a mask such as `0xFF00FFFF` does not fit in a
+  32-bit `int`, so all 88 came out zero, and `(tag ^ value) & 0 == 0` matches
+  every tag. Whichever repeater happened to be first in map iteration order
+  became the answer for every non-private tag — `LookupVR` returned `US` for
+  `PatientName`, group lengths, everything — and `IsRepeaterTag` was true for all
+  of them. The masks are now built by nibble arithmetic into `uint32`, which has
+  no error to drop and no width to overflow. 64-bit platforms were unaffected
+- **`ParseTag` could not parse any tag with a group of `0x8000` or above from its
+  hex-string form**, on every platform. It used `strconv.ParseInt(v, 16, 32)`,
+  and a signed 32-bit parse rejects everything from `0x80000000` up — so
+  `ParseTag("FFFEE000")` failed with `unknown tag keyword` even though the item,
+  item-delimiter and sequence-delimiter tags are exactly the ones godicom's own
+  encapsulation and sequence code is built from, and exactly the ones a
+  `JSONKey` round-trip is most likely to hit. Now `ParseUint`, matching
+  pydicom's `int(arg, 16)`, which has no width at all. The parenthesised form
+  `(FFFE,E000)` always worked, because it parses two 16-bit halves
+- godicom now builds on 32-bit platforms at all. `encaps.Encapsulate`'s Basic
+  Offset Table overflow guard was written `total > (1<<32)-1`, which is exact in
+  pydicom because Python integers are arbitrary-precision but overflows `int` at
+  compile time on a 32-bit target
+
 ### Changed
+- **BREAKING (internal-facing): the declared value length is carried as `uint32`
+  rather than `int`** through the header, deferred-read and sequence paths. A
+  DICOM length is unsigned 32 bits and `0xFFFFFFFF` is the undefined-length
+  sentinel; in an `int` on a 32-bit platform that sentinel is `-1`, so the code
+  would have compiled and then quietly misread every undefined-length sequence
+  and encapsulated pixel-data element. No exported signature changes, and two
+  `uint32(length)` casts at call sites went away
+- `golibjpeg` and `goopenjpeg` are now v1.3.0, adding prebuilt libraries for
+  `darwin/amd64` and `windows/arm64` — six platforms each, up from four. Both
+  now also build everywhere else instead of failing to compile, and return an
+  error wrapping `ErrUnsupportedPlatform` from every entry point rather than
+  panicking, so importing godicom is safe on any platform Go targets
+- Docs: the README documents platform support and binary size. Each binary
+  embeds one platform's codec libraries, never all twelve: a `linux/amd64`
+  `cmd/godicom` build is 11.0 MB, where embedding every library unconditionally
+  would make it 24.3 MB
+- Docs: `CompressPixelData` listed its supported targets without HTJ2K, which
+  `pixels.EncodeFrame` has dispatched on for some time, and spelled JPEG-LS as
+  though it were one transfer syntax
 - Docs: README covers the two diagnostics v0.28.0 added — `WriteOptions.OnDiagnostic`
   was not mentioned at all, and the read section predated both the VR
   disagreement kind and `Diagnostic.Path` naming the sequence item
@@ -17,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own Part 10 bytes in memory. The write-diagnostic snippet is corrected
   along the way; it showed the diagnostic's own message where the caller
   actually gets it wrapped in `error writing dataset`
+
+### Added
+- CI cross-builds and vets `windows/386`, `linux/386`, `linux/arm` (including
+  `GOARM=5`), `linux/riscv64`, `linux/ppc64le`, `js/wasm` and `wasip1/wasm`, and
+  runs the whole test suite on `linux/386`. Compiling is not enough to catch a
+  width mistake — the repeater-mask bug above compiled fine and only showed when
+  run. `linux/mips` and `linux/mipsle` are excluded because purego does not
+  build for them yet
+- Tests that need a native codec now skip, rather than fail, on a platform with
+  no prebuilt library, so a real failure is visible among them
 
 ## [0.28.0] - 2026-08-24
 

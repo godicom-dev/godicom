@@ -86,12 +86,16 @@ func ExampleReadOptions() {
 }
 
 // ExampleWriteOptions shows the same hook on the way out, refusing to produce a
-// file godicom's own reader would raise a diagnostic on. 3000000000 fits a Go
-// int but not the range an IS allows, and no setter can catch that without
-// knowing which VR the tag turns out to have.
+// file godicom's own reader would raise a diagnostic on. "3000000000" is a
+// well-formed integer string that no IS may hold, and no setter can catch that
+// without knowing which VR the tag turns out to have.
+//
+// Set as text rather than through SetInt because the IS range is exactly the
+// int32 range: on a 32-bit build no Go int is out of range, so there would be
+// nothing to demonstrate.
 func ExampleWriteOptions() {
 	ds := godicom.NewDataset()
-	if err := ds.SetInt(tag.EchoNumbers, 3000000000); err != nil {
+	if err := ds.SetString(tag.EchoNumbers, "3000000000"); err != nil {
 		log.Fatal(err)
 	}
 

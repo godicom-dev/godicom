@@ -126,11 +126,14 @@ func TestWriteReportsOverlongDS(t *testing.T) {
 // IS has a range PS3.5 gives the VR but its spelling does not: "3000000000" is a
 // well-formed integer string that no IS may hold. ISInRange already knew this;
 // the writer did not consult it.
+//
+// int64 rather than a bare literal: the whole point is a value past int32, which
+// an untyped constant cannot be assigned to an int on a 32-bit build.
 func TestWriteReportsISOutOfRange(t *testing.T) {
 	t.Parallel()
 	tg := MustTag("EchoNumbers")
 	ds := NewDataset()
-	ds.Set(NewDataElement(tg, VRIS, 3000000000))
+	ds.Set(NewDataElement(tg, VRIS, int64(3000000000)))
 
 	rec := &diagRecorder{}
 	if _, err := writeWithDiagnostics(t, ds, rec); err != nil {

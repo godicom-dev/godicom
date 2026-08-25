@@ -94,3 +94,46 @@ func TestTagJSONKey(t *testing.T) {
 		t.Errorf("JSONKey() = %s, want 00100010", tag.JSONKey())
 	}
 }
+
+// A tag is an unsigned 32-bit value, so the hex string form has to reach past
+// 0x7FFFFFFF. Parsing it as signed silently lost every group from 8000 up --
+// including the three tags the encapsulation and sequence machinery is built
+// from, which are also the ones a JSONKey round-trip is most likely to hit.
+//
+// pydicom accepts all of these (tag.py uses int(arg, 16), which has no width),
+// so a Go port that rejects them is a parity break, not a stricter reading.
+func TestParseTagAcceptsHexStringsAboveInt32(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want Tag
+	}{
+		{"7FE00010", Tag(0x7FE00010)}, // just under, worked before
+		{"80000000", Tag(0x80000000)}, // the first value a signed parse rejects
+		{"FFFEE000", ItemTag},
+		{"FFFEE00D", ItemDelimiterTag},
+		{"FFFEE0DD", SequenceDelimiterTag},
+		{"FFFFFFFF", Tag(0xFFFFFFFF)},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseTag(tt.in)
+			if err != nil {
+				t.Fatalf("ParseTag(%q): %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseTag(%q) = %08X, want %08X", tt.in, uint32(got), uint32(tt.want))
+			}
+			// JSONKey is the inverse, so the pair has to round-trip.
+			if key := got.JSONKey(); key != tt.in {
+				t.Errorf("ParseTag(%q).JSONKey() = %q", tt.in, key)
+			}
+		})
+	}
+}
+
+// Nine hex digits is not a tag, and widening the parse must not start accepting
+// one by truncating it.
+func TestParseTagRejectsAnOverlongHexString(t *testing.T) {
+	if got, err := ParseTag("1FFFEE000"); err == nil {
+		t.Errorf("ParseTag(%q) = %08X, want an error", "1FFFEE000", uint32(got))
+	}
+}
