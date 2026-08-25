@@ -2,7 +2,6 @@ package godicom
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -212,6 +211,3 @@ func lookupVRWithCreator(tag Tag, creator string) VR {
 func IsRepeaterTag(tag Tag) bool {
 	return maskMatch(tag) != ""
 }
-
-// Ensure the init runs for the regexp import
-var _ = regexp.Compile

@@ -16,13 +16,14 @@ type showOptions struct {
 	tagKeywords []string
 }
 
-func runShow(args []string) {
-	opts := showOptions{}
-	var debug bool
+// newShowFlagSet registers the flags for show and read. Kept separate from
+// runShow so a test can enumerate them and check printUsage against the real set
+// rather than against a hand-maintained copy of it.
+func newShowFlagSet(opts *showOptions, debug *bool) *flag.FlagSet {
 	fs := flag.NewFlagSet("show", flag.ExitOnError)
 	fs.BoolVar(&opts.noMeta, "no-meta", false, "skip file meta information")
-	fs.BoolVar(&opts.topLevel, "top", false, "only show top-level elements")
-	fs.BoolVar(&debug, "debug", false, "emit godicom reader debug logs to stderr")
+	fs.BoolVar(&opts.topLevel, "top", false, "restrict -t to top-level elements instead of searching inside sequences")
+	fs.BoolVar(debug, "debug", false, "emit godicom reader debug logs to stderr")
 	fs.Func("t", "show only elements with this tag (keyword or hex; repeatable)", func(s string) error {
 		opts.tagKeywords = append(opts.tagKeywords, s)
 		return nil
@@ -31,6 +32,13 @@ func runShow(args []string) {
 		opts.tagKeywords = append(opts.tagKeywords, s)
 		return nil
 	})
+	return fs
+}
+
+func runShow(args []string) {
+	opts := showOptions{}
+	var debug bool
+	fs := newShowFlagSet(&opts, &debug)
 	fs.Parse(args)
 	rest := fs.Args()
 	if len(rest) < 1 {

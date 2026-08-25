@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/godicom-dev/godicom"
@@ -9,7 +10,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
+		printUsage(os.Stdout)
 		os.Exit(1)
 	}
 
@@ -22,19 +23,26 @@ func main() {
 		runReadCopy(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
-		printUsage()
+		printUsage(os.Stdout)
 		os.Exit(1)
 	}
 }
 
-func printUsage() {
-	fmt.Println("Usage: godicom <command> [args...]")
-	fmt.Println("Commands:")
-	fmt.Println("  show <file>          - Display DICOM file (file meta + dataset)")
-	fmt.Println("  read <file>          - Alias for show")
-	fmt.Println("  readcopy <src> <dst> - Read then write DICOM file")
-	fmt.Println("Flags:")
-	fmt.Println("  show -debug          - Emit reader debug logs to stderr")
+// printUsage writes the command and flag summary. Every flag listed under "Flags
+// for show and read" has to exist in newShowFlagSet, and every flag registered
+// there has to be listed here; TestPrintUsageMatchesShowFlags checks both ways.
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: godicom <command> [flags] [args...]")
+	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  show [flags] <file>  - Display DICOM file (file meta + dataset)")
+	fmt.Fprintln(w, "  read [flags] <file>  - Alias for show")
+	fmt.Fprintln(w, "  readcopy <src> <dst> - Read then write DICOM file")
+	fmt.Fprintln(w, "Flags for show and read:")
+	fmt.Fprintln(w, "  -no-meta             - Skip file meta information")
+	fmt.Fprintln(w, "  -top                 - Restrict -t to the top level, skipping sequences")
+	fmt.Fprintln(w, "  -debug               - Emit reader debug logs to stderr")
+	fmt.Fprintln(w, "  -t <tag>             - Show only this tag; keyword or hex (repeatable)")
+	fmt.Fprintln(w, "  -tag <tag>           - Alias for -t")
 }
 
 func runReadCopy(args []string) {
