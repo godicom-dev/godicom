@@ -267,9 +267,25 @@ dss, err := dicomjson.ParseDatasets(arr)
 go install github.com/godicom-dev/godicom/cmd/godicom@latest
 
 godicom show <file>            # print file meta + dataset
-godicom show -debug <file>     # also emit reader debug logs to stderr
 godicom read <file>            # alias for show
 godicom readcopy <src> <dst>   # read, write, re-read
+```
+
+`show` and `read` take these flags, in any combination:
+
+| Flag | Effect |
+|------|--------|
+| `-no-meta` | Skip the file meta information group, print the dataset only |
+| `-top` | Restrict the `-t` search to top-level elements instead of recursing into sequences. No effect on its own: plain `show` never descends into a sequence anyway |
+| `-debug` | Emit reader debug logs to stderr |
+| `-t <tag>` | Print only this tag. A keyword like `PatientName`, bare hex like `00080060`, or parenthesised hex like `"(0008,0060)"` — the comma form needs the parentheses. Repeatable |
+| `-tag <tag>` | Alias for `-t` |
+
+```bash
+godicom show -no-meta <file>                     # dataset only, no file meta group
+godicom show -t PatientName -t 00080060 <file>   # two tags, by keyword and by hex
+godicom show -t TreatmentMachineName <file>      # found inside BeamSequence
+godicom show -t TreatmentMachineName -top <file> # not found: -top skips sequences
 ```
 
 ## Transfer syntax support

@@ -30,6 +30,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this repository, so a new DICOM edition would otherwise turn an unrelated pull
   request red. Run it after bumping the pydicom submodule
 
+### Fixed
+- `godicom`'s usage text listed only `-debug`, having never been updated as `show`
+  grew `-no-meta`, `-top`, `-t` and `-tag`. All five are now documented, in the
+  usage text and in the README's CLI section. `TestPrintUsageMatchesShowFlags`
+  keeps them in step from here: it enumerates the real flag set and fails both on a
+  registered flag the usage text omits and on a documented flag that no longer
+  exists
+- `-top`'s description said "only show top-level elements", which reads as though
+  it changes the default output. It does not: plain `show` lists the top level and
+  reports a sequence by item count without descending into it either way. The flag
+  narrows the `-t` search to the top level, and is a no-op without one. Corrected
+  in `show -h`, the usage text and the README. `TestWriteShowTopLevel` asserted
+  this against a nil tag filter, which took the non-recursive path regardless, so
+  it had been passing without the flag set at all; it now contrasts a filtered
+  search with and without `-top`
+
+### Removed
+- `var _ = regexp.Compile` in `dictionary.go`, kept by a comment claiming it forced
+  an init that the `regexp` package does not have. Nothing in the file used
+  `regexp`, so the import went with it
+
 ## [0.29.0] - 2026-08-25
 
 ### Fixed
