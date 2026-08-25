@@ -6,9 +6,15 @@ package godicom
 // These travelled the write chain as three separate parameters. That cost two
 // things worth fixing. The two bools are adjacent and interchangeable, so
 // transposing them at a call site compiles and silently writes a file in the
-// wrong encoding. And every new piece of codec state -- a diagnostic hook, a
-// dictionary, a validation policy -- had to be threaded through every signature
-// between writeDataset and the leaf that needed it.
+// wrong encoding. And every new piece of codec state -- a validation policy, a
+// character-set fallback -- had to be threaded through every signature between
+// writeDataset and the leaf that needed it.
+//
+// Not everything the read path carries around belongs here. State that has to
+// outlive the parse lives on readContext instead, which is what a Dataset retains:
+// the data dictionary in effect is there rather than here because a deferred load
+// re-resolves an element's VR long after the codecContext it was first read under
+// is gone.
 //
 // EncodingInfo is embedded rather than restated field by field: it is already
 // the type for the implicit-VR/endianness pair, and it is what a Dataset stores

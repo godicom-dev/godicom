@@ -54,6 +54,10 @@ func DecodeDatasetEncodingContext(ctx context.Context, data []byte, isImplicitVR
 		return ds, nil
 	}
 	ds := NewDataset()
+	// No dict: these entry points take no ReadOptions, so they resolve against
+	// PS3.6. A caller with a vendor's private dictionary to apply reads through
+	// ReadBytes with Force set, which takes one; giving these four functions an
+	// options parameter is a wider change than the dictionary alone justifies.
 	rc := &readContext{data: data, ctx: ctx}
 	enc := EncodingInfo{IsImplicitVR: isImplicitVR, IsLittleEndian: isLittleEndian}
 	_, err := readDatasetElements(data, 0, int64(len(data)), ds, codecContext{EncodingInfo: enc}, nil, rc)

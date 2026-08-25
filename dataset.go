@@ -46,12 +46,30 @@ type readContext struct {
 	// onDiag is ReadOptions.OnDiagnostic, kept so deferred loads can report
 	// through the same hook after the read has returned.
 	onDiag func(Diagnostic) error
+	// dict is ReadOptions.Dictionary, nil for PS3.6. It lives here rather than on
+	// codecContext -- where the rest of the per-element decoding state lives --
+	// because it has to outlive the parse. A deferred load reruns the header
+	// decode after the read returned, and a private element's VR has to resolve
+	// the same way it did the first time or the reload is rejected as a mismatch.
+	// readContext is the only piece of parse state that survives, as
+	// Dataset.readCtx.
+	dict Dictionary
 	// seqPath is the sequences currently being descended into, and the item of
 	// each, used to stamp Diagnostic.Path.
 	seqPath []PathStep
 	// baseOffset shifts diagnostic offsets back into source coordinates when a
 	// parser is handed a buffer copied out of the middle of the source.
 	baseOffset int64
+}
+
+// dictionary returns the data dictionary this parse resolves against: the one
+// ReadOptions.Dictionary supplied, or PS3.6. Nil-safe, because a decoder handed
+// no readContext at all still has to resolve VRs.
+func (rc *readContext) dictionary() Dictionary {
+	if rc == nil {
+		return Standard()
+	}
+	return dictionaryOrStandard(rc.dict)
 }
 
 func (rc *readContext) logCtx() context.Context {

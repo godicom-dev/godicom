@@ -32,6 +32,42 @@ type ReadOptions struct {
 	// load. Deferred loads are triggered by Dataset.Get, so a hook must be safe
 	// to call from wherever the dataset is used.
 	OnDiagnostic func(Diagnostic) error
+	// Dictionary resolves tags to their data dictionary entries for this read.
+	// When nil, Standard is used.
+	//
+	// It changes what an element means, not merely how it is described. An
+	// implicit VR file carries no VRs, so every element's VR is whatever the
+	// dictionary says it is -- and for a private element that answer depends on
+	// the vendor. Compose rather than replace, or the standard elements lose
+	// their VRs too:
+	//
+	//	vendor := godicom.NewPrivateDictionary()
+	//	if err := vendor.Add("ACME 3.2", tag, godicom.VRUS, "Some Number"); err != nil {
+	//		return err
+	//	}
+	//	ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{
+	//		Dictionary: godicom.NewDictionary(vendor, godicom.Standard()),
+	//	})
+	//
+	// The dictionary is retained by the dataset that comes back, because a
+	// deferred value is decoded on Get, long after the read returned, and has to
+	// resolve to the VR it was first read under.
+	//
+	// This is a read option and has no counterpart on the way out. The write path
+	// resolves an ambiguous VR from the dataset's own values -- Pixel
+	// Representation decides between US and SS -- and never asks the dictionary,
+	// so a WriteOptions field would have nothing to do. The typed setters
+	// (SetString, SetInt, ...) resolve against PS3.6 too: they take the tag alone,
+	// and a caller with a vendor's element to store passes the VR explicitly
+	// through Set(NewDataElement(tag, vr, value)).
+	Dictionary Dictionary
+}
+
+func readDictionary(opts *ReadOptions) Dictionary {
+	if opts == nil {
+		return nil
+	}
+	return opts.Dictionary
 }
 
 func diagnosticHook(opts *ReadOptions) func(Diagnostic) error {
@@ -168,8 +204,15 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	// Read all elements in one pass, then separate file meta
 	allElements := make([]*DataElement, 0)
 	cc.Charsets = []string{DefaultCharacterSet}
-	readCtx := &readContext{data: data, filename: filename, modTime: modTime, ctx: ctx, onDiag: diagnosticHook(opts)}
-	creator := elementsCreator(&allElements)
+	readCtx := &readContext{
+		data:     data,
+		filename: filename,
+		modTime:  modTime,
+		ctx:      ctx,
+		onDiag:   diagnosticHook(opts),
+		dict:     readDictionary(opts),
+	}
+	resolve := elementsResolver(readCtx, &allElements)
 
 	for pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, cc.IsLittleEndian)
@@ -225,7 +268,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 
-		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, creator)
+		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, resolve)
 		if !ok {
 			if err := readCtx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
 				return nil, err
@@ -574,7 +617,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 		cc.Charsets = []string{DefaultCharacterSet}
 	}
 	pos := offset
-	creator := datasetCreator(ds)
+	resolve := datasetResolver(ctx, ds)
 
 	for pos+4 <= end && pos+4 <= int64(len(data)) {
 		currentTag := readTagBytes(data, pos, cc.IsLittleEndian)
@@ -587,7 +630,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			return pos, nil
 		}
 
-		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, creator)
+		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, resolve)
 		if !ok {
 			if err := ctx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
 				return pos, err

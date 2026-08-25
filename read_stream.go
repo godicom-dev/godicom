@@ -185,8 +185,16 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 	cc.Charsets = []string{DefaultCharacterSet}
 	// No in-memory copy of the file: deferred loads reopen filename, or re-read
 	// through ra when there is no path to reopen (a non-*os.File ReadSeeker).
-	readCtx := &readContext{filename: filename, modTime: modTime, size: size, src: ra, ctx: ctx, onDiag: diagnosticHook(opts)}
-	creator := elementsCreator(&allElements)
+	readCtx := &readContext{
+		filename: filename,
+		modTime:  modTime,
+		size:     size,
+		src:      ra,
+		ctx:      ctx,
+		onDiag:   diagnosticHook(opts),
+		dict:     readDictionary(opts),
+	}
+	resolve := elementsResolver(readCtx, &allElements)
 
 	for pos+4 <= size {
 		currentTag, err := v.tag(pos, cc.IsLittleEndian)
@@ -247,7 +255,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 			break
 		}
 
-		h, header, need, ok := readElementHeaderAt(v, pos, cc.EncodingInfo, currentTag, creator)
+		h, header, need, ok := readElementHeaderAt(v, pos, cc.EncodingInfo, currentTag, resolve)
 		if !ok {
 			if err := readCtx.report(truncatedHeader(currentTag, pos, need, size)); err != nil {
 				return nil, err
@@ -390,7 +398,7 @@ func readElementHeaderAt(
 	pos int64,
 	enc EncodingInfo,
 	currentTag Tag,
-	creator creatorFunc,
+	vr vrResolver,
 ) (h elementHeader, header []byte, need int64, ok bool) {
 	n := int64(12)
 	if pos+n > v.size {
@@ -400,7 +408,7 @@ func readElementHeaderAt(
 	if err != nil {
 		return elementHeader{}, nil, 8, false
 	}
-	h, need, ok = decodeElementHeader(buf, 0, currentTag, enc, creator)
+	h, need, ok = decodeElementHeader(buf, 0, currentTag, enc, vr)
 	if !ok {
 		return elementHeader{}, nil, need, false
 	}
@@ -545,6 +553,12 @@ func finishDeflated(
 		sub.SpecificTags = opts.SpecificTags
 		sub.Logger = opts.Logger
 		sub.OnDiagnostic = opts.OnDiagnostic
+		// Every field the caller set has to be carried across, and this one decides
+		// what the elements past the File Meta *mean*: dropping it would read the
+		// inflated dataset against PS3.6 alone, so a Deflated file would resolve a
+		// vendor's private elements to UN while the same file undeflated resolved
+		// them properly.
+		sub.Dictionary = opts.Dictionary
 	}
 	rest, err := readBytes(ctx, inflated, filename, modTime, sub)
 	if err != nil {

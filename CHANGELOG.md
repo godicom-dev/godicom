@@ -52,8 +52,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so nearly every image ever written — and `(0028,1200)` Gray Lookup Table Data
   permits three, `US or SS or OW`. `vrDisagreesWithDictionary` now uses it instead
   of splitting the string itself
+- `ReadOptions.Dictionary` resolves tags for one read, defaulting to `Standard()`
+  when nil. It changes what an element *means* rather than how it is described: an
+  implicit VR file carries no VRs, so every element's VR is whatever the dictionary
+  says, and for a private element that answer depends on the vendor who wrote the
+  file. The dataset that comes back retains it, because a deferred value is decoded
+  on `Get` — long after the read returned — and the reload rejects an element whose
+  VR no longer matches the one it was first read under; a dictionary that went out
+  of scope with the parse would turn every deferred private element into a mismatch
+  error. It is also carried into the second read a Deflated transfer syntax starts,
+  so a file means the same thing deflated and inflated. There is deliberately no
+  `WriteOptions.Dictionary`: the write path resolves an ambiguous VR from the
+  dataset's own values — Pixel Representation decides between US and SS — and never
+  consults the dictionary, so the field would have nothing to do. `DecodeDataset`
+  and `DecodeDatasetContext` take no options at all and so still resolve against
+  `Standard()`. Closes
+  [#71](https://github.com/godicom-dev/godicom/issues/71)
+- `NewDictionary(dicts ...Dictionary) Dictionary` composes dictionaries, trying each
+  in turn and returning the first entry found, so the argument order is the
+  precedence: `NewDictionary(vendor, godicom.Standard())` reads the vendor's entries
+  where it has them and PS3.6's everywhere else. First match wins rather than most
+  specific, because that is the only rule a caller can read off the argument order.
+  Composing rather than replacing is the point — a caller adding one vendor block
+  should not have to carry the other 5,189 entries. A nil member is skipped and an
+  empty composition answers nothing, both of which a caller threading a built-up
+  list will produce; the members are held rather than copied, so a `PrivateDictionary`
+  among them stays live, while the slice itself is copied
+- `NewPrivateDictionary` returns a `*PrivateDictionary`, a set of private entries
+  keyed by Private Creator that satisfies `Dictionary`. `Add(creator, tag, vr, name,
+  vm...)` mirrors `AddPrivateDictEntry` so moving from one to the other is
+  mechanical, and stores the entry against the tag's block byte, so it resolves
+  wherever the vendor's block lands — `(0041,1001)` in one file and `(0041,2001)` in
+  the next. Unlike `AddPrivateDictEntry` it touches no process-global state: a
+  library can build one, compose it with `Standard()`, and hand it to
+  `ReadOptions.Dictionary` without changing what any other caller in the process
+  reads. Safe for concurrent use. Documented in the README with
+  `ExampleNewPrivateDictionary` behind it, so the snippet is compile-checked
 
 ### Changed
+- the VR-mismatch diagnostic is judged against the dictionary the read was given
+  rather than always against PS3.6. A caller who overrode an entry said what they
+  expect the file to contain, and measuring against a different expectation than the
+  parse used would be reporting on nothing. Private tags stay exempt even when the
+  supplied dictionary has an entry for them: the creator is not in hand at that
+  point, and resolving one per element would charge the quiet path for a diagnostic
+  nobody asked for
+- `AddPrivateDictEntry` and `ResetExtraPrivateDictionaries` now document that they
+  mutate process-global state — every caller in the process sees an added entry, and
+  `Reset` clears entries registered by code that has nothing to do with the caller —
+  and point at `NewPrivateDictionary` plus `ReadOptions.Dictionary` for the version
+  that does not. Neither is deprecated: a command-line tool registering its vendor's
+  blocks at startup is what they are for. Behaviour is unchanged, and they are now
+  implemented on top of `PrivateDictionary` rather than a parallel table
 - **Breaking:** the three exported dictionary maps are unexported —
   `DicomDictionaryGo`, `RepeatersDictionaryGo` and `PrivateDictionaries` become
   `dicomDictionary`, `repeatersDictionary` and `privateDictionaries`, and

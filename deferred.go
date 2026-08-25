@@ -106,8 +106,12 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 	}
 
 	// The private creator lives in the dataset, not necessarily in data: a
-	// deferred load may have re-read only the element's own bytes.
-	raw, err := readRawDataElementAt(data, elementStart, cc.EncodingInfo, datasetCreator(ds))
+	// deferred load may have re-read only the element's own bytes. The dictionary
+	// comes from ctx, which is why it lives there: the VR resolved below is
+	// compared against the one from the original read, so a private element
+	// resolved through a caller's dictionary the first time has to resolve through
+	// the same one now.
+	raw, err := readRawDataElementAt(data, elementStart, cc.EncodingInfo, datasetResolver(ctx, ds))
 	if err != nil {
 		return err
 	}
@@ -128,16 +132,17 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 
 // readRawDataElementAt reads a single defined-length element at tag position pos.
 // Mirrors pydicom.filereader.data_element_generator for one element with
-// defer_size=None. creator resolves private creators so an implicit VR private
-// element resolves to the same VR it did on the original read.
+// defer_size=None. vr carries the dictionary and the private creator lookup, so
+// an implicit VR private element resolves to the same VR it did on the original
+// read.
 func readRawDataElementAt(
 	data []byte,
 	pos int64,
 	enc EncodingInfo,
-	creator creatorFunc,
+	vr vrResolver,
 ) (*RawDataElement, error) {
 	tag := readTagBytes(data, pos, enc.IsLittleEndian)
-	h, need, ok := decodeElementHeader(data, pos, tag, enc, creator)
+	h, need, ok := decodeElementHeader(data, pos, tag, enc, vr)
 	if !ok {
 		return nil, fmt.Errorf("godicom: unexpected EOF reading deferred element header for %s: need %d bytes, have %d",
 			tag, need, int64(len(data))-pos)

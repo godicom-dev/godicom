@@ -184,8 +184,13 @@ func truncatedValue(tag Tag, vr VR, valueStart, need, total int64) Diagnostic {
 }
 
 // reportVRMismatch offers a disagreement between the VR encoded for tag at pos
-// and the VR the data dictionary gives it. Nothing about the parse changes, so
-// unlike the truncation diagnostics this one is pure information.
+// and the VR the dictionary this read was given gives it. Nothing about the parse
+// changes, so unlike the truncation diagnostics this one is pure information.
+//
+// Judged against the same dictionary the header decoder resolved against, not
+// always PS3.6: a caller who overrode an entry through ReadOptions.Dictionary said
+// what they expect the file to contain, and a diagnostic measuring against a
+// different expectation than the parse used would be reporting on nothing.
 //
 // Because it is only information, nobody who is not listening should pay for it:
 // the dictionary lookup runs once per explicit VR element, which is once per
@@ -206,7 +211,7 @@ func (rc *readContext) reportVRMismatch(tag Tag, encoded VR, pos int64, isImplic
 			return nil
 		}
 	}
-	want := vrDisagreesWithDictionary(tag, encoded)
+	want := vrDisagreesWithDictionary(rc.dictionary(), tag, encoded)
 	if want == "" {
 		return nil
 	}
