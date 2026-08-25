@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-25
+
 ### Fixed
 - **The data dictionary answered the wrong VR for nearly every tag on a 32-bit
   platform.** The 88 repeater masks were parsed with `fmt.Sscanf` into `int`
@@ -494,7 +496,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/godicom-dev/godicom/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/godicom-dev/godicom/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/godicom-dev/godicom/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/godicom-dev/godicom/compare/v0.25.1...v0.26.0
