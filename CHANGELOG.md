@@ -29,8 +29,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CI: it depends on the network and on a document that changes independently of
   this repository, so a new DICOM edition would otherwise turn an unrelated pull
   request red. Run it after bumping the pydicom submodule
+- `Dictionary`, a one-method interface over the data dictionary —
+  `Lookup(tag Tag, creator string) (DictEntry, bool)` — and `Standard()`, which
+  returns the dictionary PS3.6 defines. One method answers for both halves of the
+  dictionary: `creator` names the Private Creator of a private tag and is ignored
+  for a standard one. `Lookup` resolves an exact entry ahead of a repeating-group
+  pattern, which is not arbitrary — `(7FE0,0010)` is Pixel Data exactly and retired
+  Variable Pixel Data through the `7Fxx,0010` mask — and never resolves a private
+  tag against the standard tables, because the same tag means different things to
+  different vendors. The package's own lookups go through it, so it is the path
+  godicom itself takes rather than a wrapper around one; the type is empty and its
+  method set is known, so the compiler inlines `Standard` and devirtualizes each
+  internal call back into a map access. It is also the first public way to read a
+  standard entry's VM, name or retired flag: `LookupVR` gave the VR and laundered a
+  missing entry into `UN`, and the `PrivateDictionary*` functions covered only
+  private tags. Groundwork for
+  [#71](https://github.com/godicom-dev/godicom/issues/71). Documented in the
+  README with `ExampleStandard`, `ExampleDictEntry_VRs` and
+  `ExampleAddPrivateDictEntry` behind it, so the snippets are compile-checked
+- `DictEntry.VRs()` returns the VRs an entry permits, splitting the compound forms
+  PS3.6 writes as prose. Thirty-seven entries permit two — `OB or OW` is PixelData,
+  so nearly every image ever written — and `(0028,1200)` Gray Lookup Table Data
+  permits three, `US or SS or OW`. `vrDisagreesWithDictionary` now uses it instead
+  of splitting the string itself
+
+### Changed
+- **Breaking:** the three exported dictionary maps are unexported —
+  `DicomDictionaryGo`, `RepeatersDictionaryGo` and `PrivateDictionaries` become
+  `dicomDictionary`, `repeatersDictionary` and `privateDictionaries`, and
+  `PrivateDictEntry` becomes `privateDictEntry` along with the table it populates.
+  They were read-only by convention and mutable by type, with no synchronisation of
+  any kind, so any caller could have corrupted the dictionary for the whole
+  process. Read access is now `Standard().Lookup`, which answers everything the
+  maps were reachable for; `AddPrivateDictEntry` remains the way to add a private
+  entry at runtime. Nothing in the godicom-dev organisation referenced the maps.
+  `DictEntry` stays exported — it is what `Lookup` returns
 
 ### Fixed
+- `generate_dict.py` wrote to `dicom_dict_generated.go`, a name nothing in the tree
+  has: the checked-in file is `dictionary_generated.go`. Running the generator
+  therefore produced a second file redeclaring `DictEntry` and every map in it, so
+  the package stopped compiling instead of the dictionary being updated
+- both dictionary generators now `gofmt` their output. The checked-in files are
+  formatted and the generators' output was not, so regenerating produced a
+  5,182-line whitespace diff on top of whatever the data change was
 - `godicom`'s usage text listed only `-debug`, having never been updated as `show`
   grew `-no-meta`, `-top`, `-t` and `-tag`. All five are now documented, in the
   usage text and in the README's CLI section. `TestPrintUsageMatchesShowFlags`
@@ -47,6 +89,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search with and without `-top`
 
 ### Removed
+- `dictionaryIsRetired`, which consulted only the exact table and so answered "not
+  retired" for all 72 retired repeating-group entries. It had no caller outside its
+  own test, so nothing ever noticed. `Standard().Lookup` returns the entry and
+  `Retired` is read off it, which gets the repeaters right;
+  `TestLookupReportsRetired` covers one of them
+- the generated `tagToKeyword` and `tagToName` maps, 10,380 lines between them.
+  Both were a second copy of data `dicomDictionary` already held, reachable by one
+  map access; `tagToName` had no reader at all and `keywordForTag` was the only
+  reader of `tagToKeyword`. Two 5,000-entry maps are no longer built at init.
+  `keywordToTag` stays, because that direction is the one that needs an index.
+  staticcheck skips generated files, which is why `tagToName` sat unread without
+  `-checks=all` minding
 - `var _ = regexp.Compile` in `dictionary.go`, kept by a comment claiming it forced
   an init that the `regexp` package does not have. Nothing in the file used
   `regexp`, so the import went with it

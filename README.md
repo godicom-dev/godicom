@@ -79,6 +79,31 @@ Context-aware variants (`ReadFileContext`, `WriteContext`,
 `DecodeDatasetContext`, …) accept a `context.Context` for cancellation and
 structured logging.
 
+**The data dictionary**
+
+`godicom.Standard()` returns the dictionary from PS3.6, and `Lookup` reads an
+entry out of it:
+
+```go
+entry, ok := godicom.Standard().Lookup(tag.PatientName, "")
+// entry.VR "PN", entry.VM "1", entry.Name "Patient's Name",
+// entry.Keyword "PatientName", entry.Retired false
+```
+
+The second argument is the Private Creator, which a standard tag ignores and a
+private tag needs — the same tag means different things to different vendors, so
+without a creator there is no entry to find. Register a vendor's element with
+`AddPrivateDictEntry` and `Lookup` finds it too.
+
+A few entries permit more than one VR, which PS3.6 writes as prose. Pixel Data
+is one of them, so this is not a corner case:
+
+```go
+entry, _ := godicom.Standard().Lookup(tag.PixelData, "")
+// entry.VR "OB or OW", which is not a VR anything matches
+// entry.VRs() []VR{"OB", "OW"}
+```
+
 **Truncated and malformed files**
 
 By default a read keeps whatever it parsed before the file stopped making sense,

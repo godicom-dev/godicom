@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-var extraPrivateDictionaries = map[string]map[string]PrivateDictEntry{}
+var extraPrivateDictionaries = map[string]map[string]privateDictEntry{}
 var extraPrivateMu sync.RWMutex
 
 func privateTagKeys(tag Tag) []string {
@@ -20,22 +20,22 @@ func privateTagKeys(tag Tag) []string {
 	}
 }
 
-func lookupPrivateDictEntry(tag Tag, creator string) (PrivateDictEntry, bool) {
+func lookupPrivateDictEntry(tag Tag, creator string) (privateDictEntry, bool) {
 	keys := privateTagKeys(tag)
-	lookupIn := func(dict map[string]map[string]PrivateDictEntry) (PrivateDictEntry, bool) {
+	lookupIn := func(dict map[string]map[string]privateDictEntry) (privateDictEntry, bool) {
 		inner, ok := dict[creator]
 		if !ok {
-			return PrivateDictEntry{}, false
+			return privateDictEntry{}, false
 		}
 		for _, key := range keys {
 			if entry, ok := inner[key]; ok {
 				return entry, true
 			}
 		}
-		return PrivateDictEntry{}, false
+		return privateDictEntry{}, false
 	}
 
-	if entry, ok := lookupIn(PrivateDictionaries); ok {
+	if entry, ok := lookupIn(privateDictionaries); ok {
 		return entry, true
 	}
 
@@ -101,7 +101,7 @@ func AddPrivateDictEntry(creator string, tag Tag, vr VR, name string, vm ...stri
 	}
 
 	key := fmt.Sprintf("%04Xxx%02X", tag.Group(), tag.Element()&0xFF)
-	entry := PrivateDictEntry{
+	entry := privateDictEntry{
 		VR:   string(vr),
 		VM:   multiplicity,
 		Name: name,
@@ -110,7 +110,7 @@ func AddPrivateDictEntry(creator string, tag Tag, vr VR, name string, vm ...stri
 	extraPrivateMu.Lock()
 	defer extraPrivateMu.Unlock()
 	if _, ok := extraPrivateDictionaries[creator]; !ok {
-		extraPrivateDictionaries[creator] = map[string]PrivateDictEntry{}
+		extraPrivateDictionaries[creator] = map[string]privateDictEntry{}
 	}
 	extraPrivateDictionaries[creator][key] = entry
 	return nil
@@ -121,5 +121,5 @@ func AddPrivateDictEntry(creator string, tag Tag, vr VR, name string, vm ...stri
 func ResetExtraPrivateDictionaries() {
 	extraPrivateMu.Lock()
 	defer extraPrivateMu.Unlock()
-	extraPrivateDictionaries = map[string]map[string]PrivateDictEntry{}
+	extraPrivateDictionaries = map[string]map[string]privateDictEntry{}
 }

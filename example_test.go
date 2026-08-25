@@ -57,6 +57,43 @@ func Example() {
 	// Output: 12345678 Doe^Jane
 }
 
+// ExampleStandard reads an element's entry out of the PS3.6 data dictionary. The
+// second argument is the Private Creator, which a standard tag ignores.
+func ExampleStandard() {
+	entry, ok := godicom.Standard().Lookup(tag.PatientName, "")
+	fmt.Println(ok, entry.VR, entry.VM, entry.Name, entry.Keyword, entry.Retired)
+	// Output: true PN 1 Patient's Name PatientName false
+}
+
+// ExampleDictEntry_VRs shows the entries PS3.6 gives more than one VR for. Pixel
+// Data is one of them, so this is not a corner case: "OB or OW" is prose, and
+// comparing it against a VR from a file matches neither of the two it names.
+func ExampleDictEntry_VRs() {
+	entry, _ := godicom.Standard().Lookup(tag.PixelData, "")
+	fmt.Println(entry.VR, "->", entry.VRs())
+	// Output: OB or OW -> [OB OW]
+}
+
+// ExampleAddPrivateDictEntry registers a vendor's element, which Lookup then
+// resolves like any other -- given the creator. Without one there is no entry to
+// find, because the same private tag means different things to different vendors.
+func ExampleAddPrivateDictEntry() {
+	defer godicom.ResetExtraPrivateDictionaries()
+
+	private := godicom.NewTag(0x0041, 0x0001)
+	if err := godicom.AddPrivateDictEntry("ACME 3.2", private, godicom.VRUS, "Some Number"); err != nil {
+		log.Fatal(err)
+	}
+
+	entry, ok := godicom.Standard().Lookup(private, "ACME 3.2")
+	fmt.Println(ok, entry.VR, entry.Name)
+	_, ok = godicom.Standard().Lookup(private, "")
+	fmt.Println("without a creator:", ok)
+	// Output:
+	// true US Some Number
+	// without a creator: false
+}
+
 // ExampleReadOptions shows the diagnostic hook on the way in. A read keeps
 // whatever it parsed before the file stopped making sense; the hook is how you
 // find out that it did.
