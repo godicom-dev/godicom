@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Six Storage SOP Class UIDs that PS3.6 Table A-1 registers but pydicom's
+  `_uid_dict.py` does not carry, so `uid.Lookup` and `UID.Name` resolve them
+  instead of returning the raw UID string: `CTImageStorageForProcessing`
+  (`1.2.840.10008.5.1.4.1.1.2.3`), `EnhancedCTImageStorageForProcessing` (`.2.4`),
+  `LegacyConvertedEnhancedCTImageStorageForProcessing` (`.2.5`),
+  `WaveformPresentationStateStorage` (`1.2.840.10008.5.1.4.1.1.9.100.1`),
+  `WaveformAcquisitionPresentationStateStorage` (`.100.2`) and
+  `UltrasoundWaveformStorage` (`1.2.840.10008.5.1.4.1.1.601.5`). The UID
+  dictionary is otherwise a 1:1 mirror of pydicom's and stays one; these are
+  supplied from a `STANDARD_ADDITIONS` table in `generate_uid_dict.py`, which
+  refuses to run once pydicom defines any of them so the two cannot silently
+  drift. Reported in [#77](https://github.com/godicom-dev/godicom/issues/77),
+  which named the two Waveform Presentation State classes; a full diff of the
+  registry found the other four
+- `audit_uid_dict.py` compares the generated dictionary against PS3.6 Tables A-1
+  and A-2 — it fetches the standard, then reports UIDs missing from the
+  dictionary, UIDs the standard does not register, and any keyword or retired-flag
+  disagreement. It is how the six above were found, and it is deliberately not in
+  CI: it depends on the network and on a document that changes independently of
+  this repository, so a new DICOM edition would otherwise turn an unrelated pull
+  request red. Run it after bumping the pydicom submodule
+
 ## [0.29.0] - 2026-08-25
 
 ### Fixed

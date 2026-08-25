@@ -2,3 +2,8 @@
 *.test
 *.out
 testdata/dcm/*.dcm
+
+# The copy of PS3.6 that audit_uid_dict.py downloads to compare the generated UID
+# dictionary against the standard. ~10 MB, and reproducible from the URL in that
+# script.
+part06.xml

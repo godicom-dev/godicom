@@ -160,6 +160,61 @@ func TestStorageSOPClassUIDs(t *testing.T) {
 	}
 }
 
+// These six are registered in PS3.6 Table A-1 but absent from pydicom's
+// _uid_dict.py, so generate_uid_dict.py supplies them from its STANDARD_ADDITIONS
+// table instead of from the parse. That makes them the only entries in the
+// dictionary that a pydicom submodule bump could drop without any other test
+// noticing: the count would fall by six and every remaining assertion would still
+// hold. This is the test that would fail.
+//
+// It checks all three generated maps, because they are emitted by separate loops:
+// the constant, Dictionary (via Name/Type/IsRetired), and KeywordToUID (via
+// Lookup). A UID present in one and missing from another is a real failure mode.
+func TestUIDsAheadOfPydicom(t *testing.T) {
+	tests := []struct {
+		uid     UID
+		value   string
+		name    string
+		keyword string
+	}{
+		{CTImageStorageForProcessing, "1.2.840.10008.5.1.4.1.1.2.3",
+			"CT Image Storage - For Processing", "CTImageStorageForProcessing"},
+		{EnhancedCTImageStorageForProcessing, "1.2.840.10008.5.1.4.1.1.2.4",
+			"Enhanced CT Image Storage - For Processing", "EnhancedCTImageStorageForProcessing"},
+		{LegacyConvertedEnhancedCTImageStorageForProcessing, "1.2.840.10008.5.1.4.1.1.2.5",
+			"Legacy Converted Enhanced CT Image Storage - For Processing", "LegacyConvertedEnhancedCTImageStorageForProcessing"},
+		{WaveformPresentationStateStorage, "1.2.840.10008.5.1.4.1.1.9.100.1",
+			"Waveform Presentation State Storage", "WaveformPresentationStateStorage"},
+		{WaveformAcquisitionPresentationStateStorage, "1.2.840.10008.5.1.4.1.1.9.100.2",
+			"Waveform Acquisition Presentation State Storage", "WaveformAcquisitionPresentationStateStorage"},
+		{UltrasoundWaveformStorage, "1.2.840.10008.5.1.4.1.1.601.5",
+			"Ultrasound Waveform Storage", "UltrasoundWaveformStorage"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.keyword, func(t *testing.T) {
+			if string(tt.uid) != tt.value {
+				t.Errorf("constant = %q, want %q", tt.uid, tt.value)
+			}
+			if got := tt.uid.Name(); got != tt.name {
+				t.Errorf("Name() = %q, want %q", got, tt.name)
+			}
+			if got := tt.uid.Type(); got != "SOP Class" {
+				t.Errorf("Type() = %q, want SOP Class", got)
+			}
+			if got := tt.uid.Keyword(); got != tt.keyword {
+				t.Errorf("Keyword() = %q, want %q", got, tt.keyword)
+			}
+			if tt.uid.IsRetired() {
+				t.Error("IsRetired() = true, want false")
+			}
+			if got, ok := Lookup(tt.keyword); !ok || got != tt.uid {
+				t.Errorf("Lookup(%q) = %q, %t; want %q, true", tt.keyword, got, ok, tt.uid)
+			}
+		})
+	}
+}
+
 func TestKnownUIDs(t *testing.T) {
 	if len(Known) != len(Dictionary) {
 		t.Fatalf("len(Known) = %d, want %d", len(Known), len(Dictionary))
