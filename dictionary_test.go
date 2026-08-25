@@ -1,8 +1,102 @@
 package godicom
 
 import (
+	"strings"
 	"testing"
 )
+
+// A repeater mask with a zero mask field matches every tag -- (t^value)&0 is 0
+// whatever t is -- so one unparsed entry does not degrade the dictionary, it
+// replaces it: the first repeater in map order answers for every non-private
+// tag. That is what happened on 32-bit platforms, where the fields were int and
+// a mask like 0xFF00FFFF did not fit, so all 88 silently came out zero.
+//
+// The nibble arithmetic that replaced the parse cannot fail, which is the point;
+// this pins the outcome so a future rewrite cannot quietly go back to zeroes.
+func TestRepeaterMasksAllCarryBits(t *testing.T) {
+	if len(repeaterMasks) == 0 {
+		t.Fatal("no repeater masks were built from RepeatersDictionaryGo")
+	}
+	if len(repeaterMasks) != len(RepeatersDictionaryGo) {
+		t.Errorf("built %d masks from %d keys", len(repeaterMasks), len(RepeatersDictionaryGo))
+	}
+	for _, rm := range repeaterMasks {
+		if rm.mask == 0 {
+			t.Errorf("mask %q has no fixed digits, so it matches every tag", rm.maskStr)
+		}
+	}
+}
+
+func TestRepeaterMaskBits(t *testing.T) {
+	for _, tt := range []struct {
+		in          string
+		value, mask uint32
+	}{
+		{"60xx3000", 0x60003000, 0xFF00FFFF},
+		{"50xx0105", 0x50000105, 0xFF00FFFF},
+		{"7Fxx0010", 0x7F000010, 0xFF00FFFF},
+	} {
+		value, mask := repeaterMaskBits(tt.in)
+		if value != tt.value || mask != tt.mask {
+			t.Errorf("repeaterMaskBits(%q) = %08X/%08X, want %08X/%08X",
+				tt.in, value, mask, tt.value, tt.mask)
+		}
+	}
+}
+
+// Group length and a plain data element are not repeaters. They matched one
+// while the masks were zero, which is how (0008,0000) came back US instead of
+// the UL a group length is.
+//
+// Being a repeater is per element, not per group: 7Fxx has entries for 0010,
+// 0011, 0020, 0030 and 0040, so (7FE0,0099) is a tag in a repeater group that
+// is still not a repeater itself.
+func TestMaskMatchDoesNotClaimOrdinaryTags(t *testing.T) {
+	for _, s := range []string{"00080000", "00280000", "00100010", "7FE00099"} {
+		tg, err := ParseTag(s)
+		if err != nil {
+			t.Fatalf("ParseTag(%q): %v", s, err)
+		}
+		if got := maskMatch(tg); got != "" {
+			t.Errorf("maskMatch(%s) = %q, want no match", s, got)
+		}
+	}
+	// Real repeaters still have to match, or the check above passes vacuously.
+	// (7FE0,0010) is one of them: PS3.6 gives Pixel Data as 7Fxx,0010 so it
+	// covers the overlay groups, not just 7FE0.
+	for _, tt := range []struct{ tag, want string }{
+		{"60123000", "60xx3000"},
+		{"7FE00010", "7Fxx0010"},
+	} {
+		tg := MustTag(tt.tag)
+		if got := maskMatch(tg); got != tt.want {
+			t.Errorf("maskMatch(%s) = %q, want %q", tt.tag, got, tt.want)
+		}
+	}
+}
+
+// Reachability is the property the zero masks destroyed: with mask == 0 the
+// first entry in map order answered for every tag, so 87 of the 88 keys became
+// dead. Checking that no mask is zero catches that, but only this catches a
+// pattern that is merely built wrong -- substituting 0 for each x has to name
+// the key it came from.
+//
+// The exact-key comparison is deterministic rather than dependent on map order:
+// no two repeater patterns overlap on each other's canonical tag, so there is
+// only ever one candidate to return.
+func TestEveryRepeaterKeyIsReachable(t *testing.T) {
+	zeroForX := strings.NewReplacer("x", "0", "X", "0")
+	for maskStr := range RepeatersDictionaryGo {
+		canonical := zeroForX.Replace(maskStr)
+		tg, err := ParseTag(canonical)
+		if err != nil {
+			t.Fatalf("ParseTag(%q) from mask %q: %v", canonical, maskStr, err)
+		}
+		if got := maskMatch(tg); got != maskStr {
+			t.Errorf("maskMatch(%s) = %q, want %q", canonical, got, maskStr)
+		}
+	}
+}
 
 func TestDictionaryLookup(t *testing.T) {
 	vr, err := dictionaryVR(MustTag(0x00100010))

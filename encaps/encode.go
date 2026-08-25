@@ -3,6 +3,7 @@ package encaps
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 // FragmentFrame splits frame into nrFragments even-sized pieces.
@@ -62,7 +63,12 @@ func Encapsulate(frames [][]byte, fragmentsPerFrame int, hasBOT bool) ([]byte, e
 		for _, f := range frames[:len(frames)-1] {
 			total += len(f)
 		}
-		if total > (1<<32)-1 {
+		// The Basic Offset Table holds 32-bit offsets, so the total has to fit in
+		// a uint32. pydicom writes this as `total > 2**32 - 1`, which is exact
+		// there because Python ints are arbitrary-precision; in Go the untyped
+		// constant has to be widened explicitly, or it overflows `int` at compile
+		// time on a 32-bit target and the package stops building there.
+		if uint64(total) > math.MaxUint32 {
 			return nil, fmt.Errorf("encaps: total encapsulated length %d exceeds Basic Offset Table maximum; use EncapsulateExtended", total)
 		}
 	}

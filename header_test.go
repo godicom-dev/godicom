@@ -20,7 +20,7 @@ func TestDecodeElementHeader(t *testing.T) {
 		implicitVR bool
 		bigEndian  bool
 		wantVR     VR
-		wantLength int
+		wantLength uint32
 		wantSize   int
 		wantNeed   int64
 		wantOK     bool

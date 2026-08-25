@@ -6,8 +6,11 @@ import "encoding/binary"
 // is touched: the VR in effect, the declared value length, and how many bytes
 // the header itself occupies.
 type elementHeader struct {
-	VR     VR
-	Length int
+	VR VR
+	// Length is the declared value length, uint32 because that is what the wire
+	// carries and because 0xFFFFFFFF -- undefined length -- has to survive the
+	// trip. An int would not hold that sentinel on a 32-bit platform.
+	Length uint32
 	// Size is the header length in bytes: 8, or 12 for an explicit VR that
 	// carries a 32-bit length.
 	Size int
@@ -63,11 +66,11 @@ func decodeElementHeader(
 	}
 
 	if ExplicitVRLength16[vr] {
-		var length int
+		var length uint32
 		if enc.IsLittleEndian {
-			length = int(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
+			length = uint32(binary.LittleEndian.Uint16(data[pos+6 : pos+8]))
 		} else {
-			length = int(binary.BigEndian.Uint16(data[pos+6 : pos+8]))
+			length = uint32(binary.BigEndian.Uint16(data[pos+6 : pos+8]))
 		}
 		return elementHeader{VR: vr, Length: length, Size: 8}, 8, true
 	}
@@ -95,11 +98,11 @@ func dictionaryVRForRead(tag Tag, creator creatorFunc) VR {
 	return lookupVRWithCreator(tag, c)
 }
 
-func uint32At(data []byte, off int64, littleEndian bool) int {
+func uint32At(data []byte, off int64, littleEndian bool) uint32 {
 	if littleEndian {
-		return int(binary.LittleEndian.Uint32(data[off : off+4]))
+		return binary.LittleEndian.Uint32(data[off : off+4])
 	}
-	return int(binary.BigEndian.Uint32(data[off : off+4]))
+	return binary.BigEndian.Uint32(data[off : off+4])
 }
 
 // elementsCreator resolves private creators against the elements parsed so far,

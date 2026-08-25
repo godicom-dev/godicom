@@ -81,6 +81,7 @@ func TestPixelBytesYBRConvertedToRGB(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, err := ds.PixelBytes(pixels.WithRaw(true))
+	skipWithoutNativeCodec(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}

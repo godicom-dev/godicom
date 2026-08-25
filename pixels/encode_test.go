@@ -42,6 +42,7 @@ func TestEncodeFrame_JPEGLS_roundtrip_synthetic(t *testing.T) {
 	}
 	src := []byte{1, 2, 3, 4}
 	enc, err := pixels.EncodeFrame(src, desc, uid.JPEGLSLossless)
+	skipWithoutNativeCodec(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +71,7 @@ func TestEncodeFrame_HTJ2K_roundtrip_synthetic(t *testing.T) {
 	for _, ts := range []uid.UID{uid.HTJ2KLossless, uid.HTJ2KLosslessRPCL} {
 		t.Run(string(ts), func(t *testing.T) {
 			enc, err := pixels.EncodeFrame(src, desc, ts)
+			skipWithoutNativeCodec(t, err)
 			if err != nil {
 				t.Fatal(err)
 			}

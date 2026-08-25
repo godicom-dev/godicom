@@ -62,6 +62,7 @@ func TestDisplayFrame_SC_rgb_jpeg(t *testing.T) {
 	}
 	frame, err := ds.DisplayFrame(0)
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	if len(frame) != 100*100*3 {

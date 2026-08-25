@@ -284,6 +284,68 @@ godicom readcopy <src> <dst>   # read, write, re-read
 | JPEG-LS | ✅ | ✅ |
 | JPEG 2000 / HTJ2K | ✅ | ✅ |
 
+JPEG, JPEG-LS, JPEG 2000 and HTJ2K are decoded and encoded by
+[golibjpeg](https://github.com/godicom-dev/golibjpeg) and
+[goopenjpeg](https://github.com/godicom-dev/goopenjpeg). Everything else in the
+table — including RLE and Deflated — is pure Go with no native code involved.
+
+## Platforms
+
+godicom builds and runs anywhere Go does. The native codecs ship prebuilt
+libraries for six platforms:
+
+| Platform | JPEG / JPEG-LS / JPEG 2000 / HTJ2K |
+|----------|------------------------------------|
+| linux/amd64, linux/arm64 | ✅ |
+| darwin/amd64, darwin/arm64 | ✅ |
+| windows/amd64, windows/arm64 | ✅ |
+| everything else | reading and writing work; compressed pixel data returns an error |
+
+There is no cgo and no toolchain to install: the libraries are loaded through
+[purego](https://github.com/ebitengine/purego), so a plain `go build` is all a
+cross-compile takes.
+
+On a platform without a prebuilt library, importing godicom is still safe.
+Parsing, writing, the data dictionary, JSON, RLE and Deflated all work; only the
+four native-codec transfer syntaxes fail, and they fail with an error rather than
+a panic:
+
+```go
+if _, err := ds.PixelBytes(); errors.Is(err, golibjpeg.ErrUnsupportedPlatform) {
+    // No JPEG library for this GOOS/GOARCH. The dataset itself is fine.
+}
+```
+
+CI builds every release for `windows/386`, `linux/386`, `linux/arm` (including
+`GOARM=5`), `linux/riscv64`, `linux/ppc64le`, `js/wasm` and `wasip1/wasm`, and
+runs the full test suite on 32-bit. `linux/mips` and `linux/mipsle` do not build,
+because purego does not support them yet.
+
+### Binary size
+
+A binary carries one platform's libraries, never all six. The `//go:embed`
+directives are behind per-platform build tags, so the linker only ever sees the
+pair for the target you are building:
+
+| `cmd/godicom`, `go build` | Size | Embedded libraries |
+|---------------------------|------|--------------------|
+| linux/amd64   | 11.0 MB | 3.7 MB |
+| linux/arm64   | 10.4 MB | 3.4 MB |
+| darwin/amd64  | 10.4 MB | 2.7 MB |
+| darwin/arm64  |  9.8 MB | 2.3 MB |
+| windows/amd64 | 10.5 MB | 2.6 MB |
+| windows/arm64 |  9.8 MB | 2.4 MB |
+| js/wasm       |  8.3 MB | none |
+| linux/386     |  6.4 MB | none |
+
+All twelve libraries together are 17.0 MB, so embedding them unconditionally
+would add about 13.3 MB to every binary — a linux/amd64 build would be 24.3 MB
+instead of 11.0 MB. To confirm what your own build embeds:
+
+```bash
+go list -f '{{.EmbedFiles}}' github.com/godicom-dev/golibjpeg/native
+```
+
 ## Contributing
 
 Bug reports, fixes, and documentation improvements are welcome. Please open an

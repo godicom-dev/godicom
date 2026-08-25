@@ -52,7 +52,11 @@ func ParseTag(arg interface{}, arg2 ...int) (Tag, error) {
 				return NewTag(int(g), int(e)), nil
 			}
 		}
-		if val, err := strconv.ParseInt(v, 16, 32); err == nil {
+		// ParseUint, not ParseInt: a tag is an unsigned 32-bit value, and a signed
+		// parse rejects everything from 0x80000000 up -- which includes the item
+		// and delimiter tags, "FFFEE000" among them. pydicom uses int(arg, 16),
+		// which has no width at all, so anything it accepts has to parse here too.
+		if val, err := strconv.ParseUint(v, 16, 32); err == nil {
 			return Tag(val), nil
 		}
 		if tag, ok := tagForKeyword(v); ok {

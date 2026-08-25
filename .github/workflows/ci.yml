@@ -32,6 +32,59 @@ jobs:
       - name: Test
         run: go test -count=1 -p 4 ./...
 
+  cross-build:
+    name: cross-build (32-bit and codec-less platforms)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Fetch multi-frame test data
+        run: bash scripts/fetch-testdata.sh
+
+      # godicom has to build everywhere Go does, not only on the six platforms
+      # where golibjpeg and goopenjpeg ship a native library. Those two return
+      # ErrUnsupportedPlatform at run time instead of failing to build, which is
+      # only worth anything if godicom builds there too.
+      #
+      # go vet rather than go build, so the _test.go files are type-checked as
+      # well: an int that should have been a uint32 is just as wrong in a test.
+      #
+      # 32-bit targets are the ones that earn their place here. A DICOM value
+      # length is unsigned 32 bits, so 0xFFFFFFFF does not fit in an int on a
+      # 32-bit platform, and forcing it in turns the undefined-length sentinel
+      # into -1. mips and mipsle are left out deliberately: purego does not
+      # build for them (undefined: addStruct), which is upstream, not ours.
+      - name: Build and vet where no prebuilt codec exists
+        run: |
+          set -euo pipefail
+          for target in \
+            windows/386 \
+            linux/386 linux/arm linux/riscv64 linux/ppc64le \
+            js/wasm wasip1/wasm; do
+            echo "== $target"
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 go vet ./...
+          done
+          echo "== linux/arm GOARM=5"
+          GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=0 go vet ./...
+
+      # Compiling is not enough. An int is one bit too narrow for a mask like
+      # 0xFF00FFFF, and that only shows when the code runs: every repeater mask
+      # parsed to zero, so every tag matched the first one and the entire data
+      # dictionary answered US. A static 386 binary runs on an amd64 kernel, so
+      # this is a real test run rather than another compile.
+      - name: Test on linux/386
+        run: GOARCH=386 CGO_ENABLED=0 go test -count=1 ./...
+
   coverage:
     runs-on: ubuntu-latest
     steps:

@@ -161,7 +161,7 @@ func TestWriteFFFFTag(t *testing.T) {
 		Dataset:  NewDataset(),
 		FileMeta: NewFileMetaDataset(),
 	}
-	fd.Set(NewDataElement(MustTag(0xFFFFFFFF), VRLO, "123456"))
+	fd.Set(NewDataElement(MustTag(uint32(0xFFFFFFFF)), VRLO, "123456"))
 
 	implicit := true
 	outPath := filepath.Join(t.TempDir(), "ffff.dcm")
@@ -173,7 +173,7 @@ func TestWriteFFFFTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	elem, ok := reread.Get(MustTag(0xFFFFFFFF))
+	elem, ok := reread.Get(MustTag(uint32(0xFFFFFFFF)))
 	if !ok {
 		t.Fatal("(FFFF,FFFF) element missing")
 	}

@@ -50,6 +50,7 @@ func TestApplyVOILUT_window_with_rescale(t *testing.T) {
 	}
 	samples, err := ds.PixelSamples(pixels.WithRaw(true))
 	if err != nil {
+		skipWithoutNativeCodec(t, err)
 		t.Fatal(err)
 	}
 	hu, err := ds.ApplyModalityLUT(samples)

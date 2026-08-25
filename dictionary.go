@@ -110,40 +110,56 @@ func dictionaryIsRetired(tag Tag) bool {
 // Repeater masks: precomputed from the RepeatersDictionaryGo keys
 type repeaterMask struct {
 	maskStr string
-	mask1   int
-	mask2   int
+	// A tag is 32 unsigned bits, so these are too. They were int, and int is 32
+	// bits wide on a 32-bit platform -- one bit short of holding a mask like
+	// 0xFF00FFFF. fmt.Sscanf failed there and left the field zero, which made
+	// (t^mask1)&mask2 == 0 true for every tag: the whole dictionary resolved
+	// through whichever repeater happened to be first.
+	value uint32 // the fixed digits, with each x as 0
+	mask  uint32 // F where the digit is fixed, 0 where it may vary
 }
 
 var repeaterMasks []repeaterMask
 
 func init() {
 	for maskStr := range RepeatersDictionaryGo {
-		// Convert "60xx3000" -> mask1, mask2
-		mask1Str := strings.ReplaceAll(maskStr, "x", "0")
-		mask2Str := ""
-		for _, c := range maskStr {
-			if c == 'x' {
-				mask2Str += "0"
-			} else {
-				mask2Str += "F"
-			}
-		}
-		mask1 := 0
-		mask2 := 0
-		fmt.Sscanf(mask1Str, "%x", &mask1)
-		fmt.Sscanf(mask2Str, "%x", &mask2)
+		value, mask := repeaterMaskBits(maskStr)
 		repeaterMasks = append(repeaterMasks, repeaterMask{
 			maskStr: maskStr,
-			mask1:   mask1,
-			mask2:   mask2,
+			value:   value,
+			mask:    mask,
 		})
 	}
 }
 
+// repeaterMaskBits turns a key like "60xx3000" into the pair maskMatch compares
+// against. Shifting nibbles rather than building two strings and parsing them
+// back means there is no error to drop on the floor and no platform-dependent
+// width to overflow.
+func repeaterMaskBits(maskStr string) (value, mask uint32) {
+	for _, c := range maskStr {
+		value <<= 4
+		mask <<= 4
+		if c == 'x' || c == 'X' {
+			continue
+		}
+		mask |= 0xF
+		switch {
+		case c >= '0' && c <= '9':
+			value |= uint32(c - '0')
+		case c >= 'a' && c <= 'f':
+			value |= uint32(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			value |= uint32(c-'A') + 10
+		}
+	}
+	return value, mask
+}
+
 func maskMatch(tag Tag) string {
-	t := int(tag)
+	t := uint32(tag)
 	for _, rm := range repeaterMasks {
-		if (t^rm.mask1)&rm.mask2 == 0 {
+		if (t^rm.value)&rm.mask == 0 {
 			return rm.maskStr
 		}
 	}
