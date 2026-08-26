@@ -141,16 +141,127 @@ func TestUIDPrivate(t *testing.T) {
 	if got := private.Keyword(); got != "" {
 		t.Fatalf("private Keyword = %q, want empty", got)
 	}
+	if got := private.ExtraInfo(); got != "" {
+		t.Fatalf("private ExtraInfo = %q, want empty", got)
+	}
+	if private.IsRetired() {
+		t.Fatal("an unregistered UID cannot be retired")
+	}
 }
 
 func TestLookup(t *testing.T) {
-	u, ok := Lookup("CTImageStorage")
-	if !ok || u != CTImageStorage {
-		t.Fatalf("Lookup(CTImageStorage) = %q, %t", u, ok)
+	info, ok := Lookup(ExplicitVRLittleEndian)
+	if !ok {
+		t.Fatal("Lookup(ExplicitVRLittleEndian) = _, false")
 	}
-	_, ok = Lookup("NotARealKeyword")
+	if info.UID != ExplicitVRLittleEndian {
+		t.Errorf("Info.UID = %q, want %q", info.UID, ExplicitVRLittleEndian)
+	}
+	if info.Name != "Explicit VR Little Endian" {
+		t.Errorf("Info.Name = %q", info.Name)
+	}
+	if info.Keyword != "ExplicitVRLittleEndian" || info.Type != "Transfer Syntax" {
+		t.Errorf("Info.Keyword = %q, Info.Type = %q", info.Keyword, info.Type)
+	}
+	if !info.IsTransferSyntax || info.IsCompressed || info.IsImplicitVR || !info.IsLittleEndian {
+		t.Errorf("Info flags = %+v", info)
+	}
+
+	// The default transfer syntax, which is the only implicit-VR one there is.
+	info, ok = Lookup(ImplicitVRLittleEndian)
+	if !ok {
+		t.Fatal("Lookup(ImplicitVRLittleEndian) = _, false")
+	}
+	if !info.IsTransferSyntax || info.IsCompressed || !info.IsImplicitVR || !info.IsLittleEndian {
+		t.Errorf("ImplicitVRLittleEndian flags = %+v", info)
+	}
+	if info.ExtraInfo != "Default Transfer Syntax for DICOM" {
+		t.Errorf("Info.ExtraInfo = %q", info.ExtraInfo)
+	}
+
+	// A compressed one, to pin the flag that is derived rather than stored.
+	info, ok = Lookup(JPEG2000Lossless)
+	if !ok {
+		t.Fatal("Lookup(JPEG2000Lossless) = _, false")
+	}
+	if !info.IsTransferSyntax || !info.IsCompressed || info.IsImplicitVR || !info.IsLittleEndian {
+		t.Errorf("JPEG2000Lossless flags = %+v", info)
+	}
+
+	// A SOP Class has no encoding at all, so every encoding flag stays false
+	// rather than claiming big-endian explicit VR.
+	info, ok = Lookup(CTImageStorage)
+	if !ok {
+		t.Fatal("Lookup(CTImageStorage) = _, false")
+	}
+	if info.IsTransferSyntax || info.IsCompressed || info.IsImplicitVR || info.IsLittleEndian {
+		t.Errorf("CTImageStorage flags = %+v", info)
+	}
+
+	// An unregistered UID is reported absent rather than answered with a zero
+	// Info, which would be indistinguishable from a registered non-transfer-syntax.
+	if info, ok := Lookup(UID("9.9.999.90009.1.2")); ok {
+		t.Errorf("Lookup(private UID) = %+v, true", info)
+	}
+}
+
+// Every registered UID resolves through Lookup. This is the invariant the exported
+// Known map used to state as len(Known) == len(Dictionary), and it matters more now
+// that the Info is built on demand: a UID in the table whose Info came out wrong
+// would have been a wrong entry in that map instead.
+func TestLookupCoversEveryEntry(t *testing.T) {
+	for value, entry := range dictionary {
+		info, ok := Lookup(UID(value))
+		if !ok {
+			t.Fatalf("Lookup(%q) = _, false", value)
+		}
+		if info.UID != UID(value) || info.Name != entry.Name || info.Type != entry.Type ||
+			info.ExtraInfo != entry.ExtraInfo || info.Retired != entry.Retired ||
+			info.Keyword != entry.Keyword {
+			t.Fatalf("Lookup(%q) = %+v, want it to carry %+v", value, info, entry)
+		}
+		if want := entry.Type == "Transfer Syntax"; info.IsTransferSyntax != want {
+			t.Fatalf("Lookup(%q).IsTransferSyntax = %t, want %t", value, info.IsTransferSyntax, want)
+		}
+	}
+}
+
+// Lookup hands out a copy. That is what makes the registry read-only rather than
+// read-only by convention: the table is unexported now, and the Info a caller gets
+// must not be a window back into it.
+func TestLookupReturnsCopy(t *testing.T) {
+	info, ok := Lookup(ExplicitVRLittleEndian)
+	if !ok {
+		t.Fatal("Lookup(ExplicitVRLittleEndian) = _, false")
+	}
+	info.Name = "rewritten"
+	info.IsImplicitVR = true
+
+	again, _ := Lookup(ExplicitVRLittleEndian)
+	if again.Name != "Explicit VR Little Endian" || again.IsImplicitVR {
+		t.Fatalf("the registry was reachable through the returned Info: %+v", again)
+	}
+	if ExplicitVRLittleEndian.Name() != "Explicit VR Little Endian" {
+		t.Fatalf("UID.Name() = %q", ExplicitVRLittleEndian.Name())
+	}
+}
+
+func TestLookupKeyword(t *testing.T) {
+	u, ok := LookupKeyword("CTImageStorage")
+	if !ok || u != CTImageStorage {
+		t.Fatalf("LookupKeyword(CTImageStorage) = %q, %t", u, ok)
+	}
+	_, ok = LookupKeyword("NotARealKeyword")
 	if ok {
-		t.Fatal("Lookup should fail for unknown keyword")
+		t.Fatal("LookupKeyword should fail for unknown keyword")
+	}
+
+	// The two directions agree: the keyword Lookup reports resolves back to the
+	// UID it was read from.
+	info, _ := Lookup(JPEG2000Lossless)
+	back, ok := LookupKeyword(info.Keyword)
+	if !ok || back != JPEG2000Lossless {
+		t.Fatalf("LookupKeyword(%q) = %q, %t; want %q", info.Keyword, back, ok, JPEG2000Lossless)
 	}
 }
 
@@ -168,8 +279,9 @@ func TestStorageSOPClassUIDs(t *testing.T) {
 // hold. This is the test that would fail.
 //
 // It checks all three generated maps, because they are emitted by separate loops:
-// the constant, Dictionary (via Name/Type/IsRetired), and KeywordToUID (via
-// Lookup). A UID present in one and missing from another is a real failure mode.
+// the constant, the dictionary (via Name/Type/IsRetired), and the keyword table
+// (via LookupKeyword). A UID present in one and missing from another is a real
+// failure mode.
 func TestUIDsAheadOfPydicom(t *testing.T) {
 	tests := []struct {
 		uid     UID
@@ -208,32 +320,16 @@ func TestUIDsAheadOfPydicom(t *testing.T) {
 			if tt.uid.IsRetired() {
 				t.Error("IsRetired() = true, want false")
 			}
-			if got, ok := Lookup(tt.keyword); !ok || got != tt.uid {
-				t.Errorf("Lookup(%q) = %q, %t; want %q, true", tt.keyword, got, ok, tt.uid)
+			if got, ok := LookupKeyword(tt.keyword); !ok || got != tt.uid {
+				t.Errorf("LookupKeyword(%q) = %q, %t; want %q, true", tt.keyword, got, ok, tt.uid)
 			}
 		})
 	}
 }
 
-func TestKnownUIDs(t *testing.T) {
-	if len(Known) != len(Dictionary) {
-		t.Fatalf("len(Known) = %d, want %d", len(Known), len(Dictionary))
-	}
-	info, ok := Known[ExplicitVRLittleEndian]
-	if !ok {
-		t.Fatal("Known missing ExplicitVRLittleEndian")
-	}
-	if info.UID != ExplicitVRLittleEndian {
-		t.Fatalf("Info.UID = %q, want %q", info.UID, ExplicitVRLittleEndian)
-	}
-	if !info.IsTransferSyntax {
-		t.Fatal("ExplicitVRLittleEndian should be transfer syntax in Known")
-	}
-}
-
 func TestDictionarySize(t *testing.T) {
-	if len(Dictionary) < 400 {
-		t.Fatalf("Dictionary has only %d entries", len(Dictionary))
+	if len(dictionary) < 400 {
+		t.Fatalf("dictionary has only %d entries", len(dictionary))
 	}
 }
 

@@ -39,13 +39,22 @@ func TestUIDCompressed(t *testing.T) {
 	}
 }
 
-func TestUIDDictionary(t *testing.T) {
-	if len(UIDDictionary) != len(uid.Dictionary) {
-		t.Fatalf("UIDDictionary size = %d, want %d", len(UIDDictionary), len(uid.Dictionary))
-	}
+func TestLookupUID(t *testing.T) {
 	got, ok := LookupUID("CTImageStorage")
 	if !ok || got != CTImageStorage {
 		t.Fatalf("LookupUID(CTImageStorage) = %q, %t", got, ok)
+	}
+	if _, ok := LookupUID("NotARealKeyword"); ok {
+		t.Fatal("LookupUID should fail for an unknown keyword")
+	}
+
+	// UIDInfo is an alias for uid.Info. Nothing in the root package returns one
+	// now that KnownUIDs is gone, so this is what keeps the alias honest: what
+	// uid.Lookup hands back is still assignable to it.
+	var info UIDInfo
+	info, ok = uid.Lookup(ExplicitVRLittleEndian)
+	if !ok || !info.IsTransferSyntax || !info.IsLittleEndian || info.IsImplicitVR {
+		t.Fatalf("uid.Lookup(ExplicitVRLittleEndian) = %+v, %t", info, ok)
 	}
 }
 

@@ -26,18 +26,12 @@ const (
 	GodicomImplementationUID       UID = uid.GodicomImplementationUID
 )
 
-// UIDInfo holds metadata about a UID.
+// UIDInfo holds metadata about a UID, as returned by [uid.Lookup].
 type UIDInfo = uid.Info
-
-// UIDDictionary maps UID values to their metadata.
-var UIDDictionary = uid.Dictionary
-
-// KnownUIDs maps UID strings to their info.
-var KnownUIDs = uid.Known
 
 // LookupUID returns the UID for a dictionary keyword.
 func LookupUID(keyword string) (UID, bool) {
-	return uid.Lookup(keyword)
+	return uid.LookupKeyword(keyword)
 }
 
 // ValidateUID checks if the UID string conforms to DICOM rules.

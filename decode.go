@@ -15,7 +15,7 @@ func DecodeDataset(data []byte, ts UID) (*Dataset, error) {
 
 // DecodeDatasetContext is like DecodeDataset but uses ctx for logging.
 func DecodeDatasetContext(ctx context.Context, data []byte, ts UID) (*Dataset, error) {
-	info, known := uid.Known[ts]
+	info, known := uid.Lookup(ts)
 	if !known || !info.IsTransferSyntax {
 		return nil, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a known transfer syntax; use DecodeDatasetEncoding",
