@@ -137,6 +137,43 @@ There is no `WriteOptions.Dictionary`. The write path resolves an ambiguous VR
 from the dataset's own values — Pixel Representation decides between US and SS —
 and never asks the dictionary, so the field would have nothing to do.
 
+**Private elements**
+
+A private element's tag is not fixed by the vendor's documentation. PS3.5 §7.8.1
+makes the high byte of the element number a *block* the vendor reserves at run
+time, by writing its name into `(gggg,00xx)` — the Private Creator. GE's
+documented "element 1 of GEMS_ACQU_01" is therefore `(0019,1001)` in one file and
+`(0019,2001)` in the next, depending on which block was free when each was
+written. Code that hardcodes `(0019,1001)` reads a different vendor's data the
+first time it meets a file where the blocks landed differently — and reads it
+*successfully*, because there is nothing about the bytes to object to.
+
+Name the vendor and let the dataset find the block:
+
+```go
+block, ok := ds.PrivateBlock(0x0019, "GEMS_ACQU_01")
+if !ok {
+	return // this file has nothing from that vendor in that group
+}
+elem, ok := block.Get(0x01) // (0019,1001) or (0019,2001), whichever this file uses
+```
+
+`NewPrivateBlock` is the same lookup plus the ability to write, which is what a
+dataset being built from nothing needs: with no Private Creator element there is
+no block, and without a block there is nowhere to put a private element a reader
+could ever attribute to you.
+
+```go
+block, err := ds.NewPrivateBlock(0x0041, "ACME 3.2")
+block.Set(0x01, godicom.VRUS, 4095) // also writes (0041,0010) "ACME 3.2", if absent
+```
+
+Reserving picks the lowest free block, so a second vendor in the same group lands
+beside the first rather than on top of it. `ds.PrivateCreators(0x0019)` lists the
+names that have reserved a block there, which is where to start with a file from
+a manufacturer whose documentation you do not have: the tags say nothing, but the
+creator names say who to ask.
+
 **Truncated and malformed files**
 
 By default a read keeps whatever it parsed before the file stopped making sense,

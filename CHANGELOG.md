@@ -88,6 +88,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ReadOptions.Dictionary` without changing what any other caller in the process
   reads. Safe for concurrent use. Documented in the README with
   `ExampleNewPrivateDictionary` behind it, so the snippet is compile-checked
+- `Dataset.NewPrivateBlock(group uint16, creator string) (*PrivateBlock, error)`
+  returns the block a Private Creator holds in a group, reserving one when it holds
+  none. It is what writing private data needs and `PrivateBlock` alone could not do:
+  with no `(gggg,00xx)` creator element there is no block, and a private element
+  written without one is an element no reader can attribute to any vendor. Reserving
+  takes the lowest free block, so a second vendor in the same group lands at `0x11`
+  rather than on top of the first, and writes the creator as `LO`, the VR PS3.5
+  §7.8.1 gives it. An existing block is returned as it stands and nothing is
+  written. It reports an error rather than reserving when the group is even (a
+  standard group has no private blocks), when the creator is empty (a block reserved
+  under no name is one nothing can resolve), and when all 240 blocks in the group are
+  taken — the last cannot happen in a file anyone has written, but the alternative is
+  silently returning block `0x00`, which PS3.5 reserves. Mirrors pydicom's
+  `Dataset.private_block(..., create=True)`. Part of
+  [#51](https://github.com/godicom-dev/godicom/issues/51) §18
+- `Dataset.PrivateCreators(group uint16) []string` lists the vendor names that have
+  reserved a block in a group, ordered by the block they occupy. It is where to start
+  with a file from a manufacturer whose documentation you do not have: the private
+  tags say nothing, but the creator names say who to ask. An even group has no
+  private blocks and so returns nothing. Mirrors pydicom's
+  `Dataset.private_creators`
+- `PrivateBlock.Delete(offset uint8)` removes an element from a block, completing the
+  set `Get` and `Set` started. It does not release the block — the creator element
+  stays, so an emptied block is still that vendor's and not free for another. Mirrors
+  pydicom's `PrivateBlock.__delitem__`
+- `PrivateBlock` and the PS3.5 §7.8.1 rules it implements now live in
+  `private_block.go`, headed by the reason the type exists at all: a private
+  element's tag is not fixed by the vendor's documentation, so code that hardcodes
+  `(0019,1001)` reads a different vendor's data the first time it meets a file where
+  the blocks landed differently — and reads it *successfully*, because there is
+  nothing about the bytes to object to. The README has a section on it with
+  `ExampleDataset_PrivateBlock` and `ExampleDataset_NewPrivateBlock` behind it, so
+  the snippets are compile-checked
 
 ### Changed
 - the VR-mismatch diagnostic is judged against the dictionary the read was given
@@ -114,6 +147,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maps were reachable for; `AddPrivateDictEntry` remains the way to add a private
   entry at runtime. Nothing in the godicom-dev organisation referenced the maps.
   `DictEntry` stays exported — it is what `Lookup` returns
+- **Breaking:** `Dataset.PrivateBlock` returns `(*PrivateBlock, bool)` rather than a
+  bare pointer that was `nil` when no such creator was there. A file from another
+  manufacturer has no such block, which is the ordinary case rather than an
+  exceptional one, and the old signature made it a nil dereference in the caller's
+  next line: `ds.PrivateBlock(0x0019, "GEMS_ACQU_01").Get(0x01)` panics on every file
+  GE did not write. The ok idiom matches `Dataset.Get`, and the three situations
+  pydicom raises three different exceptions for — even group, empty creator, no such
+  creator — collapse into the one answer a caller can act on
+- **Breaking:** `group` is `uint16` and `offset` is `uint8` on `Dataset.PrivateBlock`
+  and on `PrivateBlock`'s `GetTag`, `Get`, `Set` and `Delete`, where both were `int`;
+  `PrivateBlock.Group` is `uint16` for the same reason. A block offset is the low byte
+  of an element number and nothing else, and an `int` let it be anything: `GetTag(0x1234)`
+  returned `(0009,2234)`, silently a different vendor's block, and `GetTag(-1)`
+  returned `(0009,0FFF)`, which is not a private element at all. pydicom raises
+  `ValueError` above `0xFF` at run time and does not check for negatives; here the
+  type carries the constraint, so the check has nowhere left to fail
 
 ### Fixed
 - `generate_dict.py` wrote to `dicom_dict_generated.go`, a name nothing in the tree
@@ -137,6 +186,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this against a nil tag filter, which took the non-recursive path regardless, so
   it had been passing without the flag set at all; it now contrasts a filtered
   search with and without `-top`
+- `Dataset.PrivateBlock` chose a block by map iteration order when one creator name
+  reserved two blocks in a group, so the tag a private element was read from could
+  differ between runs of one program over one file. It now scans elements `0x10`
+  through `0xFF` in order and the lowest block wins. A well-formed file has no
+  duplicate creator, but nothing in the read path rejects one and pydicom has the
+  same defect
+- a cached `PrivateBlock` outlived the element that reserved it. Deleting a Private
+  Creator, or overwriting it with another vendor's name, left the block resolving and
+  still answering with its old base element: reads came back from whatever now
+  occupies those tags, and writes produced private elements attributed to a vendor the
+  dataset no longer names. The cache is now dropped whenever a Private Creator element
+  is set or deleted, which covers `Delete`, `Set`, `Pop`, `Clear` and
+  `RemovePrivateTags`. pydicom fixed the deletion half in its issue #1097 and still
+  caches across the overwrite
 
 ### Removed
 - `dictionaryIsRetired`, which consulted only the exact table and so answered "not

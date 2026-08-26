@@ -133,8 +133,8 @@ func TestDeferredReadBuffer(t *testing.T) {
 		t.Fatalf("PixelData length = %d, want 32768", len(pixel))
 	}
 
-	block := ds.PrivateBlock(0x43, "GEMS_PARM_01")
-	if block == nil {
+	block, ok := ds.PrivateBlock(0x43, "GEMS_PARM_01")
+	if !ok {
 		t.Fatal("private block missing")
 	}
 	priv, ok := block.Get(0x29)
