@@ -202,8 +202,8 @@ func TestDatasetGetDataElement(t *testing.T) {
 func TestPrivateBlockSet(t *testing.T) {
 	ds := NewDataset()
 	ds.Set(NewDataElement(MustTag(0x00090010), VRLO, "MY_CREATOR"))
-	pb := ds.PrivateBlock(0x0009, "MY_CREATOR")
-	if pb == nil {
+	pb, ok := ds.PrivateBlock(0x0009, "MY_CREATOR")
+	if !ok {
 		t.Fatal("private block not found")
 	}
 
@@ -221,8 +221,8 @@ func TestDatasetPrivateBlock(t *testing.T) {
 	ds.Set(NewDataElement(MustTag(0x00090010), VRLO, "MY_CREATOR"))
 	ds.Set(NewDataElement(MustTag(0x00091001), VRLO, "PrivateValue"))
 
-	pb := ds.PrivateBlock(0x0009, "MY_CREATOR")
-	if pb == nil {
+	pb, ok := ds.PrivateBlock(0x0009, "MY_CREATOR")
+	if !ok {
 		t.Fatal("private block not found")
 	}
 

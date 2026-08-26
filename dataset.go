@@ -13,7 +13,7 @@ import (
 // Dataset represents a DICOM Dataset - a collection of DataElements keyed by Tag.
 type Dataset struct {
 	elements                      map[Tag]*DataElement
-	privateBlocks                 map[[2]interface{}]*PrivateBlock // key: (group, creator)
+	privateBlocks                 map[privateBlockKey]*PrivateBlock
 	originalEnc                   EncodingInfo
 	originalCharsets              []string      // SpecificCharacterSet at read time; nil if unset/new
 	writeEnc                      *EncodingInfo // nil = same as originalEnc for IsOriginalEncoding
@@ -99,18 +99,10 @@ type FileDataset struct {
 	Timestamp string // file modification time as Unix seconds (deferred read checks)
 }
 
-// PrivateBlock represents a private block in the dataset.
-type PrivateBlock struct {
-	Group          int
-	PrivateCreator string
-	dataset        *Dataset
-	blockStart     int
-}
-
 func NewDataset() *Dataset {
 	return &Dataset{
 		elements:      make(map[Tag]*DataElement),
-		privateBlocks: make(map[[2]interface{}]*PrivateBlock),
+		privateBlocks: make(map[privateBlockKey]*PrivateBlock),
 		originalEnc:   EncodingInfo{IsImplicitVR: false, IsLittleEndian: true},
 	}
 }
@@ -186,6 +178,13 @@ func (d *Dataset) Set(element *DataElement) {
 	// Replacing an element clears any prior raw bytes; caller-owned elements
 	// created via NewElement do not carry RawValue unless set explicitly.
 	d.elements[element.Tag] = element
+	// Overwriting a Private Creator reassigns its block to a different vendor, so
+	// any block cached under the old name now points into the new vendor's
+	// elements. Drop the cache rather than let it answer for a name the dataset no
+	// longer holds.
+	if len(d.privateBlocks) > 0 && element.Tag.IsPrivateCreator() {
+		d.invalidatePrivateBlocks()
+	}
 }
 
 func (d *Dataset) ambiguousVRAncestors() []*Dataset {
@@ -202,8 +201,16 @@ func (d *Dataset) ambiguousVRAncestors() []*Dataset {
 	return ancestors
 }
 
+// Delete removes the element for tag, and does nothing if it was not there.
+//
+// Deleting a Private Creator element drops the private-block cache: the blocks
+// that element reserved no longer resolve, and a cached PrivateBlock still
+// answering for one would write elements no reader can attribute to a vendor.
 func (d *Dataset) Delete(tag Tag) {
 	delete(d.elements, tag)
+	if len(d.privateBlocks) > 0 && tag.IsPrivateCreator() {
+		d.invalidatePrivateBlocks()
+	}
 }
 
 func (d *Dataset) Has(tag Tag) bool {
@@ -703,42 +710,9 @@ func (d *Dataset) SetIS(tag Tag, value IS) error {
 }
 
 // --- Private blocks ---
-
-func (d *Dataset) PrivateBlock(group int, creator string) *PrivateBlock {
-	key := [2]interface{}{group, creator}
-	if pb, ok := d.privateBlocks[key]; ok {
-		return pb
-	}
-	// Find the private creator element
-	for _, e := range d.elements {
-		if e.Tag.Group() == group && e.Tag.Element() >= 0x0010 && e.Tag.Element() < 0x0100 {
-			if s, ok := e.Value.(string); ok && s == creator {
-				pb := &PrivateBlock{
-					Group:          group,
-					PrivateCreator: creator,
-					dataset:        d,
-					blockStart:     e.Tag.Element() << 8,
-				}
-				d.privateBlocks[key] = pb
-				return pb
-			}
-		}
-	}
-	return nil
-}
-
-func (pb *PrivateBlock) GetTag(offset int) Tag {
-	return NewTag(pb.Group, pb.blockStart+offset)
-}
-
-func (pb *PrivateBlock) Get(offset int) (*DataElement, bool) {
-	return pb.dataset.Get(pb.GetTag(offset))
-}
-
-func (pb *PrivateBlock) Set(offset int, vr VR, value interface{}) {
-	tag := pb.GetTag(offset)
-	pb.dataset.Set(NewDataElement(tag, vr, value))
-}
+//
+// PrivateBlock, NewPrivateBlock and PrivateCreators live in private_block.go,
+// with the PS3.5 block-allocation rules they implement.
 
 // --- String ---
 
@@ -897,7 +871,7 @@ func (d *Dataset) IterAll() []*DataElement {
 // Mirrors pydicom Dataset.clear.
 func (d *Dataset) Clear() {
 	d.elements = make(map[Tag]*DataElement)
-	d.privateBlocks = make(map[[2]interface{}]*PrivateBlock)
+	d.invalidatePrivateBlocks()
 }
 
 // Pop removes and returns the element for tag.

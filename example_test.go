@@ -142,6 +142,65 @@ func ExampleNewPrivateDictionary() {
 	// read with the vendor's dictionary: US 4095
 }
 
+// ExampleDataset_PrivateBlock reads a vendor's private element without knowing
+// which tag it landed on. PS3.5 §7.8.1 lets a vendor reserve any free block in a
+// private group at write time, so the element the vendor documents as offset 0x01
+// is (0041,1101) in this dataset and would be (0041,1001) in one where block 0x10
+// happened to be free.
+func ExampleDataset_PrivateBlock() {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.NewTag(0x0041, 0x0010), godicom.VRLO, "OTHER 1.0"))
+	ds.Set(godicom.NewDataElement(godicom.NewTag(0x0041, 0x0011), godicom.VRLO, "ACME 3.2"))
+	ds.Set(godicom.NewDataElement(godicom.NewTag(0x0041, 0x1101), godicom.VRUS, 4095))
+
+	block, ok := ds.PrivateBlock(0x0041, "ACME 3.2")
+	if !ok {
+		log.Fatal("no such private block")
+	}
+	elem, _ := block.Get(0x01)
+	fmt.Println(block.GetTag(0x01), elem.Value)
+
+	// Hardcoding the tag is the thing to avoid: (0041,1001) is offset 0x01 of
+	// whoever holds block 0x10, which here is a different vendor.
+	fmt.Println("creators:", ds.PrivateCreators(0x0041))
+	// Output:
+	// (0041,1101) 4095
+	// creators: [OTHER 1.0 ACME 3.2]
+}
+
+// ExampleDataset_NewPrivateBlock writes a private element, which means reserving
+// a block first: a private element whose group holds no Private Creator naming
+// its block is an element no reader can attribute to anyone.
+func ExampleDataset_NewPrivateBlock() {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.NewTag(0x0041, 0x0010), godicom.VRLO, "OTHER 1.0"))
+
+	// Block 0x10 is taken, so this reserves 0x11 -- and writes (0041,0011).
+	block, err := ds.NewPrivateBlock(0x0041, "ACME 3.2")
+	if err != nil {
+		log.Fatal(err)
+	}
+	block.Set(0x01, godicom.VRUS, 4095)
+
+	data, err := ds.Encode(uid.ExplicitVRLittleEndian)
+	if err != nil {
+		log.Fatal(err)
+	}
+	reread, err := godicom.DecodeDataset(data, uid.ExplicitVRLittleEndian)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// The reader asks by name and gets the block this file used.
+	found, ok := reread.PrivateBlock(0x0041, "ACME 3.2")
+	if !ok {
+		log.Fatal("the block did not survive the round trip")
+	}
+	elem, _ := found.Get(0x01)
+	fmt.Println(found.GetTag(0x01), elem.Value)
+	// Output: (0041,1101) 4095
+}
+
 // ExampleReadOptions shows the diagnostic hook on the way in. A read keeps
 // whatever it parsed before the file stopped making sense; the hook is how you
 // find out that it did.
