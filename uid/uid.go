@@ -32,7 +32,12 @@ const (
 	VerificationSOPClass = Verification
 )
 
-// Info holds metadata about a UID (legacy shape for KnownUIDs consumers).
+// Info is what Lookup returns: what the PS3.6 UID registry records about a UID,
+// plus the encoding facts that follow from it.
+//
+// The four flags are only meaningful for a Transfer Syntax and are false for
+// everything else, so IsTransferSyntax is the one to check first -- a SOP Class
+// is not big-endian, it simply has no endianness at all.
 type Info struct {
 	UID              UID
 	Name             string
@@ -46,39 +51,58 @@ type Info struct {
 	IsLittleEndian   bool
 }
 
-// Known maps UID strings to their metadata. Populated from Dictionary.
-var Known map[UID]Info
-
-func init() {
-	Known = make(map[UID]Info, len(Dictionary))
-	for value, entry := range Dictionary {
-		u := UID(value)
-		info := Info{
-			UID:       u,
-			Name:      entry.Name,
-			Type:      entry.Type,
-			ExtraInfo: entry.ExtraInfo,
-			Retired:   entry.Retired,
-			Keyword:   entry.Keyword,
-		}
-		if entry.Type == "Transfer Syntax" {
-			info.IsTransferSyntax = true
-			info.IsCompressed = u.isCompressedTransferSyntax()
-			info.IsImplicitVR = u == ImplicitVRLittleEndian
-			info.IsLittleEndian = u != ExplicitVRBigEndian
-		}
-		Known[u] = info
-	}
-}
-
-func (u UID) entry() (DictEntry, bool) {
-	e, ok := Dictionary[string(u)]
+func (u UID) entry() (dictEntry, bool) {
+	e, ok := dictionary[string(u)]
 	return e, ok
 }
 
-// Lookup returns the UID for a dictionary keyword.
-func Lookup(keyword string) (UID, bool) {
-	u, ok := KeywordToUID[keyword]
+// Lookup returns what the UID registry records about u, and whether it holds an
+// entry for it at all. A UID it does not know -- a private one, or a typo -- is
+// reported as absent rather than answered with a zero Info, which would read like
+// a registered UID that happens to be no transfer syntax:
+//
+//	info, ok := uid.Lookup(ts)
+//	if !ok || !info.IsTransferSyntax {
+//		// ts is not something to encode with
+//	}
+//
+// The Info is a copy, so the registry cannot be reached through it. That is the
+// point: this table used to be an exported map, which let any caller anywhere in
+// the process redefine what a transfer syntax means for every other caller.
+func Lookup(u UID) (Info, bool) {
+	entry, ok := u.entry()
+	if !ok {
+		return Info{}, false
+	}
+	info := Info{
+		UID:       u,
+		Name:      entry.Name,
+		Type:      entry.Type,
+		ExtraInfo: entry.ExtraInfo,
+		Retired:   entry.Retired,
+		Keyword:   entry.Keyword,
+	}
+	if entry.Type == "Transfer Syntax" {
+		info.IsTransferSyntax = true
+		info.IsCompressed = u.isCompressedTransferSyntax()
+		info.IsImplicitVR = u == ImplicitVRLittleEndian
+		info.IsLittleEndian = u != ExplicitVRBigEndian
+	}
+	return info, true
+}
+
+// LookupKeyword returns the UID that a PS3.6 keyword names, which is the reverse
+// of Info.Keyword and the way to reach a UID whose name you have but whose value
+// you do not:
+//
+//	u, ok := uid.LookupKeyword("CTImageStorage") // 1.2.840.10008.5.1.4.1.1.2
+//
+// The generated constants are the better answer when the keyword is known at
+// compile time -- uid.CTImageStorage is checked by the compiler and this is not.
+// This is for a keyword that arrives at run time, from a configuration file or a
+// command line.
+func LookupKeyword(keyword string) (UID, bool) {
+	u, ok := keywordToUID[keyword]
 	return u, ok
 }
 

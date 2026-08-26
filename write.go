@@ -350,7 +350,7 @@ func determineWriteEncoding(fileMeta *FileMetaDataset, ds *Dataset, opts *WriteO
 		return EncodingInfo{IsImplicitVR: fallbackImp, IsLittleEndian: fallbackLit}, nil
 	}
 
-	info, known := uid.Known[ts]
+	info, known := uid.Lookup(ts)
 	if known && info.IsTransferSyntax {
 		if opts.ImplicitVR != nil && *opts.ImplicitVR != info.IsImplicitVR {
 			return EncodingInfo{}, fmt.Errorf(
@@ -1320,7 +1320,7 @@ func WriteContext(ctx context.Context, w io.Writer, fd *FileDataset, opts *Write
 // using ts for VR, endianness, and Deflated compression when applicable.
 // Suitable for DIMSE C-STORE / C-FIND payloads.
 func EncodeDataset(ds *Dataset, ts UID) ([]byte, error) {
-	info, known := uid.Known[ts]
+	info, known := uid.Lookup(ts)
 	if !known || !info.IsTransferSyntax {
 		return nil, fmt.Errorf(
 			"godicom: Transfer Syntax UID %q is not a known transfer syntax; use EncodeDatasetEncoding",

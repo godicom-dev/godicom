@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Six Storage SOP Class UIDs that PS3.6 Table A-1 registers but pydicom's
-  `_uid_dict.py` does not carry, so `uid.Lookup` and `UID.Name` resolve them
+  `_uid_dict.py` does not carry, so `uid.LookupKeyword` and `UID.Name` resolve them
   instead of returning the raw UID string: `CTImageStorageForProcessing`
   (`1.2.840.10008.5.1.4.1.1.2.3`), `EnhancedCTImageStorageForProcessing` (`.2.4`),
   `LegacyConvertedEnhancedCTImageStorageForProcessing` (`.2.5`),
@@ -121,8 +121,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing about the bytes to object to. The README has a section on it with
   `ExampleDataset_PrivateBlock` and `ExampleDataset_NewPrivateBlock` behind it, so
   the snippets are compile-checked
+- `uid.LookupKeyword(keyword string) (UID, bool)` resolves a PS3.6 keyword to its
+  UID — the direction the old `uid.Lookup` went, under a name that says which
+  direction that is. It replaces the exported `uid.KeywordToUID` map for the one
+  thing a caller could do with it. The generated constants remain the better answer
+  for a keyword known at compile time; this is for one that arrives at run time,
+  from a configuration file or a command line
 
 ### Changed
+- **Breaking:** `uid.Lookup` takes a UID and returns what the registry records
+  about it — `Lookup(u UID) (Info, bool)` — where it used to take a keyword and
+  return a UID. That direction is now `uid.LookupKeyword`, so both exist and each
+  says which way it goes. The new `Lookup` is what replaces the exported maps: it
+  answers everything `uid.Known` was reachable for, including the four derived
+  transfer-syntax flags, and it hands back a copy, so the table cannot be reached
+  through it
+- **Breaking:** the three exported maps in `uid` are gone from the API —
+  `Dictionary` and `KeywordToUID` become `dictionary` and `keywordToUID`, `Known` is
+  removed outright (see Removed), and `uid.DictEntry` becomes `dictEntry` with the
+  table it types. Same defect as the data dictionary above: read-only by
+  convention, mutable by type, no synchronisation of any kind, so any caller could
+  have rewritten what a transfer syntax means for every other caller in the
+  process — `uid.Known[uid.ImplicitVRLittleEndian]` was one assignment away from
+  making every implicit-VR file in the process decode as explicit. Read access is
+  `uid.Lookup` and `uid.LookupKeyword`. `generate_uid_dict.py` emits the unexported
+  names, so a regeneration cannot quietly export them again. Within the
+  godicom-dev organisation the only references are two lines in one gonetdicom
+  test, `ae/storage_sop_classes_test.go:35` and `:121`, which a module bump there
+  will need to move to `uid.Lookup` / `uid.LookupKeyword`
+- **Breaking:** the root aliases `godicom.UIDDictionary` and `godicom.KnownUIDs` are
+  removed rather than unexported, there being nothing left for them to alias.
+  `godicom.LookupUID` is unchanged and still takes a keyword; `godicom.UIDInfo`
+  still names `uid.Info`, which is what `uid.Lookup` returns
 - the VR-mismatch diagnostic is judged against the dictionary the read was given
   rather than always against PS3.6. A caller who overrode an entry said what they
   expect the file to contain, and measuring against a different expectation than the
@@ -202,6 +232,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caches across the overwrite
 
 ### Removed
+- the `uid.Known` map and the package `init` that filled it. It was a second copy
+  of the UID dictionary — one `Info` per registered UID, all 496 of them built at
+  program start whether anything asked or not — and every field in it is either
+  read straight from the dictionary entry or derived from the UID in three
+  comparisons. `uid.Lookup` derives them on demand instead, so there is one table
+  where there were two, nothing to keep in step, and no init work for a program
+  that never looks a UID up. `TestLookupCoversEveryEntry` checks every entry
+  resolves, which is the invariant `len(Known) == len(Dictionary)` used to state
 - `dictionaryIsRetired`, which consulted only the exact table and so answered "not
   retired" for all 72 retired repeating-group entries. It had no caller outside its
   own test, so nothing ever noticed. `Standard().Lookup` returns the entry and
