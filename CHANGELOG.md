@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-01
+
 ### Added
 - Six Storage SOP Class UIDs that PS3.6 Table A-1 registers but pydicom's
   `_uid_dict.py` does not carry, so `uid.LookupKeyword` and `UID.Name` resolve them
@@ -745,7 +747,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/godicom-dev/godicom/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/godicom-dev/godicom/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/godicom-dev/godicom/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/godicom-dev/godicom/compare/v0.26.0...v0.27.0
