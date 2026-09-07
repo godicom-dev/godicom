@@ -19,6 +19,11 @@ const (
 	TagCharset           Tag = tag.SpecificCharacterSet
 )
 
+// tagPixelData is what StopBeforePixels stops before. Unexported because
+// tag.PixelData already names it for callers; this spelling only exists so the
+// read path does not repeat the literal at each decision.
+const tagPixelData Tag = tag.PixelData
+
 // ParseTag creates a Tag from various forms:
 //   - ParseTag(0x00100010)
 //   - ParseTag(0x0010, 0x0010)

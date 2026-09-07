@@ -11,11 +11,78 @@ import (
 	"strings"
 )
 
+// ElementAction is what a read should do with an element whose header has just
+// been decoded, returned by ReadOptions.OnElement. Its zero value keeps the
+// element, so a hook that falls off the end of its own logic parses the file the
+// way godicom always has.
+type ElementAction int
+
+const (
+	// ElementKeep parses the value and stores the element. This is the zero
+	// value, and what every element gets when no hook is set.
+	ElementKeep ElementAction = iota
+
+	// ElementSkip advances past the value without decoding or allocating it, and
+	// stores nothing. The parse continues with the next element.
+	//
+	// Skipping is not the same as deferring: a deferred element keeps its place
+	// in the dataset and loads its value on Get, while a skipped one is not in
+	// the dataset at all.
+	ElementSkip
+
+	// ElementStop abandons the parse at this element, which is not stored, and
+	// returns what was read before it. The rest of the stream is never touched.
+	ElementStop
+)
+
 type ReadOptions struct {
 	DeferSize        uint32
 	StopBeforePixels bool
 	Force            bool
 	SpecificTags     []Tag
+	// OnElement decides, per element, whether to parse its value, step over it,
+	// or stop reading -- the whole point being that a caller who wants seven index
+	// tags out of a 200 MB file should not pay to decode the other 199:
+	//
+	//	want := map[godicom.Tag]bool{tag.PatientID: true, tag.StudyInstanceUID: true}
+	//	ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{
+	//		OnElement: func(h godicom.RawDataElement, path []godicom.PathStep) godicom.ElementAction {
+	//			if len(path) > 0 || want[h.Tag] {
+	//				return godicom.ElementKeep
+	//			}
+	//			return godicom.ElementSkip
+	//		},
+	//	})
+	//
+	// It is called once per element, after the header is decoded and before the
+	// value is read, so h carries the Tag, the VR in effect, the declared Length
+	// and the ValueTell the value would start at -- but not the value itself,
+	// which is the saving. h.Value is always nil.
+	//
+	// path names the enclosing sequences and the item of each, outermost first,
+	// and is nil at the top level. The hook is called at every depth, so an
+	// oversized nested sequence can be stepped over element by element; the
+	// example above keeps everything inside a sequence it decided to parse.
+	//
+	// path is the reader's own slice and is only valid for the duration of the
+	// call -- the reader overwrites it as it descends and returns. Copy it to keep
+	// it. It is not copied for you because the hook is called once per element and
+	// most hooks only read it.
+	//
+	// The skipping is real on a seekable source, where the value bytes are never
+	// read. On a non-seekable reader godicom has already buffered the stream, so
+	// skipping saves the decode and the allocation but not the I/O.
+	//
+	// Two elements are exempt and never offered: group 0x0002, which is the File
+	// Meta the transfer syntax is read from, and (0008,0005) Specific Character
+	// Set, which decides how every text value after it is decoded. Skipping
+	// either would change what the rest of the file means rather than merely how
+	// much of it is kept.
+	//
+	// StopBeforePixels and SpecificTags are the two hooks godicom shipped before
+	// this one and are implemented on top of it. A hook set here runs after them,
+	// and can only narrow what they kept: an element they skipped is already gone.
+	OnElement func(RawDataElement, []PathStep) ElementAction
 	// Logger overrides the call-scoped slog logger for this read.
 	// When nil, LoggerFromContext / DefaultLogger is used.
 	Logger *slog.Logger
@@ -101,19 +168,82 @@ func readTagBytes(data []byte, pos int64, isLittleEndian bool) Tag {
 	return NewTag(int(group), int(element))
 }
 
-func shouldKeepElement(opts *ReadOptions, tag Tag) bool {
+// decideElement is the one place a read decides what to do with an element whose
+// header it has just decoded. Every loop -- the two over a byte slice and the one
+// over a ReaderAt -- calls it at the same point, immediately after
+// decodeElementHeader, so the three agree on the answer by construction rather
+// than by three copies of the same condition staying in step.
+//
+// It is called before the value is read. Diagnostics are not suppressed for a
+// skipped element: they describe the file, not the subset the caller chose to
+// keep, and a caller narrowing a read has no reason to stop hearing that the
+// bytes are malformed. An ElementStop is the exception, because the element it
+// stops at is not parsed at all.
+//
+// enc and valueStart fill in the RawDataElement handed to the hook; rc supplies
+// the enclosing sequence path, which is empty at the top level.
+func decideElement(
+	opts *ReadOptions,
+	rc *readContext,
+	h elementHeader,
+	tag Tag,
+	valueStart int64,
+	enc EncodingInfo,
+) ElementAction {
+	if opts == nil {
+		return ElementKeep
+	}
+	var path []PathStep
+	if rc != nil {
+		path = rc.seqPath
+	}
+	// The File Meta carries the transfer syntax the rest of the file is encoded
+	// in, and Specific Character Set decides how every text value after it
+	// decodes. Skipping either changes what the remaining elements mean, not just
+	// how many are kept, so neither is offered to any of the three mechanisms
+	// below.
 	if tag.Group() == 0x0002 || tag == TagCharset {
-		return true
+		return ElementKeep
 	}
-	if opts == nil || len(opts.SpecificTags) == 0 {
-		return true
+	if opts.StopBeforePixels && tag == tagPixelData {
+		return ElementStop
 	}
-	for _, specificTag := range opts.SpecificTags {
-		if tag == specificTag {
-			return true
+	// SpecificTags filters the top-level dataset only. pydicom scopes it the same
+	// way -- read_sequence_item calls read_dataset without passing specific_tags --
+	// and the alternative is worse than merely different: filtering inside a
+	// sequence keeps the sequence element and empties its items, which is a
+	// dataset no file could have produced.
+	if len(opts.SpecificTags) > 0 && len(path) == 0 {
+		found := false
+		for _, specificTag := range opts.SpecificTags {
+			if tag == specificTag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ElementSkip
 		}
 	}
-	return false
+	if opts.OnElement == nil {
+		return ElementKeep
+	}
+	// In source coordinates, the same way a Diagnostic reports its Offset: the
+	// streaming reader parses a sequence out of a chunk it copied, so the position
+	// the loop holds is relative to that chunk and means nothing to a caller
+	// holding the file.
+	if rc != nil {
+		valueStart += rc.baseOffset
+	}
+	return opts.OnElement(RawDataElement{
+		Tag:            tag,
+		VR:             h.VR,
+		Length:         h.Length,
+		ValueTell:      valueStart,
+		IsImplicitVR:   enc.IsImplicitVR,
+		IsLittleEndian: enc.IsLittleEndian,
+		IsRaw:          true,
+	}, path)
 }
 
 func readDeferSize(opts *ReadOptions) uint32 {
@@ -264,10 +394,6 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 
-		if opts != nil && opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
-			break
-		}
-
 		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, resolve)
 		if !ok {
 			if err := readCtx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
@@ -276,6 +402,13 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+
+		action := decideElement(opts, readCtx, h, currentTag, pos+int64(hdrSize), cc.EncodingInfo)
+		if action == ElementStop {
+			break
+		}
+		keep := action == ElementKeep
+
 		if err := readCtx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
 			return nil, err
 		}
@@ -287,7 +420,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
 			pos += int64(hdrSize)
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
 				allElements = append(allElements, elem)
 			}
 			continue
@@ -310,6 +443,12 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				if err != nil {
 					return nil, err
 				}
+			} else if !keep {
+				// Step over the item stream without copying it. An undefined-length
+				// value has no length field, so finding the end means walking the
+				// items either way -- but walking them is cheap and copying them is
+				// the whole cost of the element.
+				pos = skipUndefinedLengthValue(data, valueStart, cc.IsLittleEndian)
 			} else {
 				logDebug(ctx, "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
@@ -330,30 +469,35 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 					pos = newPos
 				}
 			}
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
 				allElements = append(allElements, elem)
 			}
 			continue
 		}
 
 		if vr == VRSQ {
-			readCtx.pushSeq(currentTag)
-			seq, newPos, err := readDefinedLengthSequence(
-				data,
-				pos+int64(hdrSize),
-				length,
-				cc,
-				opts,
-				readCtx,
-			)
-			readCtx.popSeq()
-			elem.Value = seq
-			pos = newPos
-			if err != nil {
-				return nil, err
-			}
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
+				readCtx.pushSeq(currentTag)
+				seq, newPos, err := readDefinedLengthSequence(
+					data,
+					pos+int64(hdrSize),
+					length,
+					cc,
+					opts,
+					readCtx,
+				)
+				readCtx.popSeq()
+				elem.Value = seq
+				pos = newPos
+				if err != nil {
+					return nil, err
+				}
 				allElements = append(allElements, elem)
+			} else {
+				// A defined-length sequence declares its own extent, so stepping over
+				// it costs nothing at all: no items are walked and no nested element
+				// is decoded.
+				pos += int64(hdrSize) + int64(length)
 			}
 			continue
 		}
@@ -365,24 +509,24 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 			break
 		}
 
-		value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
-		valueTell := pos + int64(hdrSize)
+		if keep {
+			value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
+			valueTell := pos + int64(hdrSize)
 
-		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
-			logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
-				AttrTag, currentTag.String(), AttrLen, length)
-			markElementDeferred(elem, valueTell, length, cc)
-		} else {
-			logElementValue(ctx, valueTell, value)
-			assignElementBytes(elem, value, vr, cc)
-		}
+			if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+				logDebug(ctx, "Defer size exceeded. Skipping forward to next data element.",
+					AttrTag, currentTag.String(), AttrLen, length)
+				markElementDeferred(elem, valueTell, length, cc)
+			} else {
+				logElementValue(ctx, valueTell, value)
+				assignElementBytes(elem, value, vr, cc)
+			}
 
-		if shouldKeepElement(opts, elem.Tag) {
 			allElements = append(allElements, elem)
 		}
 		pos += int64(hdrSize) + int64(length)
 
-		if currentTag == TagCharset {
+		if keep && currentTag == TagCharset {
 			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 		}
 	}
@@ -626,10 +770,6 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			return pos + 8, nil
 		}
 
-		if opts != nil && opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
-			return pos, nil
-		}
-
 		h, need, ok := decodeElementHeader(data, pos, currentTag, cc.EncodingInfo, resolve)
 		if !ok {
 			if err := ctx.report(truncatedHeader(currentTag, pos, need, int64(len(data)))); err != nil {
@@ -638,6 +778,13 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+
+		action := decideElement(opts, ctx, h, currentTag, pos+int64(hdrSize), cc.EncodingInfo)
+		if action == ElementStop {
+			return pos, nil
+		}
+		keep := action == ElementKeep
+
 		if err := ctx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
 			return pos, err
 		}
@@ -649,7 +796,7 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)
 			pos += int64(hdrSize)
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
 				ds.Set(elem)
 			}
 			continue
@@ -672,6 +819,8 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 				if err != nil {
 					return pos, err
 				}
+			} else if !keep {
+				pos = skipUndefinedLengthValue(data, valueStart, cc.IsLittleEndian)
 			} else {
 				logDebug(ctx.logCtx(), "Reading undefined length data element",
 					AttrOffset, valueStart, AttrOffsetHex, offsetHex(valueStart), AttrTag, currentTag.String())
@@ -692,30 +841,32 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 					pos = newPos
 				}
 			}
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
 				ds.Set(elem)
 			}
 			continue
 		}
 
 		if vr == VRSQ {
-			ctx.pushSeq(currentTag)
-			seq, newPos, err := readDefinedLengthSequence(
-				data,
-				pos+int64(hdrSize),
-				length,
-				cc,
-				opts,
-				ctx,
-			)
-			ctx.popSeq()
-			elem.Value = seq
-			pos = newPos
-			if err != nil {
-				return pos, err
-			}
-			if shouldKeepElement(opts, elem.Tag) {
+			if keep {
+				ctx.pushSeq(currentTag)
+				seq, newPos, err := readDefinedLengthSequence(
+					data,
+					pos+int64(hdrSize),
+					length,
+					cc,
+					opts,
+					ctx,
+				)
+				ctx.popSeq()
+				elem.Value = seq
+				pos = newPos
+				if err != nil {
+					return pos, err
+				}
 				ds.Set(elem)
+			} else {
+				pos += int64(hdrSize) + int64(length)
 			}
 			continue
 		}
@@ -727,24 +878,24 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 			break
 		}
 
-		value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
-		valueTell := pos + int64(hdrSize)
+		if keep {
+			value := data[pos+int64(hdrSize) : pos+int64(hdrSize)+int64(length)]
+			valueTell := pos + int64(hdrSize)
 
-		if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
-			logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
-				AttrTag, currentTag.String(), AttrLen, length)
-			markElementDeferred(elem, valueTell, length, cc)
-		} else {
-			logElementValue(ctx.logCtx(), valueTell, value)
-			assignElementBytes(elem, value, vr, cc)
-		}
+			if shouldDeferElement(currentTag, length, readDeferSize(opts)) {
+				logDebug(ctx.logCtx(), "Defer size exceeded. Skipping forward to next data element.",
+					AttrTag, currentTag.String(), AttrLen, length)
+				markElementDeferred(elem, valueTell, length, cc)
+			} else {
+				logElementValue(ctx.logCtx(), valueTell, value)
+				assignElementBytes(elem, value, vr, cc)
+			}
 
-		if shouldKeepElement(opts, elem.Tag) {
 			ds.Set(elem)
 		}
 		pos += int64(hdrSize) + int64(length)
 
-		if currentTag == TagCharset {
+		if keep && currentTag == TagCharset {
 			cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 		}
 	}
@@ -764,6 +915,17 @@ func shouldReadUndefinedLengthAsSequence(vr VR) bool {
 	return false
 }
 
+// skipUndefinedLengthValue reports where the element after an undefined-length
+// value at offset begins, without materialising the value. It mirrors the two
+// shapes the reading path handles: a well-formed item stream (PS3.5 A.4), and
+// anything else, where the only thing to go on is the Sequence Delimiter.
+func skipUndefinedLengthValue(data []byte, offset int64, isLittleEndian bool) int64 {
+	if _, endPos, ok := scanEncapsulatedPixelData(data, offset, isLittleEndian); ok {
+		return endPos
+	}
+	return scanUntilDelimiter(data, offset, SequenceDelimiterTag, isLittleEndian)
+}
+
 func readBytesUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleEndian bool) (value []byte, endPos int64) {
 	pos := offset
 	for pos+4 <= int64(len(data)) {
@@ -775,24 +937,49 @@ func readBytesUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleE
 	return append([]byte(nil), data[offset:pos]...), pos
 }
 
+// scanUntilDelimiter is readBytesUntilDelimiter without the copy: it returns
+// only where the next element begins.
+func scanUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleEndian bool) int64 {
+	pos := offset
+	for pos+4 <= int64(len(data)) {
+		if readTagBytes(data, pos, isLittleEndian) == delimiter {
+			return pos + 8
+		}
+		pos++
+	}
+	return pos
+}
+
 // readEncapsulatedPixelData reads undefined-length encapsulated pixel data
 // (PS3.5 A.4) as a contiguous item stream ending before the sequence delimiter.
 func readEncapsulatedPixelData(data []byte, offset int64, isLittleEndian bool) (value []byte, endPos int64, ok bool) {
-	start := offset
+	valueEnd, endPos, ok := scanEncapsulatedPixelData(data, offset, isLittleEndian)
+	if !ok {
+		return nil, offset, false
+	}
+	return append([]byte(nil), data[offset:valueEnd]...), endPos, true
+}
+
+// scanEncapsulatedPixelData walks the item stream readEncapsulatedPixelData
+// decodes and reports where the value ends and where the next element begins,
+// without copying the items. Skipping an encapsulated element -- a caller after
+// the index tags of a file whose Pixel Data is compressed -- needs the second
+// number and nothing else, and that value is the largest in the file.
+func scanEncapsulatedPixelData(data []byte, offset int64, isLittleEndian bool) (valueEnd, endPos int64, ok bool) {
 	pos := offset
 	for pos+4 <= int64(len(data)) {
 		tag := readTagBytes(data, pos, isLittleEndian)
 		if tag == SequenceDelimiterTag {
 			if pos+8 > int64(len(data)) {
-				return nil, offset, false
+				return 0, offset, false
 			}
-			return append([]byte(nil), data[start:pos]...), pos + 8, true
+			return pos, pos + 8, true
 		}
 		if tag != ItemTag {
-			return nil, offset, false
+			return 0, offset, false
 		}
 		if pos+8 > int64(len(data)) {
-			return nil, offset, false
+			return 0, offset, false
 		}
 		var itemLen uint32
 		if isLittleEndian {
@@ -801,14 +988,14 @@ func readEncapsulatedPixelData(data []byte, offset int64, isLittleEndian bool) (
 			itemLen = binary.BigEndian.Uint32(data[pos+4 : pos+8])
 		}
 		if itemLen == 0xFFFFFFFF {
-			return nil, offset, false
+			return 0, offset, false
 		}
 		pos += 8 + int64(itemLen)
 		if pos > int64(len(data)) {
-			return nil, offset, false
+			return 0, offset, false
 		}
 	}
-	return nil, offset, false
+	return 0, offset, false
 }
 
 func cloneElementBytes(value []byte) []byte {
