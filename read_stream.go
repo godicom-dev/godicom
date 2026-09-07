@@ -251,10 +251,6 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 			break
 		}
 
-		if opts != nil && opts.StopBeforePixels && currentTag == MustTag(0x7FE00010) {
-			break
-		}
-
 		h, header, need, ok := readElementHeaderAt(v, pos, cc.EncodingInfo, currentTag, resolve)
 		if !ok {
 			if err := readCtx.report(truncatedHeader(currentTag, pos, need, size)); err != nil {
@@ -263,13 +259,19 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 			break
 		}
 		vr, length, hdrSize := h.VR, h.Length, h.Size
+
+		action := decideElement(opts, readCtx, h, currentTag, pos+int64(hdrSize), cc.EncodingInfo)
+		if action == ElementStop {
+			break
+		}
+		keep := action == ElementKeep
+
 		if err := readCtx.reportVRMismatch(currentTag, vr, pos, cc.IsImplicitVR); err != nil {
 			return nil, err
 		}
 		logElementHeader(ctx, pos, header, currentTag, vr, length)
 
 		elem := NewDataElement(currentTag, vr, nil)
-		keep := shouldKeepElement(opts, currentTag)
 
 		if length == 0 {
 			elem.Value = emptyValueForVR(vr)

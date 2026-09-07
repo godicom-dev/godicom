@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `ReadOptions.OnElement` decides, per element, whether to parse its value, step
+  over it, or stop reading — so a caller after seven index tags out of a 200 MB
+  file no longer pays to decode the other 199 MB. The hook is handed a
+  `RawDataElement` (Tag, VR, Length, ValueTell; `Value` is always nil, not having
+  read it being the point) and the `[]PathStep` naming the enclosing sequences,
+  and returns `ElementKeep`, `ElementSkip` or `ElementStop`. It is called at every
+  depth, so an oversized nested sequence can be stepped over element by element —
+  something `SpecificTags` cannot express at all. The saving is real on a seekable
+  source, where the value bytes are never read; on a non-seekable reader godicom
+  has already buffered the stream, so a skip saves the decode and the allocation
+  but not the I/O. Group 0x0002 and (0008,0005) Specific Character Set are never
+  offered, because skipping either changes what the rest of the file *means*
+  rather than how much of it is kept
+  ([#72](https://github.com/godicom-dev/godicom/issues/72))
+
+### Fixed
+- **BREAKING: `SpecificTags` no longer empties the sequences it keeps.** It
+  filtered at every depth, so `SpecificTags: []Tag{seqTag}` kept the sequence
+  element and dropped every element inside its items — `(3006,0010)` came back
+  with one item holding zero of its two elements, a dataset no file could have
+  produced. It now filters the top-level dataset only, which is where pydicom
+  applies it (`read_sequence_item` calls `read_dataset` without passing
+  `specific_tags` along), and a sequence that survives the filter is parsed whole.
+  Pass an `OnElement` hook that returns `ElementSkip` when `len(path) > 0` for the
+  previous behaviour
+
+### Changed
+- `StopBeforePixels` and `SpecificTags` are implemented on the one decision point
+  `OnElement` runs at, rather than as twelve separate checks scattered across the
+  three element loops, so the two byte-slice loops and the `ReaderAt` loop agree on
+  what a read keeps by construction. No behaviour changes for either option:
+  `TestOnElementStopMatchesStopBeforePixels` holds a hook stopping at `(7FE0,0010)`
+  against the option and compares the datasets tag for tag. Skipping an element
+  does not suppress the diagnostics for it — they describe the file, not the subset
+  a caller kept — but `ElementStop` ends the parse, so nothing past it is reported
+
 ## [0.30.0] - 2026-09-01
 
 ### Added
