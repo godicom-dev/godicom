@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-20
+
 ### Added
 - `ReadOptions.OnElement` decides, per element, whether to parse its value, step
   over it, or stop reading — so a caller after seven index tags out of a 200 MB
@@ -38,9 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StopBeforePixels` and `SpecificTags` are implemented on the one decision point
   `OnElement` runs at, rather than as twelve separate checks scattered across the
   three element loops, so the two byte-slice loops and the `ReaderAt` loop agree on
-  what a read keeps by construction. No behaviour changes for either option:
+  what a read keeps by construction. `StopBeforePixels` is unchanged:
   `TestOnElementStopMatchesStopBeforePixels` holds a hook stopping at `(7FE0,0010)`
-  against the option and compares the datasets tag for tag. Skipping an element
+  against the option and compares the datasets tag for tag. The `SpecificTags`
+  change is the one under Fixed. Skipping an element
   does not suppress the diagnostics for it — they describe the file, not the subset
   a caller kept — but `ElementStop` ends the parse, so nothing past it is reported
 
@@ -784,7 +787,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/godicom-dev/godicom/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/godicom-dev/godicom/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/godicom-dev/godicom/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/godicom-dev/godicom/compare/v0.27.0...v0.28.0

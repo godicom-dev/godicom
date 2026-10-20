@@ -72,8 +72,32 @@ yourself with `Set(godicom.NewDataElement(tag, vr, value))`.
 
 File I/O entry points: `ReadFile` / `Read` / `ReadBytes` / `WriteFile` /
 `FileDataset.SaveAs`. `Read` accepts any `io.Reader`; prefer `*os.File` /
-seekable sources so `StopBeforePixels`, `DeferSize`, and `SpecificTags` can
-skip large values without buffering them.
+seekable sources so `StopBeforePixels`, `DeferSize`, `SpecificTags`, and
+`OnElement` can skip large values without buffering them.
+
+**Reading only what you need**
+
+`SpecificTags` keeps the named tags at the top level of the dataset. A sequence
+that is one of them is parsed whole — the filter does not walk into its items
+and drop them. `OnElement` decides per element, including inside a sequence,
+whether to parse the value, step over it, or stop:
+
+```go
+want := map[godicom.Tag]bool{tag.PatientID: true}
+ds, err := godicom.ReadBytes(data, &godicom.ReadOptions{
+	OnElement: func(h godicom.RawDataElement, path []godicom.PathStep) godicom.ElementAction {
+		if len(path) > 0 || want[h.Tag] {
+			return godicom.ElementKeep
+		}
+		return godicom.ElementSkip
+	},
+})
+```
+
+The hook is called after the header and before the value, so the
+`RawDataElement` it receives has no value. On a seekable source `ElementSkip`
+does not read the value bytes. Group `0x0002` and Specific Character Set are
+never offered, because skipping either changes what the rest of the file means.
 
 Context-aware variants (`ReadFileContext`, `WriteContext`,
 `DecodeDatasetContext`, …) accept a `context.Context` for cancellation and

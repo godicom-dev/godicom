@@ -201,6 +201,36 @@ func ExampleDataset_NewPrivateBlock() {
 	// Output: (0041,1101) 4095
 }
 
+// ExampleReadOptions_OnElement keeps one tag and steps over the rest. A sequence
+// the hook decides to parse is kept whole: len(path) > 0 is already inside it.
+func ExampleReadOptions_OnElement() {
+	ds := godicom.NewDataset()
+	if err := ds.SetString(tag.PatientID, "12345678"); err != nil {
+		log.Fatal(err)
+	}
+	if err := ds.SetString(tag.PatientName, "Doe^Jane"); err != nil {
+		log.Fatal(err)
+	}
+	data := partTen(ds)
+
+	want := map[godicom.Tag]bool{tag.PatientID: true}
+	reread, err := godicom.ReadBytes(data, &godicom.ReadOptions{
+		OnElement: func(h godicom.RawDataElement, path []godicom.PathStep) godicom.ElementAction {
+			if len(path) > 0 || want[h.Tag] {
+				return godicom.ElementKeep
+			}
+			return godicom.ElementSkip
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	id, _ := reread.GetString(tag.PatientID)
+	_, nameOK := reread.GetString(tag.PatientName)
+	fmt.Println(id, nameOK)
+	// Output: 12345678 false
+}
+
 // ExampleReadOptions shows the diagnostic hook on the way in. A read keeps
 // whatever it parsed before the file stopped making sense; the hook is how you
 // find out that it did.

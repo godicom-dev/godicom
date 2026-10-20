@@ -6,9 +6,12 @@ this file tracks deferred work and known gaps.
 ## Status
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
-Core I/O, transfer-syntax coverage, pixel decode/encode (except JPEG / JPEG-LS
-encode), display helpers, `dicomjson`, `uid.GenerateUID`, and streaming `Read`
-are in place as of **v0.24.0**.
+As of **v0.30.0** the released surface covers Part 10 and dataset encode/decode,
+transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
+JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, `dicomjson`,
+`uid.GenerateUID`, typed getters and setters, `Dictionary` with a per-read
+private dictionary, `PrivateBlock`, read/write diagnostic hooks, and streaming
+`Read`. `main` also has `ReadOptions.OnElement`; that commit is not tagged yet.
 
 Networking (DIMSE / DICOMweb) is **out of scope** — see
 [gonetdicom](https://github.com/godicom-dev/gonetdicom).
@@ -19,7 +22,6 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 |------|-------|---------|
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
-| JPEG / JPEG-LS **encode** | done (`golibjpeg` v1.2.0) | — |
 | File-set / DICOMDIR | Not implemented | Media interchange / DICOMDIR consumers |
 | SR / codes / overlays / waveforms | Not implemented | Domain-specific tooling |
 
@@ -29,7 +31,6 @@ gonetdicom or an application over expanding the matrix for its own sake.
 ## Known gaps (lower priority)
 
 - Broader fixture / edge-case coverage vs. the full pydicom test suite
-- Config / hook-style extension points (needs an explicit Go API design first)
 - CLI parity beyond `show` / `read` / `readcopy`
 
 ## Out of scope
