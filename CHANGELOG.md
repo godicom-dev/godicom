@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-20
+
 ### Added
 - `OpenFileSet` and `LoadFileSet` read a DICOMDIR into its directory-record
   tree and resolve each Referenced File ID against the directory that contains
@@ -806,7 +808,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/godicom-dev/godicom/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/godicom-dev/godicom/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/godicom-dev/godicom/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/godicom-dev/godicom/compare/v0.29.0...v0.30.0
