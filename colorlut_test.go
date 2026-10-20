@@ -595,12 +595,9 @@ type godicomPalette = interface {
 
 func assertRGBFrame(t *testing.T, p godicomPalette, rows, cols, frame, row, col int, r, g, b uint16) {
 	t.Helper()
-	_ = rows
-	i := (frame*0 + row) * cols
+	i := row*cols + col
 	if rows > 0 {
-		i = ((frame*rows)+row)*cols + col
-	} else {
-		i = row*cols + col
+		i = (frame*rows+row)*cols + col
 	}
 	if p.At(i, 0) != r || p.At(i, 1) != g || p.At(i, 2) != b {
 		t.Fatalf("pixel frame %d (%d,%d) = %d %d %d, want %d %d %d", frame, row, col, p.At(i, 0), p.At(i, 1), p.At(i, 2), r, g, b)
