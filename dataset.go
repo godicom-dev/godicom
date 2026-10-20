@@ -19,7 +19,11 @@ type Dataset struct {
 	writeEnc                      *EncodingInfo // nil = same as originalEnc for IsOriginalEncoding
 	parent                        *Sequence
 	IsUndefinedLengthSequenceItem bool
-	readCtx                       *readContext
+	// ItemOffset is the file offset of this dataset's Item tag when it was
+	// read as a sequence item. DICOMDIR directory records point at each other
+	// with these offsets. It is 0 for a dataset that was not read as an item.
+	ItemOffset int64
+	readCtx    *readContext
 }
 
 // readContext holds the source used for deferred element loading and the

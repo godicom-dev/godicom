@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `OpenFileSet` and `LoadFileSet` read a DICOMDIR into its directory-record
+  tree and resolve each Referenced File ID against the directory that contains
+  the DICOMDIR. `Find` searches those records. Writing a DICOMDIR, adding or
+  removing instances, and pulling orphaned records back in are not included
+
 ## [0.32.0] - 2026-10-20
 
 ### Added

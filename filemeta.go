@@ -123,6 +123,7 @@ func cloneDataset(ds *Dataset) *Dataset {
 		clone.writeEnc = &enc
 	}
 	clone.IsUndefinedLengthSequenceItem = ds.IsUndefinedLengthSequenceItem
+	clone.ItemOffset = ds.ItemOffset
 	for _, elem := range ds.Iter() {
 		clone.Set(cloneElement(elem))
 	}

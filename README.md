@@ -341,6 +341,26 @@ Supported encode paths: native, RLE Lossless, Deflated, JPEG (baseline /
 lossless / JPEG-LS), JPEG 2000 (lossless / lossy), and HTJ2K (`.201` lossless
 LRCP, `.202` lossless RPCL, `.203` lossy).
 
+## DICOMDIR
+
+`OpenFileSet` reads a DICOMDIR and walks the directory records in the order
+their offsets link them. Each instance's path is the DICOMDIR's directory plus
+its Referenced File ID.
+
+```go
+fs, err := godicom.OpenFileSet("DICOMDIR", nil)
+for _, inst := range fs.Instances() {
+	fmt.Println(inst.Path())
+}
+matches := fs.Find(map[godicom.Tag]string{
+	tag.PatientID: "77654033",
+})
+ds, err := matches[0].Load()
+```
+
+`tag` is `github.com/godicom-dev/godicom/tag`. Writing a DICOMDIR, and adding or
+removing instances, is not included.
+
 ## Logging
 
 *godicom* uses Go's `log/slog`. By default it is silent (`DiscardHandler`),

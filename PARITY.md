@@ -42,7 +42,7 @@ areas are thinner on edge fixtures.
 | Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K/HTJ2K | |
 | Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Supplemental and enhanced palettes unsupported |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
-| File-set / DICOMDIR | **gap** | fileset (~124) | — | Tag names ≠ API |
+| File-set / DICOMDIR | **partial** | fileset (~124) | `OpenFileSet`, record tree, `Find` | Write, add/remove, copy, orphan re-inclusion |
 | SR / codes | **gap** | sr/ | — | Not implemented |
 | Overlays | **gap** | overlays/ | — | Tag constants only |
 | Waveforms | **gap** | waveforms/ | — | Tag constants only |
@@ -67,7 +67,7 @@ areas are thinner on edge fixtures.
 | Priority | Item | Why |
 |----------|------|-----|
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
-| P3 | DICOMDIR / SR / overlay / waveform | Domain tools only |
+| P3 | DICOMDIR write / SR / overlay / waveform | Read-only File-set is in; the rest are domain tools |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | done | `Read` streaming / seekable skip | Large studies without full RAM |
 | untagged | `ReadOptions.OnElement` | Per-element keep / skip / stop; on main, not in v0.30.0 |

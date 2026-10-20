@@ -688,6 +688,14 @@ func readSequenceItemsUntil(
 			break
 		}
 
+		// The Item tag's file offset. DICOMDIR (0004,1400) and (0004,1420) point
+		// here. A streaming read parses a copied chunk, so the index in that
+		// chunk is shifted back by the same base the diagnostics use.
+		itemOffset := pos
+		if ctx != nil {
+			itemOffset += ctx.baseOffset
+		}
+
 		// Everything from here to the end of this iteration belongs to one item of
 		// this sequence: the one about to be appended, so its index is the count
 		// already there. Naming it is the difference between "something in this
@@ -726,6 +734,7 @@ func readSequenceItemsUntil(
 		item := NewDataset()
 		item.parent = seq
 		item.readCtx = ctx
+		item.ItemOffset = itemOffset
 
 		if itemLength == 0xFFFFFFFF {
 			item.IsUndefinedLengthSequenceItem = true
