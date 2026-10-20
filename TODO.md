@@ -6,12 +6,13 @@ this file tracks deferred work and known gaps.
 ## Status
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
-As of **v0.30.0** the released surface covers Part 10 and dataset encode/decode,
+As of **v0.33.0** the released surface covers Part 10 and dataset encode/decode,
 transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
-JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, `dicomjson`,
-`uid.GenerateUID`, typed getters and setters, `Dictionary` with a per-read
-private dictionary, `PrivateBlock`, read/write diagnostic hooks, and streaming
-`Read`. `main` also has `ReadOptions.OnElement`; that commit is not tagged yet.
+JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, palette color
+lookup (`ApplyColorLUT`), `dicomjson`, `uid.GenerateUID`, typed getters and
+setters, `Dictionary` with a per-read private dictionary, `PrivateBlock`,
+read/write diagnostic hooks, streaming `Read`, `ReadOptions.OnElement`, a
+read-only DICOMDIR (`OpenFileSet` / `LoadFileSet`), and `Dataset.OverlayArray`.
 
 Networking (DIMSE / DICOMweb) is **out of scope** — see
 [gonetdicom](https://github.com/godicom-dev/gonetdicom).

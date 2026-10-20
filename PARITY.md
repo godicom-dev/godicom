@@ -1,7 +1,7 @@
 # godicom ↔ pydicom parity audit
 
 Snapshot of **main** against the `pydicom/` submodule. The latest tag is
-**v0.30.0**; `ReadOptions.OnElement` is on main and is not in that tag.
+**v0.33.0**, and it matches main.
 
 This is a **coverage map**, not a claim of full parity.
 
@@ -34,7 +34,7 @@ areas are thinner on edge fixtures.
 | Dataset / FileDataset | partial | dataset (~205) | Get*/Set*/Walk/Clone/… | Typed setters; no dynamic attrs (by design) |
 | Sequence / MultiValue | solid | sequence, multival | present | Core ops |
 | Charset / Unicode | partial | charset (~34) | `charset.go` | Major sets OK; not full `chr*` |
-| File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable skip; deferred values use `io.ReaderAt`; `OnElement` is untagged; no string `DeferSize` |
+| File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable skip; deferred values use `io.ReaderAt`; `OnElement` keep / skip / stop; no string `DeferSize` |
 | File writer | partial | filewriter (~168) | `WriteFile` / `SaveAs` | Key roundtrips; not full suite |
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |
 | Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames; thinner suite |
@@ -70,7 +70,7 @@ areas are thinner on edge fixtures.
 | P3 | DICOMDIR write / SR / waveform | Read-only File-set and overlay planes are in |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | done | `Read` streaming / seekable skip | Large studies without full RAM |
-| untagged | `ReadOptions.OnElement` | Per-element keep / skip / stop; on main, not in v0.30.0 |
+| done | `ReadOptions.OnElement` | Per-element keep / skip / stop, since v0.31.0 |
 
 ## Method
 
