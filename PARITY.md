@@ -40,7 +40,7 @@ areas are thinner on edge fixtures.
 | Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames; thinner suite |
 | Pixel decode | partial | pixels+handlers (~900) | native/RLE/JPEG/JLS/J2K/HTJ2K | Common TS; fixture depth << |
 | Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K/HTJ2K | |
-| Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame` | Explicit; not auto in PixelBytes |
+| Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Supplemental and enhanced palettes unsupported |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
 | File-set / DICOMDIR | **gap** | fileset (~124) | — | Tag names ≠ API |
 | SR / codes | **gap** | sr/ | — | Not implemented |

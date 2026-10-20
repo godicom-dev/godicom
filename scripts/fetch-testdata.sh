@@ -15,6 +15,12 @@ declare -a names=(
   emri_small_RLE.dcm
   emri_small_jpeg_ls_lossless.dcm
   emri_small_jpeg_2k_lossless.dcm
+  OBXXXX1A.dcm
+  OBXXXX1A_2frame.dcm
+  OT-PAL-8-face.dcm
+  gdcm-US-ALOKA-16.dcm
+  gdcm-US-ALOKA-16_big.dcm
+  eCT_Supplemental.dcm
 )
 declare -a urls=(
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/emri_small.dcm"
@@ -22,6 +28,12 @@ declare -a urls=(
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/emri_small_RLE.dcm"
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/emri_small_jpeg_ls_lossless.dcm"
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/emri_small_jpeg_2k_lossless.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/OBXXXX1A.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/OBXXXX1A_2frame.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/OT-PAL-8-face.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/gdcm-US-ALOKA-16.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/gdcm-US-ALOKA-16_big.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/eCT_Supplemental.dcm"
 )
 declare -a hashes=(
   151233ec63f64ebb63b979df51aa827cd612a53422c073f6ef341770c7bc9a56
@@ -29,6 +41,12 @@ declare -a hashes=(
   93c19bca3fb6b7202dcd067de8d16cb6b3f7c6e9a0632e474aab81175ee45266
   24de03c9c0f8b5aa75d7fbcc894f94e612b66702175b4936589a0849ec9f87b4
   b2b4063359a08ed3b0afa9f4e4f72f84af79e5116515b446d9a30da9dc7f1888
+  164a460bebdc15fbe391ad4bfe4c84672eb2bad57adfe7dad372fd7367b0f63e
+  6627f6e46dbf8c16292fb1eaff8807439bcd233dc68099c07f0b83c4093256b1
+  d5560470077f77ef6a0a52d22f9f61e803436d2b468a9550a4d12c5675ee0a97
+  f1a2d5f7c4ffe87dc589b12738084099fe44a436f6980f5d7e96a026ad356d65
+  2a801cbd7bd04ed28b9c14c7a8edb04b43384e38f00574e27c0fab8f4aa62db4
+  0a4c3aa02d1b0b4826daa5ffe85ef13be83c1433842a9a98b901e075136dd86f
 )
 
 sha256_file() {

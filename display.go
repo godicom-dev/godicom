@@ -10,6 +10,7 @@ import (
 
 // DisplayFrame returns one frame as 8-bit color-by-pixel bytes suitable for JPEG/PNG encoders.
 // It applies Modality LUT / rescale, VOI LUT / windowing, and Presentation LUT Shape when present.
+// A PALETTE COLOR image is expanded through its color lookup table instead of that grayscale pipeline.
 func (fd *FileDataset) DisplayFrame(frameIndex int, opts ...pixels.DisplayOption) ([]byte, error) {
 	if fd == nil {
 		return nil, fmt.Errorf("godicom: nil dataset")
@@ -30,6 +31,19 @@ func (fd *FileDataset) DisplayFrame(frameIndex int, opts ...pixels.DisplayOption
 		return fd.PixelBytes(pixels.WithRaw(false), pixels.WithFrameIndex(frameIndex))
 	}
 
+	pi, _ := fd.GetString(tag.PhotometricInterpretation)
+	if strings.EqualFold(strings.TrimSpace(pi), "PALETTE COLOR") {
+		samples, err := fd.PixelSamples(pixels.WithRaw(true), pixels.WithFrameIndex(frameIndex))
+		if err != nil {
+			return nil, err
+		}
+		pal, err := ApplyColorLUT(samples, fd, "")
+		if err != nil {
+			return nil, err
+		}
+		return pal.PackDisplayU8(), nil
+	}
+
 	samples, err := fd.PixelSamples(pixels.WithRaw(true), pixels.WithFrameIndex(frameIndex))
 	if err != nil {
 		return nil, err
@@ -47,7 +61,7 @@ func (fd *FileDataset) DisplayFrame(frameIndex int, opts ...pixels.DisplayOption
 	if err != nil {
 		return nil, err
 	}
-	pi, _ := fd.GetString(tag.PhotometricInterpretation)
+	pi, _ = fd.GetString(tag.PhotometricInterpretation)
 	if strings.TrimSpace(pi) == "MONOCHROME1" {
 		view = pixels.InvertValues(view)
 	}

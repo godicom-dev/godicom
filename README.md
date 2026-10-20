@@ -303,11 +303,18 @@ With `WithRaw(false)` (the default), decoded frames are normalised for display
 available separately and are **not** applied automatically by `PixelBytes`.
 
 For pydicom-style access, use `PixelArray` (decoded samples + shape) and
-`DisplayFrame` (8-bit display-ready bytes after modality / VOI / presentation):
+`DisplayFrame` (8-bit display-ready bytes after modality / VOI / presentation).
+A `PALETTE COLOR` image is expanded through its color lookup table instead of
+that grayscale pipeline. `ApplyColorLUT` returns the full-depth samples, and
+can take one of the eight well-known palettes by name or SOP Instance UID:
 
 ```go
 arr, err := ds.PixelArray(pixels.WithRaw(true))
 frame, err := ds.DisplayFrame(0)
+
+samples, err := ds.PixelSamples(pixels.WithRaw(true))
+rgb, err := godicom.ApplyColorLUT(samples, ds, "")
+rgb, err = godicom.ApplyColorLUT(samples, nil, "PET")
 ```
 
 ### Decompressing *Pixel Data*

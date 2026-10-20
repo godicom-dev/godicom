@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `ApplyColorLUT` maps stored pixels through a Palette Color Lookup Table,
+  including segmented tables and the eight PS3.6 well-known palettes (`PET`,
+  `HOT_IRON`, `SPRING`, and the rest, by name or SOP Instance UID).
+  `DisplayFrame` uses it for `PALETTE COLOR` images, packing 16-bit entries
+  down to the high byte. Supplemental and enhanced palette modules are not
+  supported
+
 ## [0.31.0] - 2026-10-20
 
 ### Added
