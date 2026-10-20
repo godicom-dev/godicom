@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tree and resolve each Referenced File ID against the directory that contains
   the DICOMDIR. `Find` searches those records. Writing a DICOMDIR, adding or
   removing instances, and pulling orphaned records back in are not included
+- `Dataset.OverlayArray` unpacks `(60xx,3000)` *Overlay Data* into a 0/1 bit
+  plane. The group runs from `0x6000` to `0x60FF`, and a missing Number of
+  Frames in Overlay means one frame
 
 ## [0.32.0] - 2026-10-20
 

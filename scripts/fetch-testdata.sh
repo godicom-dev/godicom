@@ -21,6 +21,7 @@ declare -a names=(
   gdcm-US-ALOKA-16.dcm
   gdcm-US-ALOKA-16_big.dcm
   eCT_Supplemental.dcm
+  MR-SIEMENS-DICOM-WithOverlays.dcm
 )
 declare -a urls=(
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/emri_small.dcm"
@@ -34,6 +35,7 @@ declare -a urls=(
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/gdcm-US-ALOKA-16.dcm"
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/gdcm-US-ALOKA-16_big.dcm"
   "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/eCT_Supplemental.dcm"
+  "https://github.com/pydicom/pydicom-data/raw/39a2eb31815eec435dc26c322c27aec5cfcbddb6/data/MR-SIEMENS-DICOM-WithOverlays.dcm"
 )
 declare -a hashes=(
   151233ec63f64ebb63b979df51aa827cd612a53422c073f6ef341770c7bc9a56
@@ -47,6 +49,7 @@ declare -a hashes=(
   f1a2d5f7c4ffe87dc589b12738084099fe44a436f6980f5d7e96a026ad356d65
   2a801cbd7bd04ed28b9c14c7a8edb04b43384e38f00574e27c0fab8f4aa62db4
   0a4c3aa02d1b0b4826daa5ffe85ef13be83c1433842a9a98b901e075136dd86f
+  094faf56c63bff84c30567e29de0c67d7c5a8ae05cf880ac12175491b6b645d2
 )
 
 sha256_file() {

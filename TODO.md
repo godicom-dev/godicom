@@ -23,7 +23,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | File-set / DICOMDIR write | Read-only tree and File ID lookup (`OpenFileSet`) | Media interchange that must write a DICOMDIR |
-| SR / codes / overlays / waveforms | Not implemented | Domain-specific tooling |
+| SR / codes / waveforms | Not implemented | Domain-specific tooling |
 
 Do not start these without a real consumer. Prefer fixing gaps that block
 gonetdicom or an application over expanding the matrix for its own sake.

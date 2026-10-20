@@ -44,7 +44,7 @@ areas are thinner on edge fixtures.
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
 | File-set / DICOMDIR | **partial** | fileset (~124) | `OpenFileSet`, record tree, `Find` | Write, add/remove, copy, orphan re-inclusion |
 | SR / codes | **gap** | sr/ | — | Not implemented |
-| Overlays | **gap** | overlays/ | — | Tag constants only |
+| Overlays | **partial** | overlays/ | `OverlayArray` | 1-bit `(60xx,3000)`; not bits embedded in pixel data |
 | Waveforms | **gap** | waveforms/ | — | Tag constants only |
 | Config / hooks | **partial** | config, hooks | slog + `OnDiagnostic` | No global validation-mode enum |
 | CLI | partial | cli (~17) | show/read/readcopy | Minimal |
@@ -67,7 +67,7 @@ areas are thinner on edge fixtures.
 | Priority | Item | Why |
 |----------|------|-----|
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
-| P3 | DICOMDIR write / SR / overlay / waveform | Read-only File-set is in; the rest are domain tools |
+| P3 | DICOMDIR write / SR / waveform | Read-only File-set and overlay planes are in |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | done | `Read` streaming / seekable skip | Large studies without full RAM |
 | untagged | `ReadOptions.OnElement` | Per-element keep / skip / stop; on main, not in v0.30.0 |

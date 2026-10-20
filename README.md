@@ -361,6 +361,16 @@ ds, err := matches[0].Load()
 `tag` is `github.com/godicom-dev/godicom/tag`. Writing a DICOMDIR, and adding or
 removing instances, is not included.
 
+## Overlays
+
+`OverlayArray` unpacks a 1-bit Overlay Plane. `group` is the repeating group,
+`0x6000` for the first plane:
+
+```go
+ov, err := ds.OverlayArray(0x6000)
+bit := ov.At(0, row, col) // 0 or 1
+```
+
 ## Logging
 
 *godicom* uses Go's `log/slog`. By default it is silent (`DiscardHandler`),
