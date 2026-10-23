@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-23
+
+### Changed
+- A `dicomjson.BulkDataURIBuilder` that returns an error or an empty URI writes
+  that value as InlineBinary. Pixel Data can stay a BulkDataURI while other
+  binary elements, including private `UN` values, remain in the document
+
 ## [0.33.0] - 2026-10-20
 
 ### Added
@@ -808,7 +815,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/godicom-dev/godicom/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/godicom-dev/godicom/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/godicom-dev/godicom/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/godicom-dev/godicom/compare/v0.30.0...v0.31.0

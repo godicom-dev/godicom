@@ -2,7 +2,9 @@ package dicomjson
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,6 +357,29 @@ func TestBulkDataURIBuilderThreshold(t *testing.T) {
 	}
 	if got := model["00091002"].InlineBinary; got != "" {
 		t.Fatalf("InlineBinary should be omitted, got %q", got)
+	}
+}
+
+func TestBulkDataURIBuilderDeclineInlines(t *testing.T) {
+	ds := godicom.NewDataset()
+	ds.Set(godicom.NewDataElement(godicom.MustTag(0x0009, 0x1002), godicom.VROB, []byte("BinaryContent")))
+
+	model, err := DatasetToMap(
+		ds,
+		WithBulkDataThreshold(0),
+		WithBulkDataURIBuilder(func(godicom.Tag, godicom.VR, []byte) (string, error) {
+			return "", fmt.Errorf("no uri")
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte("BinaryContent"))
+	if got := model["00091002"].InlineBinary; got != want {
+		t.Fatalf("InlineBinary = %q, want %q", got, want)
+	}
+	if got := model["00091002"].BulkDataURI; got != "" {
+		t.Fatalf("BulkDataURI = %q", got)
 	}
 }
 

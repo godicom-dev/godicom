@@ -81,11 +81,10 @@ func elementToJSON(elem *godicom.DataElement, opts options) (Element, error) {
 		threshold := (opts.bulkDataThreshold / 4) * 3
 		if opts.bulkDataURIBuilder != nil && len(value) > threshold {
 			uri, err := opts.bulkDataURIBuilder(elem.Tag, elem.VR, value)
-			if err != nil {
-				return Element{}, err
+			if err == nil && uri != "" {
+				out.BulkDataURI = uri
+				return out, nil
 			}
-			out.BulkDataURI = uri
-			return out, nil
 		}
 		out.InlineBinary = base64.StdEncoding.EncodeToString(value)
 		return out, nil

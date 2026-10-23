@@ -16,6 +16,7 @@ type Option func(*options)
 type BulkDataURIReader func(tag godicom.Tag, vr godicom.VR, uri string) ([]byte, error)
 
 // BulkDataURIBuilder returns a BulkDataURI while marshaling large binary values.
+// A non-nil error, or an empty URI, writes the value as InlineBinary instead.
 type BulkDataURIBuilder func(tag godicom.Tag, vr godicom.VR, value []byte) (string, error)
 
 func defaultOptions() options {
