@@ -320,6 +320,50 @@ func TestInvalidCharacterDataReportsDiagnostic(t *testing.T) {
 	}
 }
 
+// U+FFFD in the file is content, not a decode failure.
+//
+// Decoding valid UTF-8 cannot substitute anything, so a name that genuinely
+// contains U+FFFD used to be reported as undecodable and a strict archiving
+// hook rejected a file that is perfectly legal. The same applies to GB18030,
+// which can encode U+FFFD; a codec that cannot represent U+FFFD at all still
+// has no way to produce it except by substitution.
+func TestReplacementCharacterInContentIsNotADecodeError(t *testing.T) {
+	t.Parallel()
+	const name = "王\uFFFD^男"
+	tests := []struct {
+		charset string
+		raw     []byte
+	}{
+		{"ISO_IR 192", []byte(name)},
+		{"GB18030", gb18030Bytes(t, name)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.charset, func(t *testing.T) {
+			rec := &diagRecorder{}
+			fd, err := ReadBytes(charsetBareFile(t, tt.charset, tt.raw), &ReadOptions{Force: true, OnDiagnostic: rec.hook})
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if len(rec.got) != 0 {
+				t.Fatalf("diagnostics = %v, want none: U+FFFD is in the file", rec.got)
+			}
+			if got := patientNameOf(t, fd).String(); got != name {
+				t.Fatalf("PatientName = %q, want %q", got, name)
+			}
+		})
+	}
+
+	// The fix must not swallow a real substitution: GB18030 has no mapping for
+	// 0xFF, so the decoder still has to report the value.
+	rec := &diagRecorder{}
+	if _, err := ReadBytes(charsetBareFile(t, "GB18030", []byte{0xFF, 0xFE}), &ReadOptions{Force: true, OnDiagnostic: rec.hook}); err != nil {
+		t.Fatalf("a hook returning nil must not fail the read: %v", err)
+	}
+	if len(rec.got) != 1 || rec.got[0].Kind != DiagnosticInvalidCharacterData {
+		t.Fatalf("diagnostics = %v, want one invalid_character_data for 0xFF 0xFE", rec.got)
+	}
+}
+
 // All three reader entry points must report the anomaly: ReadBytes (buffered),
 // Read over a seekable source, and ReadFile.
 func TestUnknownCharacterSetAcrossReadPaths(t *testing.T) {

@@ -438,10 +438,32 @@ func decodeStringChecked(b []byte, encodingName string, allowReplacement bool) (
 	if !utf8.ValidString(s) {
 		return string(b), fmt.Errorf("godicom: invalid %s byte sequence", encodingName)
 	}
-	if !allowReplacement && strings.ContainsRune(s, utf8.RuneError) {
+	if !allowReplacement && strings.ContainsRune(s, utf8.RuneError) && !replacementIsContent(b, s, enc) {
 		return s, fmt.Errorf("godicom: undecodable byte sequence for character set %q", encodingName)
 	}
 	return s, nil
+}
+
+// replacementIsContent reports whether the U+FFFD runes in a decoded string can
+// all be accounted for by the source bytes.
+//
+// A charmap or CJK decoder signals an unmapped byte by writing U+FFFD, and that
+// is the only signal it gives, so the output used to be scanned for U+FFFD on
+// its own. That misreads content: a UTF-8 (ISO_IR 192) file whose text really
+// contains U+FFFD -- a previous bad conversion, a placeholder name -- decodes
+// perfectly and was still reported as undecodable, which a strict hook turns
+// into a rejected legal file.
+//
+// So ask the codec instead of guessing. If it cannot encode U+FFFD at all, every
+// U+FFFD in the output must be a substitution. If it can (UTF-8, GB18030), count
+// how many times U+FFFD occurs in the source and accept the output when the
+// substitutions alone cannot outnumber them.
+func replacementIsContent(src []byte, decoded string, enc encoding.Encoding) bool {
+	encoded, err := enc.NewEncoder().Bytes([]byte(string(utf8.RuneError)))
+	if err != nil || len(encoded) == 0 {
+		return false
+	}
+	return bytes.Count(src, encoded) >= strings.Count(decoded, string(utf8.RuneError))
 }
 
 func decodeSimpleBytesChecked(b []byte, encodingName string) (string, error) {

@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exported function keeps its loose behaviour; the reader uses a checked
   counterpart, so invalid UTF-8 under `ISO_IR 192` and bytes a charmap decoder
   replaced with U+FFFD are reported rather than looking like valid text
+- A U+FFFD that is actually in the file is no longer mistaken for a decode
+  failure. Decoding valid UTF-8 cannot substitute anything, and GB18030 can
+  encode U+FFFD, so the codec is now asked which of the two happened instead of
+  scanning the output for the replacement character. A strict `OnDiagnostic`
+  hook used to reject a legal file whose text contained U+FFFD
 
 ## [0.34.0] - 2026-10-23
 
