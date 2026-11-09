@@ -91,7 +91,28 @@ var iso2022HandledEncodings = map[string]bool{
 
 var characterSetToEscape map[string]string
 
+// characterSetAliases maps spellings that are unambiguously equivalent to a
+// DICOM defined term onto the canonical key in dicomEncodings. It is built from
+// dicomEncodings itself in init, so every supported term is covered without a
+// second hand-maintained list, and a private or misspelled term is never
+// mistaken for a near miss.
+var characterSetAliases map[string]string
+
 func init() {
+	// Build the alias table first: the escape-sequence loop below calls
+	// characterSetKey, which resolves names through patchCharacterSetSpelling.
+	characterSetAliases = make(map[string]string, len(dicomEncodings)+1)
+	for name := range dicomEncodings {
+		if name == "" {
+			continue
+		}
+		characterSetAliases[characterSetAliasKey(name)] = name
+	}
+	// "UTF-8" is not a DICOM defined term, but devices do write it. pydicom
+	// lets any registered Python codec name through; this is the one spelling
+	// that has exactly one DICOM meaning.
+	characterSetAliases[characterSetAliasKey("UTF-8")] = "ISO_IR 192"
+
 	characterSetToEscape = make(map[string]string)
 	for escSeq, cs := range escapeToCharacterSet {
 		if _, exists := characterSetToEscape[cs]; !exists {
@@ -102,6 +123,14 @@ func init() {
 			characterSetToEscape[key] = escSeq
 		}
 	}
+}
+
+// characterSetAliasKey folds case, spaces, underscores and hyphens so that
+// "ISOIR192", "iso_ir_192" and "ISO-IR 192" all land on one entry. Interior
+// spaces in "ISO 2022 IR 100" disappear the same way on both sides of the
+// table, so they are not treated as padding to be stripped from a value.
+func characterSetAliasKey(cs string) string {
+	return strings.NewReplacer(" ", "", "_", "", "-", "").Replace(strings.ToUpper(cs))
 }
 
 var iso2022FragmentRe = regexp.MustCompile(`(?s)(^[^\x1b]+|[\x1b][^\x1b]*)`)
@@ -160,25 +189,97 @@ func DecodeBytes(b []byte, encodings []string) string {
 	return DecodeBytesWithDelimiters(b, encodings, nil)
 }
 
-// ParseCharacterSets splits a Specific Character Set value into DICOM encoding names.
+// ParseCharacterSets splits a Specific Character Set value into DICOM encoding
+// names. Values godicom cannot resolve keep their historical ISO_IR 6 fallback;
+// the reader reports them through OnDiagnostic (see reportUnknownCharacterSets),
+// so this exported helper stays backwards compatible for existing callers.
 func ParseCharacterSets(value interface{}) []string {
+	sets, _ := parseCharacterSetsChecked(value)
+	return sets
+}
+
+// unknownCharacterSet keeps an unresolved value exactly as it appeared, with
+// its position in a multi-valued (0008,0005). Index is -1 when the element was
+// not a string at all. A diagnostic saying "ISO_IR 6" for a value that was
+// "ACME_PRIVATE" would be no help at all, so the original spelling matters.
+type unknownCharacterSet struct {
+	Name  string
+	Index int
+}
+
+type unknownCharacterSetsError struct {
+	Values []unknownCharacterSet
+}
+
+func (e *unknownCharacterSetsError) Error() string {
+	if len(e.Values) == 1 {
+		return fmt.Sprintf("godicom: unsupported SpecificCharacterSet value %q (index %d)",
+			e.Values[0].Name, e.Values[0].Index)
+	}
+	parts := make([]string, len(e.Values))
+	for i, v := range e.Values {
+		parts[i] = fmt.Sprintf("%q (index %d)", v.Name, v.Index)
+	}
+	return "godicom: unsupported SpecificCharacterSet values: " + strings.Join(parts, ", ")
+}
+
+// parseCharacterSetsChecked resolves (0008,0005) and collects every value that
+// could not be resolved. It never guesses: an unknown or private term stays
+// unknown rather than being mapped onto a likely-looking national encoding.
+// A missing element, an empty value and trailing CS padding are all legal per
+// PS3.5 and are not reported.
+func parseCharacterSetsChecked(value interface{}) ([]string, *unknownCharacterSetsError) {
+	var raw []string
 	switch v := value.(type) {
 	case nil:
-		return []string{DefaultCharacterSet}
+		return []string{DefaultCharacterSet}, nil
 	case string:
-		return ConvertCharacterSets(splitCharacterSetString(v))
+		raw = splitCharacterSetString(v)
 	case *MultiValue[string]:
-		return ConvertCharacterSets(v.Values())
+		raw = trimCharacterSetValues(v.Values())
 	default:
-		return []string{DefaultCharacterSet}
+		return []string{DefaultCharacterSet}, &unknownCharacterSetsError{
+			Values: []unknownCharacterSet{{Name: fmt.Sprintf("<%T>", value), Index: -1}},
+		}
 	}
+	if len(raw) == 0 {
+		raw = []string{""}
+	}
+
+	var unknown []unknownCharacterSet
+	for i, cs := range raw {
+		if strings.Trim(cs, " \x00") == "" {
+			continue
+		}
+		if _, ok := resolveCharacterSetNameOK(cs); !ok {
+			unknown = append(unknown, unknownCharacterSet{Name: cs, Index: i})
+		}
+	}
+	normalized := ConvertCharacterSets(raw)
+	if len(unknown) == 0 {
+		return normalized, nil
+	}
+	return normalized, &unknownCharacterSetsError{Values: unknown}
 }
 
 func splitCharacterSetString(s string) []string {
 	if s == "" {
 		return []string{""}
 	}
-	return strings.Split(s, "\\")
+	return trimCharacterSetValues(strings.Split(s, "\\"))
+}
+
+// trimCharacterSetValues strips CS padding from each value. VR=CS conversion
+// only trims the end of the whole string, so "GB18030 \ISO_IR 100" used to hand
+// "GB18030 " to the lookup and silently degrade every text value after it.
+// pydicom strips each multi-valued CS item; trim only the ends so the interior
+// spaces of "ISO 2022 IR 100" survive.
+func trimCharacterSetValues(values []string) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = strings.Trim(v, " \x00")
+	}
+	return out
 }
 
 // ConvertCharacterSets normalizes DICOM Specific Character Set values for decoding.
@@ -201,16 +302,36 @@ func ConvertCharacterSets(values []string) []string {
 }
 
 func resolveCharacterSetName(cs string) string {
+	name, ok := resolveCharacterSetNameOK(cs)
+	if !ok {
+		return DefaultCharacterSet
+	}
+	return name
+}
+
+// resolveCharacterSetNameOK is resolveCharacterSetName with its fallback made
+// explicit, so the (0008,0005) reader can tell a supported term from one that
+// was silently replaced. A fuzzy spelling correction only counts when its
+// result is a key the decoder actually implements.
+func resolveCharacterSetNameOK(cs string) (string, bool) {
 	if _, ok := dicomEncodings[cs]; ok {
-		return cs
+		return cs, true
 	}
 	if patched := patchCharacterSetSpelling(cs); patched != "" {
-		return patched
+		if _, ok := dicomEncodings[patched]; ok {
+			return patched, true
+		}
 	}
-	return DefaultCharacterSet
+	return "", false
 }
 
 func patchCharacterSetSpelling(cs string) string {
+	// Exact, case-insensitive aliases first. The fuzzy corrections below were
+	// written for "ISOIR..." typos: "ISOIR192" used to produce "ISO_IR192",
+	// which is not a dicomEncodings key and so silently became a Nop decode.
+	if name, ok := characterSetAliases[characterSetAliasKey(cs)]; ok {
+		return name
+	}
 	if len(cs) >= 6 && strings.HasPrefix(cs, "ISO") && !strings.HasPrefix(cs, "ISO_") && !strings.HasPrefix(cs, "ISO ") {
 		if strings.HasPrefix(cs, "ISOIR") {
 			return "ISO_IR" + cs[5:]
@@ -244,53 +365,98 @@ func filterStandaloneExtensions(values []string) []string {
 	return out
 }
 
-// DecodeBytesWithDelimiters decodes a DICOM text byte string with ISO-2022 code extensions.
+// DecodeBytesWithDelimiters decodes a DICOM text byte string with ISO-2022 code
+// extensions. It keeps the historical fallback for undecodable bytes; the
+// reader uses decodeBytesWithDelimitersChecked to raise a diagnostic instead of
+// letting the error disappear into a plausible-looking string.
 func DecodeBytesWithDelimiters(b []byte, encodings []string, delimiters map[byte]bool) string {
-	encodings = ConvertCharacterSets(encodings)
-	if len(b) == 0 {
-		return ""
-	}
-	if !bytes.Contains(b, []byte{esc}) {
-		return decodeSimpleBytes(b, encodings[0])
-	}
-
-	var out strings.Builder
-	for _, fragment := range iso2022FragmentRe.FindAll(b, -1) {
-		out.WriteString(decodeFragment(fragment, encodings, delimiters))
-	}
-	return out.String()
-}
-
-func decodeSimpleBytes(b []byte, encodingName string) string {
-	s, err := DecodeString(b, encodingName)
-	if err != nil {
-		return string(b)
-	}
+	s, _ := decodeBytesWithDelimitersChecked(b, encodings, delimiters)
 	return s
 }
 
-func decodeFragment(fragment []byte, encodings []string, delimiters map[byte]bool) string {
-	if len(fragment) == 0 {
-		return ""
+// decodeBytesWithDelimitersChecked returns the decoded text with the first
+// decode error, if any. Every fragment still contributes exactly the string the
+// loose wrapper produced before, so the exported behaviour is unchanged.
+func decodeBytesWithDelimitersChecked(b []byte, encodings []string, delimiters map[byte]bool) (string, error) {
+	encodings = ConvertCharacterSets(encodings)
+	if len(b) == 0 {
+		return "", nil
 	}
-	if fragment[0] != esc {
-		return decodeSimpleBytes(fragment, encodings[0])
+	if !bytes.Contains(b, []byte{esc}) {
+		return decodeSimpleBytesChecked(b, encodings[0])
 	}
-	return decodeEscapedFragment(fragment, encodings, delimiters)
+
+	var out strings.Builder
+	var firstErr error
+	for _, fragment := range iso2022FragmentRe.FindAll(b, -1) {
+		s, err := decodeFragmentChecked(fragment, encodings, delimiters)
+		out.WriteString(s)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return out.String(), firstErr
 }
 
-func decodeEscapedFragment(fragment []byte, encodings []string, delimiters map[byte]bool) string {
+// decodeStringChecked resolves the encoding by name and rejects byte sequences
+// a plain Nop decoder would otherwise pass through untouched. DecodeString has
+// to keep its unknown-name fallback for existing callers (charset_test.go
+// asserts it), so this is a checked counterpart rather than a change to that
+// API. allowReplacement is set for the ISO-2022 "undeclared escape" path, where
+// substitution is the intended outcome.
+func decodeStringChecked(b []byte, encodingName string, allowReplacement bool) (string, error) {
+	enc, ok := dicomEncodings[encodingName]
+	if !ok {
+		return string(b), &unknownCharacterSetsError{
+			Values: []unknownCharacterSet{{Name: encodingName, Index: -1}},
+		}
+	}
+	s, err := enc.NewDecoder().String(string(b))
+	if err != nil {
+		return string(b), fmt.Errorf("godicom: decode %s: %w", encodingName, err)
+	}
+	// encoding.Nop (ISO_IR 6 / ISO_IR 192) does not validate UTF-8, and the
+	// x/text charmap decoders substitute U+FFFD rather than returning an
+	// error. Neither may be allowed to look like a successful decode.
+	if !utf8.ValidString(s) {
+		return string(b), fmt.Errorf("godicom: invalid %s byte sequence", encodingName)
+	}
+	if !allowReplacement && strings.ContainsRune(s, utf8.RuneError) {
+		return s, fmt.Errorf("godicom: undecodable byte sequence for character set %q", encodingName)
+	}
+	return s, nil
+}
+
+func decodeSimpleBytesChecked(b []byte, encodingName string) (string, error) {
+	return decodeStringChecked(b, encodingName, false)
+}
+
+func decodeWithReplacementChecked(b []byte, encodingName string) (string, error) {
+	return decodeStringChecked(b, encodingName, true)
+}
+
+func decodeFragmentChecked(fragment []byte, encodings []string, delimiters map[byte]bool) (string, error) {
+	if len(fragment) == 0 {
+		return "", nil
+	}
+	if fragment[0] != esc {
+		return decodeSimpleBytesChecked(fragment, encodings[0])
+	}
+	return decodeEscapedFragmentChecked(fragment, encodings, delimiters)
+}
+
+func decodeEscapedFragmentChecked(fragment []byte, encodings []string, delimiters map[byte]bool) (string, error) {
 	seqLen := escapeSequenceLength(fragment)
 	if seqLen > len(fragment) {
-		return decodeSimpleBytes(fragment, encodings[0])
+		return decodeSimpleBytesChecked(fragment, encodings[0])
 	}
 
 	csName := escapeToCharacterSet[string(fragment[:seqLen])]
 	if !encodingAllowed(csName, encodings) {
-		return decodeWithReplacement(fragment, encodings[0])
+		return decodeWithReplacementChecked(fragment, encodings[0])
 	}
 	if iso2022HandledEncodings[csName] || iso2022HandledEncodings[characterSetKey(csName)] {
-		return decodeSimpleBytes(fragment, csName)
+		return decodeSimpleBytesChecked(fragment, csName)
 	}
 
 	payload := fragment[seqLen:]
@@ -299,14 +465,19 @@ func decodeEscapedFragment(fragment []byte, encodings []string, delimiters map[b
 		decodeName = characterSetKey(csName)
 	}
 	if len(delimiters) == 0 {
-		return decodeSimpleBytes(payload, decodeName)
+		return decodeSimpleBytesChecked(payload, decodeName)
 	}
 
 	idx := indexDelimiter(payload, delimiters)
 	if idx < 0 {
-		return decodeSimpleBytes(payload, decodeName)
+		return decodeSimpleBytesChecked(payload, decodeName)
 	}
-	return decodeSimpleBytes(payload[:idx], decodeName) + decodeSimpleBytes(payload[idx:], encodings[0])
+	a, errA := decodeSimpleBytesChecked(payload[:idx], decodeName)
+	b, errB := decodeSimpleBytesChecked(payload[idx:], encodings[0])
+	if errA != nil {
+		return a + b, errA
+	}
+	return a + b, errB
 }
 
 func escapeSequenceLength(fragment []byte) int {
@@ -351,14 +522,6 @@ func encodingAllowed(csName string, encodings []string) bool {
 		}
 	}
 	return false
-}
-
-func decodeWithReplacement(b []byte, encodingName string) string {
-	s, err := DecodeString(b, encodingName)
-	if err == nil {
-		return s
-	}
-	return string(b)
 }
 
 func indexDelimiter(b []byte, delimiters map[byte]bool) int {

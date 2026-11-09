@@ -459,7 +459,9 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx, valueStart, encapsulated)
-						assignElementBytes(elem, encapsulated, vr, cc)
+						if err := assignElementBytes(elem, encapsulated, vr, cc, readCtx, valueStart); err != nil {
+							return nil, err
+						}
 					}
 					pos = endPos
 				} else {
@@ -519,7 +521,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 				markElementDeferred(elem, valueTell, length, cc)
 			} else {
 				logElementValue(ctx, valueTell, value)
-				assignElementBytes(elem, value, vr, cc)
+				if err := assignElementBytes(elem, value, vr, cc, readCtx, valueTell); err != nil {
+					return nil, err
+				}
+			}
+			if currentTag == TagCharset {
+				if err := readCtx.reportUnknownCharacterSets(elem.Value, valueTell); err != nil {
+					return nil, err
+				}
 			}
 
 			allElements = append(allElements, elem)
@@ -840,7 +849,9 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx.logCtx(), valueStart, encapsulated)
-						assignElementBytes(elem, encapsulated, vr, cc)
+						if err := assignElementBytes(elem, encapsulated, vr, cc, ctx, valueStart); err != nil {
+							return pos, err
+						}
 					}
 					pos = endPos
 				} else {
@@ -897,9 +908,15 @@ func readDatasetElements(data []byte, offset int64, end int64, ds *Dataset, cc c
 				markElementDeferred(elem, valueTell, length, cc)
 			} else {
 				logElementValue(ctx.logCtx(), valueTell, value)
-				assignElementBytes(elem, value, vr, cc)
+				if err := assignElementBytes(elem, value, vr, cc, ctx, valueTell); err != nil {
+					return pos, err
+				}
 			}
-
+			if currentTag == TagCharset {
+				if err := ctx.reportUnknownCharacterSets(elem.Value, valueTell); err != nil {
+					return pos, err
+				}
+			}
 			ds.Set(elem)
 		}
 		pos += int64(hdrSize) + int64(length)
@@ -1011,7 +1028,7 @@ func cloneElementBytes(value []byte) []byte {
 	return append([]byte(nil), value...)
 }
 
-func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext) {
+func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext, rc *readContext, valueStart int64) error {
 	elem.RawValue = cloneElementBytes(value)
 	var decodeCharsets []string
 	if vrUsesCharacterSet(vr) {
@@ -1028,10 +1045,24 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext)
 	}
 	converted, err := convertValueWithCharsets(raw, decodeCharsets)
 	if err != nil {
+		// Keep the historical fallback -- the raw bytes as the element value,
+		// with RawValue still intact -- but stop pretending the conversion
+		// succeeded. A strict caller can now reject the dataset before its
+		// text is written back in the wrong encoding.
 		elem.Value = value
-		return
+		if !vrUsesCharacterSet(vr) {
+			return nil
+		}
+		return rc.report(Diagnostic{
+			Kind:   DiagnosticInvalidCharacterData,
+			Tag:    elem.Tag,
+			VR:     vr,
+			Offset: valueStart,
+			Err:    err,
+		})
 	}
 	elem.Value = converted
+	return nil
 }
 
 // ReadFile reads a DICOM file from filename.

@@ -122,7 +122,12 @@ func loadDeferredElement(ctx *readContext, ds *Dataset, elem *Element) error {
 		return fmt.Errorf("godicom: deferred read VR %s does not match original %s", raw.VR, elem.VR)
 	}
 
-	assignElementBytes(elem, raw.Value, raw.VR, cc)
+	// A deferred reload happens long after the enclosing parse, so there is no
+	// readContext left to report through; the original read already had its
+	// chance. Passing nil keeps the historical fallback with no hook.
+	if err := assignElementBytes(elem, raw.Value, raw.VR, cc, nil, elementStart); err != nil {
+		return err
+	}
 	elem.Deferred = false
 	elem.ValueLength = 0
 	elem.ValueTell = 0

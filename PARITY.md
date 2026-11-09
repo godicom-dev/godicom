@@ -33,7 +33,7 @@ areas are thinner on edge fixtures.
 | DataElement | partial | dataelem (~123) | `element.go` + `RawDataElement` | Diagnostics via `OnDiagnostic`, not a mode enum |
 | Dataset / FileDataset | partial | dataset (~205) | Get*/Set*/Walk/Clone/… | Typed setters; no dynamic attrs (by design) |
 | Sequence / MultiValue | solid | sequence, multival | present | Core ops |
-| Charset / Unicode | partial | charset (~34) | `charset.go` | Major sets OK; not full `chr*` |
+| Charset / Unicode | partial | charset (~34) | `charset.go` | All 30 defined terms incl. GB18030 / GBK / ISO_IR 192 / BIG5 / HZGB2312 + ISO-2022; unknown or private terms and invalid byte sequences are reported via `OnDiagnostic` (pydicom: warn + RAISE); not full `chr*` fixture suite |
 | File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable skip; deferred values use `io.ReaderAt`; `OnElement` keep / skip / stop; no string `DeferSize` |
 | File writer | partial | filewriter (~168) | `WriteFile` / `SaveAs` | Key roundtrips; not full suite |
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |

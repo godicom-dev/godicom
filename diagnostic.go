@@ -41,6 +41,22 @@ const (
 	// would raise a diagnostic on. Raised while writing, not parsing, so it
 	// carries no offset.
 	DiagnosticInvalidValue DiagnosticKind = "invalid_value"
+
+	// DiagnosticUnknownCharacterSet: (0008,0005) names a character set godicom
+	// does not implement. PS3.5 offers no way to infer what the bytes mean, so
+	// the reader keeps its ISO_IR 6 fallback and text comes back as raw bytes
+	// rather than decoded text -- a GB18030 Chinese name becomes mojibake. The
+	// fallback stays for compatibility, but is no longer silent: the Err holds
+	// every unresolved value exactly as it appeared, with its index.
+	//
+	// Raised once per (0008,0005) element, not once per affected text element.
+	// An absent or empty (0008,0005) is legal per PS3.5 and never raises this.
+	DiagnosticUnknownCharacterSet DiagnosticKind = "unknown_character_set"
+
+	// DiagnosticInvalidCharacterData: a text VR could not be converted with the
+	// character set in effect. The undecoded bytes remain in RawValue, so a
+	// strict caller can reject the dataset without losing the source bytes.
+	DiagnosticInvalidCharacterData DiagnosticKind = "invalid_character_data"
 )
 
 // raisedWhileWriting reports whether k comes from the writer rather than the
@@ -221,6 +237,38 @@ func (rc *readContext) reportVRMismatch(tag Tag, encoded VR, pos int64, isImplic
 		VR:         encoded,
 		ExpectedVR: want,
 		Offset:     pos,
+	})
+}
+
+// reportUnknownCharacterSets offers the unresolved values of one (0008,0005)
+// element to OnDiagnostic. The reader still applies the ISO_IR 6 fallback it
+// always did, so without a hook nothing about the parse changes -- but the
+// anomaly is logged, and a hook that returns the diagnostic refuses a dataset
+// whose text it cannot decode. Reporting once here, rather than once per text
+// element, keeps the signal to one diagnostic per declaration.
+//
+// As in reportVRMismatch, the diagnostic is not even built when nobody is
+// listening and warn-level logging is off.
+func (rc *readContext) reportUnknownCharacterSets(value interface{}, valueStart int64) error {
+	if rc == nil {
+		return nil
+	}
+	_, unknown := parseCharacterSetsChecked(value)
+	if unknown == nil {
+		return nil
+	}
+	if rc.onDiag == nil {
+		ctx := rc.logCtx()
+		if !LoggerFromContext(ctx).Enabled(ctx, slog.LevelWarn) {
+			return nil
+		}
+	}
+	return rc.report(Diagnostic{
+		Kind:   DiagnosticUnknownCharacterSet,
+		Tag:    TagCharset,
+		VR:     VRCS,
+		Offset: valueStart,
+		Err:    unknown,
 	})
 }
 

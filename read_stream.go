@@ -317,7 +317,9 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 						markElementDeferred(elem, valueStart, uint32(len(encapsulated)), cc)
 					} else {
 						logElementValue(ctx, valueStart, encapsulated)
-						assignElementBytes(elem, encapsulated, vr, cc)
+						if err := assignElementBytes(elem, encapsulated, vr, cc, readCtx, valueStart); err != nil {
+							return nil, err
+						}
 					}
 					allElements = append(allElements, elem)
 				}
@@ -376,10 +378,15 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 					break
 				}
 				logElementValue(ctx, valueStart, value)
-				assignElementBytes(elem, value, vr, cc)
+				if err := assignElementBytes(elem, value, vr, cc, readCtx, valueStart); err != nil {
+					return nil, err
+				}
 			}
 			allElements = append(allElements, elem)
 			if currentTag == TagCharset {
+				if err := readCtx.reportUnknownCharacterSets(elem.Value, valueStart); err != nil {
+					return nil, err
+				}
 				cc = cc.withCharsets(ParseCharacterSets(elem.Value))
 			}
 		}
