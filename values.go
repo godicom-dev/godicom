@@ -92,17 +92,23 @@ func convertTextWithCharsets(b []byte, charsets []string) (interface{}, error) {
 		return strings.TrimRight(string(b), " \x00"), nil
 	}
 	if !bytes.Contains(b, []byte{'\\'}) {
-		return DecodeBytesWithDelimiters(b, charsets, textVRDelims), nil
+		s, err := decodeBytesWithDelimitersChecked(b, charsets, textVRDelims)
+		return s, err
 	}
 	rawParts := bytes.Split(b, []byte{'\\'})
 	vals := make([]string, len(rawParts))
+	var firstErr error
 	for i, part := range rawParts {
-		vals[i] = DecodeBytesWithDelimiters(part, charsets, textVRDelims)
+		s, err := decodeBytesWithDelimitersChecked(part, charsets, textVRDelims)
+		vals[i] = s
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	if len(vals) == 1 {
-		return vals[0], nil
+		return vals[0], firstErr
 	}
-	return NewMultiValue(vals), nil
+	return NewMultiValue(vals), firstErr
 }
 
 func needsCharsetDecode(b []byte, charsets []string) bool {
@@ -287,8 +293,13 @@ func convertPNWithCharsets(b []byte, charsets []string) (interface{}, error) {
 func decodePersonNameBytes(b []byte, charsets []string) (PersonName, error) {
 	groups := bytes.Split(b, []byte{'='})
 	parts := make([]string, 0, len(groups))
+	var firstErr error
 	for _, group := range groups {
-		parts = append(parts, DecodeBytesWithDelimiters(group, charsets, pnDelims))
+		s, err := decodeBytesWithDelimitersChecked(group, charsets, pnDelims)
+		parts = append(parts, s)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	for len(parts) > 0 && parts[len(parts)-1] == "" {
 		parts = parts[:len(parts)-1]
@@ -304,7 +315,7 @@ func decodePersonNameBytes(b []byte, charsets []string) (PersonName, error) {
 		pn.Phonetic = parts[2]
 	}
 	pn.Original = personNameStringFromParts(parts)
-	return pn, nil
+	return pn, firstErr
 }
 
 func personNameStringFromParts(parts []string) string {
