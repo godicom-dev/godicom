@@ -435,11 +435,6 @@ func decodeWithReplacementChecked(b []byte, encodingName string) (string, error)
 	return decodeStringChecked(b, encodingName, true)
 }
 
-func decodeSimpleBytes(b []byte, encodingName string) string {
-	s, _ := decodeSimpleBytesChecked(b, encodingName)
-	return s
-}
-
 func decodeFragmentChecked(fragment []byte, encodings []string, delimiters map[byte]bool) (string, error) {
 	if len(fragment) == 0 {
 		return "", nil
@@ -448,11 +443,6 @@ func decodeFragmentChecked(fragment []byte, encodings []string, delimiters map[b
 		return decodeSimpleBytesChecked(fragment, encodings[0])
 	}
 	return decodeEscapedFragmentChecked(fragment, encodings, delimiters)
-}
-
-func decodeFragment(fragment []byte, encodings []string, delimiters map[byte]bool) string {
-	s, _ := decodeFragmentChecked(fragment, encodings, delimiters)
-	return s
 }
 
 func decodeEscapedFragmentChecked(fragment []byte, encodings []string, delimiters map[byte]bool) (string, error) {
@@ -488,11 +478,6 @@ func decodeEscapedFragmentChecked(fragment []byte, encodings []string, delimiter
 		return a + b, errA
 	}
 	return a + b, errB
-}
-
-func decodeEscapedFragment(fragment []byte, encodings []string, delimiters map[byte]bool) string {
-	s, _ := decodeEscapedFragmentChecked(fragment, encodings, delimiters)
-	return s
 }
 
 func escapeSequenceLength(fragment []byte) int {
@@ -537,11 +522,6 @@ func encodingAllowed(csName string, encodings []string) bool {
 		}
 	}
 	return false
-}
-
-func decodeWithReplacement(b []byte, encodingName string) string {
-	s, _ := decodeWithReplacementChecked(b, encodingName)
-	return s
 }
 
 func indexDelimiter(b []byte, delimiters map[byte]bool) int {
