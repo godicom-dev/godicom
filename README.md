@@ -257,6 +257,13 @@ Without a hook nothing about the parse changes, so tools that browse historical
 dirty data keep working. Legal CS padding such as `"GB18030 \ISO_IR 100"` is
 normalized and never reported.
 
+Both diagnostics describe a declaration godicom can see is wrong. They do not
+catch a file that declares `ISO_IR 6` — or omits `(0008,0005)` — and ships
+national bytes anyway. That declaration is legal, and godicom keeps the
+repertoire the file asked for instead of guessing, so such a value still comes
+back undecoded. Detecting it would mean validating every text value against
+`ISO_IR 6`, which is a separate decision with its own compatibility cost.
+
 **Values a strict receiver would reject**
 
 `WriteOptions.OnDiagnostic` is the same hook on the way out. It reports values

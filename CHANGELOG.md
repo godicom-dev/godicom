@@ -21,7 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CS padding in a multi-valued *Specific Character Set*
   (`"GB18030 \ISO_IR 100"`) was not stripped from each value, so the first term
   failed lookup and the whole dataset fell back to `ISO_IR 6`. Each value is now
-  trimmed at both ends, matching pydicom's CS conversion
+  trimmed at both ends. This is a difference from pydicom, not a copy of it:
+  pydicom only rstrips the whole value (`multi_string` in `pydicom/values.py`)
+  and gets away with it because Python's codec registry normalises `"GB18030 "`
+  to `gb18030` at lookup time. A Go map lookup has no such fallback
+- `ISO_IR 13`, `ISO 2022 GBK` and `ISO 2022 58` were missing from the character
+  set table, so a file declaring one of them was reported as an unknown
+  character set and then decoded as `ISO_IR 6`. All three are defined terms
+  (PS3.5 Table C.12-2 and CP1234) and pydicom decodes them as `shift_jis`,
+  `GBK` and `GB2312` respectively. The table now matches pydicom's
+  `python_encoding` entry for entry, and `TestCharacterSetTableMatchesPydicom`
+  fails if a term goes missing again
 - Spelling variants of defined terms (`ISOIR192`, `GB-18030`, `UTF-8`, case
   differences) resolve through a case-insensitive alias table built from the
   supported encoding map. `ISOIR192` previously produced `ISO_IR192`, which is
