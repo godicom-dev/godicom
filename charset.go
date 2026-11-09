@@ -17,9 +17,24 @@ import (
 
 const esc = 0x1b
 
+// dicomEncodings maps a DICOM defined term to the Go codec that decodes it.
+// The term list matches pydicom's python_encoding table (pydicom/charset.py,
+// PS3.5 Table C.12-2 plus the CP1234 terms) entry for entry, so a file read by
+// either library yields the same text; TestCharacterSetTableMatchesPydicom
+// fails if a term goes missing.
+//
+// Three terms decode with a different codec than pydicom uses, all because
+// x/text does not ship the codec the standard calls for:
+//   - ISO 2022 IR 159: JIS X 0212 under its own escape, but x/text has no
+//     ISO-2022-JP-2, so it decodes as JIS X 0208 and fails on 0212-only runes.
+//   - ISO 2022 IR 58: keeps HZGB2312 until the ESC$)A prefix is stripped by the
+//     decoder. pydicom does not strip it either (it warns "Found unknown escape
+//     sequence" and returns the escape verbatim), so this is a shared gap.
+//   - ISO_IR 166: Windows-874 rather than TIS-620; they differ only in 0x80-0x9F.
 var dicomEncodings = map[string]encoding.Encoding{
 	"":                               encoding.Nop,
 	"ISO_IR 6":                       encoding.Nop,
+	"ISO_IR 13":                      japanese.ShiftJIS,
 	"ISO_IR 100":                     charmap.ISO8859_1,
 	"ISO_IR 101":                     charmap.ISO8859_2,
 	"ISO_IR 109":                     charmap.ISO8859_3,
@@ -46,8 +61,10 @@ var dicomEncodings = map[string]encoding.Encoding{
 	"ISO 2022 IR 159":                japanese.ISO2022JP,
 	"GB18030":                        simplifiedchinese.GB18030,
 	"GBK":                            simplifiedchinese.GBK,
+	"ISO 2022 GBK":                   simplifiedchinese.GBK,
 	"ISO 2022 IR 149":                korean.EUCKR,
 	"ISO 2022 IR 58":                 simplifiedchinese.HZGB2312,
+	"ISO 2022 58":                    simplifiedchinese.GBK,
 	"BIG5":                           traditionalchinese.Big5,
 	"ISO 2022 IR 13\\ISO 2022 IR 87": japanese.ShiftJIS,
 	"ISO 2022 IR 87\\ISO 2022 IR 13": japanese.ShiftJIS,
@@ -421,10 +438,32 @@ func decodeStringChecked(b []byte, encodingName string, allowReplacement bool) (
 	if !utf8.ValidString(s) {
 		return string(b), fmt.Errorf("godicom: invalid %s byte sequence", encodingName)
 	}
-	if !allowReplacement && strings.ContainsRune(s, utf8.RuneError) {
+	if !allowReplacement && strings.ContainsRune(s, utf8.RuneError) && !replacementIsContent(b, s, enc) {
 		return s, fmt.Errorf("godicom: undecodable byte sequence for character set %q", encodingName)
 	}
 	return s, nil
+}
+
+// replacementIsContent reports whether the U+FFFD runes in a decoded string can
+// all be accounted for by the source bytes.
+//
+// A charmap or CJK decoder signals an unmapped byte by writing U+FFFD, and that
+// is the only signal it gives, so the output used to be scanned for U+FFFD on
+// its own. That misreads content: a UTF-8 (ISO_IR 192) file whose text really
+// contains U+FFFD -- a previous bad conversion, a placeholder name -- decodes
+// perfectly and was still reported as undecodable, which a strict hook turns
+// into a rejected legal file.
+//
+// So ask the codec instead of guessing. If it cannot encode U+FFFD at all, every
+// U+FFFD in the output must be a substitution. If it can (UTF-8, GB18030), count
+// how many times U+FFFD occurs in the source and accept the output when the
+// substitutions alone cannot outnumber them.
+func replacementIsContent(src []byte, decoded string, enc encoding.Encoding) bool {
+	encoded, err := enc.NewEncoder().Bytes([]byte(string(utf8.RuneError)))
+	if err != nil || len(encoded) == 0 {
+		return false
+	}
+	return bytes.Count(src, encoded) >= strings.Count(decoded, string(utf8.RuneError))
 }
 
 func decodeSimpleBytesChecked(b []byte, encodingName string) (string, error) {
