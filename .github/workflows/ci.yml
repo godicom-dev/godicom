@@ -10,7 +10,12 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # linux/arm64 is one of the six platforms with a prebuilt codec, and it
+        # was the only one never run: macos-latest is already arm64, windows and
+        # ubuntu are amd64. A cross-compiled vet cannot see the difference,
+        # because the arm64 libraries are loaded at run time through purego --
+        # a load or FFI signature problem only shows up on the real thing.
+        os: [ubuntu-latest, windows-latest, macos-latest, ubuntu-24.04-arm]
         go: ['1.26']
     runs-on: ${{ matrix.os }}
     steps:
