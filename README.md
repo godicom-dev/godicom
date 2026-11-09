@@ -516,8 +516,11 @@ if _, err := ds.PixelBytes(); errors.Is(err, golibjpeg.ErrUnsupportedPlatform) {
 
 CI builds every release for `windows/386`, `linux/386`, `linux/arm` (including
 `GOARM=5`), `linux/riscv64`, `linux/ppc64le`, `js/wasm` and `wasip1/wasm`, and
-runs the full test suite on 32-bit. `linux/mips` and `linux/mipsle` do not build,
-because purego does not support them yet.
+runs the full test suite on 32-bit. It also runs the full suite on
+`linux/arm64`, because that is one of the six platforms whose native libraries
+are embedded and the only one a cross-compile cannot vouch for: they are loaded
+at run time, so a build says nothing about whether they load. `linux/mips` and
+`linux/mipsle` do not build, because purego does not support them yet.
 
 ### Binary size
 
