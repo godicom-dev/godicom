@@ -33,14 +33,14 @@ areas are thinner on edge fixtures.
 | DataElement | partial | dataelem (~123) | `element.go` + `RawDataElement` | Diagnostics via `OnDiagnostic`, not a mode enum |
 | Dataset / FileDataset | partial | dataset (~205) | Get*/Set*/Walk/Clone/… | Typed setters; no dynamic attrs (by design) |
 | Sequence / MultiValue | solid | sequence, multival | present | Core ops |
-| Charset / Unicode | partial | charset (~34) | `charset.go` | Every defined term in pydicom's `python_encoding` (33), incl. GB18030 / GBK / ISO_IR 192 + the CP1234 Chinese terms, plus BIG5; unknown or private terms and invalid byte sequences are reported via `OnDiagnostic` (pydicom: warn + RAISE). Known gaps: IR 159 decodes as JIS X 0208 because x/text has no ISO-2022-JP-2; IR 58 keeps HZGB2312 until the decoder strips the ESC$)A prefix (pydicom fails there too); IR 166 uses Windows-874 rather than TIS-620; `ISO_IR 6` is `encoding.Nop` rather than Latin-1, so high bytes stay undecoded instead of becoming U+0080..U+00FF. Not full `chr*` fixture suite |
+| Charset / Unicode | partial | charset (~34) | `charset.go` | All 30 defined terms incl. GB18030 / GBK / ISO_IR 192 / BIG5 / HZGB2312 + ISO-2022; unknown or private terms and invalid byte sequences are reported via `OnDiagnostic` (pydicom: warn + RAISE); not full `chr*` fixture suite |
 | File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable skip; deferred values use `io.ReaderAt`; `OnElement` keep / skip / stop; no string `DeferSize` |
 | File writer | partial | filewriter (~168) | `WriteFile` / `SaveAs` | Key roundtrips; not full suite |
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |
 | Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames; thinner suite |
 | Pixel decode | partial | pixels+handlers (~900) | native/RLE/JPEG/JLS/J2K/HTJ2K | Common TS; fixture depth << |
 | Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K/HTJ2K | |
-| Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Supplemental and enhanced palettes unsupported |
+| Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Top-level tags only: shared and per-frame functional groups (`(5200,9229)`, `(5200,9230)`) are not read, so per-frame window, rescale, spacing and palette are ignored (#96). Supplemental palettes unsupported |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
 | File-set / DICOMDIR | **partial** | fileset (~124) | `OpenFileSet`, record tree, `Find` | Write, add/remove, copy, orphan re-inclusion |
 | SR / codes | **gap** | sr/ | — | Not implemented |

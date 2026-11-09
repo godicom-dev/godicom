@@ -26,6 +26,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | File-set / DICOMDIR write | Read-only tree and File ID lookup (`OpenFileSet`) | Media interchange that must write a DICOMDIR |
 | SR / codes / waveforms | Not implemented | Domain-specific tooling |
+| Enhanced multi-frame functional groups | Top-level tags only; `(5200,9229)` / `(5200,9230)` are not read, so per-frame window, rescale, spacing and palette are ignored (#96) | Enhanced CT/MR/PT display or measurement |
 
 Do not start these without a real consumer. Prefer fixing gaps that block
 gonetdicom or an application over expanding the matrix for its own sake.
