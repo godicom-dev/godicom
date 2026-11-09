@@ -231,6 +231,32 @@ godicom keeps the VR the file gave it, because what the file says is what the
 file means. It is reported because it is the first thing worth knowing when a
 device refuses your files.
 
+**Character sets godicom cannot decode**
+
+An unknown or private *Specific Character Set* still falls back to `ISO_IR 6` —
+guessing a national encoding would turn a detectable error into an undetectable
+one — but it is no longer silent. The reader reports
+`DiagnosticUnknownCharacterSet` once for the `(0008,0005)` element, carrying the
+original spelling and index of every unresolved value; an invalid byte sequence
+in a text VR reports `DiagnosticInvalidCharacterData`. A PACS archiving endpoint
+that must never store mojibake can refuse on the hook:
+
+```go
+opts := &godicom.ReadOptions{
+	OnDiagnostic: func(d godicom.Diagnostic) error {
+		if d.Kind == godicom.DiagnosticUnknownCharacterSet ||
+			d.Kind == godicom.DiagnosticInvalidCharacterData {
+			return d // refuse the file; quarantine the original bytes instead
+		}
+		return nil
+	},
+})
+```
+
+Without a hook nothing about the parse changes, so tools that browse historical
+dirty data keep working. Legal CS padding such as `"GB18030 \ISO_IR 100"` is
+normalized and never reported.
+
 **Values a strict receiver would reject**
 
 `WriteOptions.OnDiagnostic` is the same hook on the way out. It reports values

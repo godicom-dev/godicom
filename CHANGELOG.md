@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `DiagnosticUnknownCharacterSet` is reported once per `(0008,0005)` element
+  naming a character set godicom does not implement. `Err` keeps every
+  unresolved value with its index. The historical `ISO_IR 6` fallback still
+  applies, so a read without an `OnDiagnostic` hook behaves exactly as before
+  apart from a warn-level log line. An archiving endpoint can now refuse the
+  file instead of silently storing a GB18030 Chinese name as mojibake
+- `DiagnosticInvalidCharacterData` is reported when a text VR cannot be decoded
+  with the declared character set. `RawValue` keeps the undecoded bytes
+
+### Fixed
+- CS padding in a multi-valued *Specific Character Set*
+  (`"GB18030 \ISO_IR 100"`) was not stripped from each value, so the first term
+  failed lookup and the whole dataset fell back to `ISO_IR 6`. Each value is now
+  trimmed at both ends, matching pydicom's CS conversion
+- Spelling variants of defined terms (`ISOIR192`, `GB-18030`, `UTF-8`, case
+  differences) resolve through a case-insensitive alias table built from the
+  supported encoding map. `ISOIR192` previously produced `ISO_IR192`, which is
+  not a supported key and silently decoded as `encoding.Nop`
+- Decode errors in `DecodeBytesWithDelimiters` are no longer swallowed. The
+  exported function keeps its loose behaviour; the reader uses a checked
+  counterpart, so invalid UTF-8 under `ISO_IR 192` and bytes a charmap decoder
+  replaced with U+FFFD are reported rather than looking like valid text
+
 ## [0.34.0] - 2026-10-23
 
 ### Changed
