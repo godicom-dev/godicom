@@ -482,6 +482,8 @@ func (d *Dataset) GetFloats(tag Tag) ([]float64, bool) {
 	switch v := e.Value.(type) {
 	case float64:
 		return []float64{v}, true
+	case float32:
+		return []float64{float64(v)}, true
 	case DS:
 		return []float64{v.Value}, true
 	case string:
@@ -493,6 +495,12 @@ func (d *Dataset) GetFloats(tag Tag) ([]float64, bool) {
 	case *MultiValue[float64]:
 		out := make([]float64, v.Len())
 		copy(out, v.Values())
+		return out, true
+	case *MultiValue[float32]:
+		out := make([]float64, v.Len())
+		for i, f := range v.Values() {
+			out[i] = float64(f)
+		}
 		return out, true
 	case *MultiValue[DS]:
 		out := make([]float64, v.Len())
