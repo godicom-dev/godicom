@@ -28,6 +28,9 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	old := os.Stdout
 	os.Stdout = f
+	// Restored twice: right after fn so nothing below writes into a closed file,
+	// and again on the way out in case fn panics and skips the first one.
+	defer func() { os.Stdout = old }()
 	fn()
 	os.Stdout = old
 
