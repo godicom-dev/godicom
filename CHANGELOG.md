@@ -56,6 +56,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   creates the file, so a refusal leaves an existing file untouched
 
 ### Fixed
+- `Dataset.GetFloats` and `GetFloat` accept `float32` and `MultiValue[float32]`.
+  A dataset parsed from the DICOM JSON Model stores an `FL` value as `float32`
+  (`coerceParsedValue`), so a caller that read QIDO/WADO metadata and asked for
+  `(0018,9431)` got `0, false` even though the element was there. Values the
+  binary reader produces were already `float64`, which is why only the JSON path
+  was affected
+- Marshaling a DICOM JSON Model dataset no longer drops a binary element whose
+  bytes are only in `RawValue`. `elementToJSON` returned early on a nil `Value`
+  before reaching `binaryValue`, so the `RawValue` branch it exists for was
+  unreachable; an element restored from its source bytes serialised as a bare
+  `{"vr":"OB"}` with no `InlineBinary`
 - CS padding in a multi-valued *Specific Character Set*
   (`"GB18030 \ISO_IR 100"`) was not stripped from each value, so the first term
   failed lookup and the whole dataset fell back to `ISO_IR 6`. Each value is now

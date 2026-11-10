@@ -69,10 +69,11 @@ func datasetToMap(ds *godicom.Dataset, opts options) (map[string]Element, error)
 
 func elementToJSON(elem *godicom.DataElement, opts options) (Element, error) {
 	out := Element{VR: string(elem.VR)}
-	if elem.Value == nil || elem.IsEmpty() {
-		return out, nil
-	}
 
+	// Binary VRs are checked before the empty-value guard below: an element that
+	// still holds only its source bytes -- a value restored from RawValue, or one
+	// whose decoded form was dropped -- is not empty, and the JSON model has room
+	// for exactly those bytes.
 	if isBinaryVR(elem.VR) {
 		value := binaryValue(elem)
 		if len(value) == 0 {
@@ -87,6 +88,10 @@ func elementToJSON(elem *godicom.DataElement, opts options) (Element, error) {
 			}
 		}
 		out.InlineBinary = base64.StdEncoding.EncodeToString(value)
+		return out, nil
+	}
+
+	if elem.Value == nil || elem.IsEmpty() {
 		return out, nil
 	}
 
