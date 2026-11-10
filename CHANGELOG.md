@@ -16,6 +16,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file instead of silently storing a GB18030 Chinese name as mojibake
 - `DiagnosticInvalidCharacterData` is reported when a text VR cannot be decoded
   with the declared character set. `RawValue` keeps the undecoded bytes
+- `Dataset.ReinterpretCharacterSet` decodes the text of a dataset that was read
+  from bytes using the set the caller declares, and updates `(0008,0005)` to
+  match. That is the repair for a file whose declaration is wrong, which is the
+  common case for older Chinese and Japanese equipment: the value still holds the
+  bytes of the file, so re-decoding recovers the original name, where re-encoding
+  turns every non-ASCII run into U+FFFD. It covers both `ISO_IR 6` (or absent)
+  with national bytes, and a single byte set in front of GBK bytes, where the
+  read produced mojibake that nothing reported. Elements the caller has replaced
+  since the read are left alone
+
+### Changed
+- Writing a dataset after changing `(0008,0005)` is refused with
+  `ErrCharsetChangeLosesText` when the dataset was read under a set that does
+  not decode and a text value still holds non-ASCII bytes from the source. The
+  writer used to re-encode those bytes as if they were text, so changing the
+  declaration and saving destroyed a Chinese name instead of repairing it. Text
+  the caller set in Go is Unicode already and unaffected, ASCII-only text is
+  identical in every supported set, and `ReinterpretCharacterSet` is the way to
+  change the declaration without loss. `WriteFile` runs the check before it
+  creates the file, so a refusal leaves an existing file untouched
 
 ### Fixed
 - CS padding in a multi-valued *Specific Character Set*
