@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Enhanced multi-frame functional groups are read. An enhanced CT/MR/PT
+  instance keeps rescale, window, pixel measures and palette inside
+  `(5200,9229)` / `(5200,9230)` rather than at the top level, so those frames
+  were rendered with the right shape but the wrong contrast and physical scale.
+  Resolution is per-frame → shared → top level, and the existing dataset-wide
+  entry points keep their old behaviour (shared + top only) so no signature
+  changes. New per-frame APIs: `FileDataset.PixelMeasures(frameIndex)`,
+  `ApplyModalityLUTForFrame`, `ApplyVOILUTForFrame`,
+  `ApplyPresentationLUTShapeForFrame` and `ApplyColorLUTForFrame`.
+  `DisplayFrame` now resolves its parameters for the frame it is given.
+  `ApplyColorLUTForFrame` also reads a table carried inline in a functional
+  group item, or selects one from the Enhanced Palette Color Lookup Table
+  Sequence `(0028,140B)` by the frame's
+  `Palette Color Lookup Table UID (0028,1199)`. A missing or unmatched UID is
+  an error rather than a silently wrong colour. pydicom has no equivalent —
+  its handlers read top-level elements — so the precedence and the per-frame
+  API shape follow PS3.3 C.7.6.16 rather than a port
+- `pixels.FrameCountSource` is an optional interface for a dataset that can
+  count frames from `(5200,9230)`. `DescriptorFromDataset` uses it when
+  `NumberOfFrames (0028,0008)` is absent, instead of silently decoding one
+  frame of a multi-frame image. `FileDataset` implements it
 - `DiagnosticUnknownCharacterSet` is reported once per `(0008,0005)` element
   naming a character set godicom does not implement. `Err` keeps every
   unresolved value with its index. The historical `ISO_IR 6` fallback still
@@ -56,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   creates the file, so a refusal leaves an existing file untouched
 
 ### Fixed
+- `DisplayFrame` no longer ignores the rescale and window of an enhanced
+  multi-frame instance, and no longer renders every frame with frame 0's
+  parameters. `needsDisplayLUT` also checks the functional groups before taking
+  the "8-bit color is already display-ready" short-circuit. Both failures were
+  silent: no error, just a plausible-looking thumbnail
 - `Dataset.GetFloats` and `GetFloat` accept `float32` and `MultiValue[float32]`.
   A dataset parsed from the DICOM JSON Model stores an `FL` value as `float32`
   (`coerceParsedValue`), so a caller that read QIDO/WADO metadata and asked for
