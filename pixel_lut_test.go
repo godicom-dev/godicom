@@ -288,7 +288,11 @@ func TestApplyModalityLUTSequenceWins(t *testing.T) {
 	}
 	// windowConfig must report the same precedence, since the output range of a
 	// windowing operation depends on which modality step actually ran.
-	cfg, err := fd.windowConfig(0, 1)
+	g, err := fd.functionalGroupsFor(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := fd.windowConfig(g, 0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

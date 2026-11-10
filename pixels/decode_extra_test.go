@@ -423,4 +423,37 @@ func TestEncodeFramesFragmentsAndOffsetTables(t *testing.T) {
 	}
 }
 
+// frameCountSource is what a real FileDataset looks like to the descriptor:
+// an optional source of a frame count from (5200,9230) when NumberOfFrames is
+// absent. Enhanced multi-frame instances may omit it.
+type frameCountSource struct {
+	*fakeSource
+	count int
+}
+
+func (f *frameCountSource) FunctionalGroupFrameCount() int { return f.count }
+
+func TestDescriptorFrameCountFromFunctionalGroups(t *testing.T) {
+	base := monochromeSource(2, 2, 1, []byte{1, 2, 3, 4})
+	delete(base.ints, tag.NumberOfFrames)
+	for _, tc := range []struct {
+		name  string
+		count int
+		want  int
+	}{
+		{"three per-frame items", 3, 3},
+		{"no per-frame items", 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			desc, err := pixels.DescriptorFromFile(&frameCountSource{fakeSource: base, count: tc.count})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if desc.NumberOfFrames != tc.want {
+				t.Fatalf("NumberOfFrames = %d, want %d", desc.NumberOfFrames, tc.want)
+			}
+		})
+	}
+}
+
 func boolPtr(b bool) *bool { return &b }

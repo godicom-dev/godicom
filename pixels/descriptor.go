@@ -20,6 +20,14 @@ type FileSource interface {
 	TransferSyntaxUID() (uid.UID, bool)
 }
 
+// FrameCountSource is an optional interface for a dataset that can count its
+// frames from a Per-Frame Functional Groups Sequence (5200,9230). An enhanced
+// multi-frame instance that omits NumberOfFrames (0028,0008) is otherwise
+// decoded as a single frame and silently drops the rest.
+type FrameCountSource interface {
+	FunctionalGroupFrameCount() int
+}
+
 // Descriptor holds image-related dataset attributes needed for pixel decode.
 type Descriptor struct {
 	TransferSyntaxUID         uid.UID
@@ -100,6 +108,8 @@ func DescriptorFromDataset(ds DatasetSource, ts uid.UID) (Descriptor, error) {
 	}
 	if v, ok := ds.GetInt(tag.NumberOfFrames); ok && v > 0 {
 		desc.NumberOfFrames = v
+	} else if f, ok := ds.(FrameCountSource); ok && f.FunctionalGroupFrameCount() > 0 {
+		desc.NumberOfFrames = f.FunctionalGroupFrameCount()
 	} else {
 		desc.NumberOfFrames = 1
 	}

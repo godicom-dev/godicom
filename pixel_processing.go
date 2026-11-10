@@ -24,8 +24,34 @@ func (fd *FileDataset) PixelSamples(opts ...pixels.DecodeOption) ([]float64, err
 
 // ApplyModalityLUT applies Modality LUT Sequence or Rescale Slope/Intercept.
 // Mirrors pydicom.pixels.processing.apply_modality_lut.
+//
+// It has no frame index, so for an enhanced multi-frame instance it sees only
+// the shared functional group and the top level. That is correct when the
+// instance keeps the transformation in the shared item, which is the usual
+// case, and it is what ApplyModalityLUTForFrame extends when it does not.
 func (fd *FileDataset) ApplyModalityLUT(arr []float64) ([]float64, error) {
-	p, err := fd.modalityParams()
+	return fd.applyModalityLUTForFrame(arr, -1)
+}
+
+// ApplyModalityLUTForFrame is ApplyModalityLUT for one frame of an enhanced
+// multi-frame instance, whose per-frame item may carry its own transformation.
+func (fd *FileDataset) ApplyModalityLUTForFrame(arr []float64, frameIndex int) ([]float64, error) {
+	if frameIndex < 0 {
+		return nil, fmt.Errorf("godicom: frame index %d out of range", frameIndex)
+	}
+	return fd.applyModalityLUTForFrame(arr, frameIndex)
+}
+
+func (fd *FileDataset) applyModalityLUTForFrame(arr []float64, frameIndex int) ([]float64, error) {
+	g, err := fd.functionalGroupsFor(frameIndex)
+	if err != nil {
+		return nil, err
+	}
+	return fd.applyModalityLUT(g, arr)
+}
+
+func (fd *FileDataset) applyModalityLUT(g *functionalGroups, arr []float64) ([]float64, error) {
+	p, err := fd.modalityParams(g)
 	if err != nil {
 		return nil, err
 	}
@@ -34,17 +60,68 @@ func (fd *FileDataset) ApplyModalityLUT(arr []float64) ([]float64, error) {
 
 // ApplyVOILUT applies VOI LUT Sequence or Window Center/Width.
 // preferLUT matches pydicom apply_voi_lut(prefer_lut=...).
+//
+// index selects among several windows or VOI LUTs, not among frames. For an
+// enhanced multi-frame instance this method sees only the shared functional
+// group and the top level; use ApplyVOILUTForFrame for the per-frame item.
 func (fd *FileDataset) ApplyVOILUT(arr []float64, index int, preferLUT bool) ([]float64, error) {
-	p, err := fd.voiParams(index, preferLUT)
+	return fd.applyVOILUTForFrame(arr, -1, index, preferLUT)
+}
+
+// ApplyVOILUTForFrame is ApplyVOILUT for one frame of an enhanced multi-frame
+// instance. The options select the window index and whether a VOI LUT wins over
+// windowing, exactly as they do for DisplayFrame.
+func (fd *FileDataset) ApplyVOILUTForFrame(arr []float64, frameIndex int, opts ...pixels.DisplayOption) ([]float64, error) {
+	if frameIndex < 0 {
+		return nil, fmt.Errorf("godicom: frame index %d out of range", frameIndex)
+	}
+	dopts := applyDisplayOptions(opts)
+	return fd.applyVOILUTForFrame(arr, frameIndex, dopts.WindowIndex, dopts.PreferLUT)
+}
+
+func (fd *FileDataset) applyVOILUTForFrame(arr []float64, frameIndex, index int, preferLUT bool) ([]float64, error) {
+	g, err := fd.functionalGroupsFor(frameIndex)
+	if err != nil {
+		return nil, err
+	}
+	return fd.applyVOILUT(g, arr, index, preferLUT)
+}
+
+func (fd *FileDataset) applyVOILUT(g *functionalGroups, arr []float64, index int, preferLUT bool) ([]float64, error) {
+	p, err := fd.voiParams(g, index, preferLUT)
 	if err != nil {
 		return nil, err
 	}
 	return pixels.ApplyVOILUT(arr, p)
 }
 
-// ApplyPresentationLUTShape applies (2050,0020) Presentation LUT Shape when present.
+// ApplyPresentationLUTShape applies (2050,0020) Presentation LUT Shape when
+// present. It has no frame index, so an enhanced instance is resolved through
+// its shared functional group and top level only; ApplyPresentationLUTShapeForFrame
+// is the per-frame variant.
 func (fd *FileDataset) ApplyPresentationLUTShape(arr []float64) ([]float64, error) {
-	shape, ok := fd.GetString(tag.PresentationLUTShape)
+	g, err := fd.functionalGroupsFor(-1)
+	if err != nil {
+		return nil, err
+	}
+	return fd.applyPresentationLUTShape(g, arr)
+}
+
+// ApplyPresentationLUTShapeForFrame is ApplyPresentationLUTShape for one frame
+// of an enhanced multi-frame instance.
+func (fd *FileDataset) ApplyPresentationLUTShapeForFrame(arr []float64, frameIndex int) ([]float64, error) {
+	if frameIndex < 0 {
+		return nil, fmt.Errorf("godicom: frame index %d out of range", frameIndex)
+	}
+	g, err := fd.functionalGroupsFor(frameIndex)
+	if err != nil {
+		return nil, err
+	}
+	return fd.applyPresentationLUTShape(g, arr)
+}
+
+func (fd *FileDataset) applyPresentationLUTShape(g *functionalGroups, arr []float64) ([]float64, error) {
+	shape, ok := g.str(tag.FrameVOILUTSequence, tag.PresentationLUTShape)
 	if !ok || shape == "" {
 		out := make([]float64, len(arr))
 		copy(out, arr)
@@ -61,14 +138,14 @@ func (fd *FileDataset) pixelLittleEndian() bool {
 	return ts.IsLittleEndian()
 }
 
-func (fd *FileDataset) modalityParams() (pixels.ModalityParams, error) {
-	if lut, ok, err := fd.readLUTFromSequence(tag.ModalityLUTSequence, 0); err != nil {
+func (fd *FileDataset) modalityParams(g *functionalGroups) (pixels.ModalityParams, error) {
+	if lut, ok, err := readModalityLUT(g, fd.pixelLittleEndian()); err != nil {
 		return pixels.ModalityParams{}, err
 	} else if ok {
 		return pixels.ModalityParams{LUT: &lut}, nil
 	}
-	slope, hasSlope := fd.GetFloat(tag.RescaleSlope)
-	intercept, hasIntercept := fd.GetFloat(tag.RescaleIntercept)
+	slope, hasSlope := g.float(tag.PixelValueTransformationSequence, tag.RescaleSlope)
+	intercept, hasIntercept := g.float(tag.PixelValueTransformationSequence, tag.RescaleIntercept)
 	if hasSlope && hasIntercept {
 		return pixels.ModalityParams{
 			HasRescale:       true,
@@ -79,20 +156,20 @@ func (fd *FileDataset) modalityParams() (pixels.ModalityParams, error) {
 	return pixels.ModalityParams{}, nil
 }
 
-func (fd *FileDataset) voiParams(index int, preferLUT bool) (pixels.VOIParams, error) {
+func (fd *FileDataset) voiParams(g *functionalGroups, index int, preferLUT bool) (pixels.VOIParams, error) {
 	p := pixels.VOIParams{PreferLUT: preferLUT, Index: index}
-	if lut, ok, err := fd.readLUTFromSequence(tag.VOILUTSequence, index); err != nil {
+	if lut, ok, err := readVOILUT(g, index, fd.pixelLittleEndian()); err != nil {
 		return p, err
 	} else if ok {
 		p.LUT = &lut
 	}
-	centers, hasC := fd.GetFloats(tag.WindowCenter)
-	widths, hasW := fd.GetFloats(tag.WindowWidth)
+	centers, hasC := g.floats(tag.FrameVOILUTSequence, tag.WindowCenter)
+	widths, hasW := g.floats(tag.FrameVOILUTSequence, tag.WindowWidth)
 	if hasC && hasW && len(centers) > 0 && len(widths) > 0 {
 		if index < 0 || index >= len(centers) || index >= len(widths) {
 			return p, fmt.Errorf("godicom: VOI window index %d out of range", index)
 		}
-		cfg, err := fd.windowConfig(centers[index], widths[index])
+		cfg, err := fd.windowConfig(g, centers[index], widths[index])
 		if err != nil {
 			return p, err
 		}
@@ -101,7 +178,7 @@ func (fd *FileDataset) voiParams(index int, preferLUT bool) (pixels.VOIParams, e
 	return p, nil
 }
 
-func (fd *FileDataset) windowConfig(center, width float64) (pixels.WindowConfig, error) {
+func (fd *FileDataset) windowConfig(g *functionalGroups, center, width float64) (pixels.WindowConfig, error) {
 	desc, err := pixels.DescriptorFromFile(fd)
 	if err != nil {
 		return pixels.WindowConfig{}, err
@@ -113,17 +190,17 @@ func (fd *FileDataset) windowConfig(center, width float64) (pixels.WindowConfig,
 		BitsStored:                desc.BitsStored,
 		PixelRepresentation:       desc.PixelRepresentation,
 	}
-	if fn, ok := fd.GetString(tag.VOILUTFunction); ok {
+	if fn, ok := g.str(tag.FrameVOILUTSequence, tag.VOILUTFunction); ok {
 		cfg.Function = fn
 	}
-	if lut, ok, err := fd.readLUTFromSequence(tag.ModalityLUTSequence, 0); err != nil {
+	if lut, ok, err := readModalityLUT(g, fd.pixelLittleEndian()); err != nil {
 		return cfg, err
 	} else if ok {
 		cfg.HasModalityLUT = true
 		cfg.ModalityLUTOutputBits = lut.OutputBits
 	} else {
-		slope, hasSlope := fd.GetFloat(tag.RescaleSlope)
-		intercept, hasIntercept := fd.GetFloat(tag.RescaleIntercept)
+		slope, hasSlope := g.float(tag.PixelValueTransformationSequence, tag.RescaleSlope)
+		intercept, hasIntercept := g.float(tag.PixelValueTransformationSequence, tag.RescaleIntercept)
 		if hasSlope && hasIntercept {
 			cfg.HasRescale = true
 			cfg.RescaleSlope = slope
@@ -133,8 +210,48 @@ func (fd *FileDataset) windowConfig(center, width float64) (pixels.WindowConfig,
 	return cfg, nil
 }
 
+// readModalityLUT returns the Modality LUT that applies, looking inside the
+// Pixel Value Transformation macro before the top level. PS3.3 keeps the
+// Modality LUT Module at the top level for enhanced instances too, but writers
+// that build the transformation inside the macro put it there.
+func readModalityLUT(g *functionalGroups, littleEndian bool) (pixels.LUT, bool, error) {
+	for _, item := range g.macros(tag.PixelValueTransformationSequence) {
+		if lut, ok, err := readLUTFromItem(item, tag.ModalityLUTSequence, 0, littleEndian); err != nil || ok {
+			return lut, ok, err
+		}
+	}
+	if g.top != nil {
+		return readLUTFromItem(g.top, tag.ModalityLUTSequence, 0, littleEndian)
+	}
+	return pixels.LUT{}, false, nil
+}
+
+// readVOILUT returns the VOI LUT at index, inside the Frame VOI LUT macro first
+// and then at the top level.
+func readVOILUT(g *functionalGroups, index int, littleEndian bool) (pixels.LUT, bool, error) {
+	for _, item := range g.macros(tag.FrameVOILUTSequence) {
+		if lut, ok, err := readLUTFromItem(item, tag.VOILUTSequence, index, littleEndian); err != nil || ok {
+			return lut, ok, err
+		}
+	}
+	if g.top != nil {
+		return readLUTFromItem(g.top, tag.VOILUTSequence, index, littleEndian)
+	}
+	return pixels.LUT{}, false, nil
+}
+
 func (fd *FileDataset) readLUTFromSequence(seqTag tag.Tag, index int) (pixels.LUT, bool, error) {
-	seq, ok := fd.GetSequence(seqTag)
+	if fd == nil || fd.Dataset == nil {
+		return pixels.LUT{}, false, nil
+	}
+	return readLUTFromItem(fd.Dataset, seqTag, index, fd.pixelLittleEndian())
+}
+
+func readLUTFromItem(h *Dataset, seqTag tag.Tag, index int, littleEndian bool) (pixels.LUT, bool, error) {
+	if h == nil {
+		return pixels.LUT{}, false, nil
+	}
+	seq, ok := h.GetSequence(seqTag)
 	if !ok || seq == nil || seq.Len() == 0 {
 		return pixels.LUT{}, false, nil
 	}
@@ -160,7 +277,7 @@ func (fd *FileDataset) readLUTFromSequence(seqTag tag.Tag, index int) (pixels.LU
 	if !ok || dataElem == nil {
 		return pixels.LUT{}, false, nil
 	}
-	entries, err := unpackLUTData(dataElem, nrEntries, fd.pixelLittleEndian())
+	entries, err := unpackLUTData(dataElem, nrEntries, littleEndian)
 	if err != nil {
 		return pixels.LUT{}, false, err
 	}

@@ -48,9 +48,27 @@ var wellKnownPaletteFile = map[string]string{
 // when both a dataset and a palette are passed. When palette is empty, ds must
 // carry a Palette Color Lookup Table Module.
 //
-// Enhanced and supplemental palette modules are not supported.
+// Supplemental palettes (Pixel Presentation COLOR or MIXED) are not supported.
 // Mirrors pydicom.pixels.processing.apply_color_lut.
+//
+// It has no frame index, so an enhanced instance is resolved through its shared
+// functional group and top level only; use ApplyColorLUTForFrame when each
+// frame may name a different palette.
 func ApplyColorLUT(arr []float64, ds *FileDataset, palette string) (pixels.PalettePixels, error) {
+	return ApplyColorLUTForFrame(arr, ds, -1, palette)
+}
+
+// ApplyColorLUTForFrame maps stored pixel values through the palette that
+// applies to frameIndex of an enhanced multi-frame instance.
+//
+// An enhanced palette instance keeps several candidate tables in the Enhanced
+// Palette Color Lookup Table Sequence (0028,140B) and names the one for a frame
+// with Palette Color Lookup Table UID (0028,1199) in the frame's functional
+// groups. pydicom has no equivalent -- it only reads the classic top-level
+// module -- so this is a decision, not a port. A negative frameIndex asks for
+// the shared group and top level only. Passing an explicit palette still wins:
+// it loads a well-known table and ignores the dataset, as pydicom does.
+func ApplyColorLUTForFrame(arr []float64, ds *FileDataset, frameIndex int, palette string) (pixels.PalettePixels, error) {
 	if ds == nil && palette == "" {
 		return pixels.PalettePixels{}, fmt.Errorf("godicom: either a dataset or a palette is required")
 	}
@@ -60,8 +78,9 @@ func ApplyColorLUT(arr []float64, ds *FileDataset, palette string) (pixels.Palet
 			return pixels.PalettePixels{}, err
 		}
 		ds = loaded
+		frameIndex = -1
 	}
-	lut, err := ds.colorLUT()
+	lut, err := ds.colorLUTForFrame(frameIndex)
 	if err != nil {
 		return pixels.PalettePixels{}, err
 	}
@@ -70,6 +89,49 @@ func ApplyColorLUT(arr []float64, ds *FileDataset, palette string) (pixels.Palet
 		return pixels.PalettePixels{}, err
 	}
 	return out, nil
+}
+
+// colorLUTForFrame resolves the palette for one frame. When the instance has an
+// Enhanced Palette Color Lookup Table Sequence, the frame's UID must name one
+// of its items; otherwise the classic top-level module is used.
+func (fd *FileDataset) colorLUTForFrame(frameIndex int) (pixels.ColorLUT, error) {
+	if fd == nil || fd.Dataset == nil {
+		return pixels.ColorLUT{}, fmt.Errorf("godicom: either a dataset or a palette is required")
+	}
+	g, err := fd.functionalGroupsFor(frameIndex)
+	if err != nil {
+		return pixels.ColorLUT{}, err
+	}
+	// Some writers put the table inline in a functional group item instead of
+	// naming one in the enhanced sequence. It is the most specific source.
+	for _, item := range []*Dataset{g.perFrame, g.shared} {
+		if item == nil {
+			continue
+		}
+		if _, ok := item.Get(tag.RedPaletteColorLookupTableDescriptor); ok {
+			return colorLUTFromDataset(fd, item)
+		}
+	}
+	seq, hasEnhanced := g.enhancedPalette()
+	if !hasEnhanced {
+		return colorLUTFromDataset(fd, fd.Dataset)
+	}
+	want, ok := g.paletteUID()
+	if !ok {
+		return pixels.ColorLUT{}, fmt.Errorf(
+			"godicom: frame %d does not name a Palette Color Lookup Table UID", frameIndex)
+	}
+	for i := 0; i < seq.Len(); i++ {
+		item := seq.Get(i)
+		if item == nil {
+			continue
+		}
+		if uid, ok := item.GetString(tag.PaletteColorLookupTableUID); ok && strings.TrimSpace(uid) == want {
+			return colorLUTFromDataset(fd, item)
+		}
+	}
+	return pixels.ColorLUT{}, fmt.Errorf(
+		"godicom: no Enhanced Palette Color Lookup Table matches UID %q", want)
 }
 
 func readWellKnownPalette(nameOrUID string) (*FileDataset, error) {
@@ -109,16 +171,27 @@ func looksLikeUID(s string) bool {
 }
 
 func (fd *FileDataset) colorLUT() (pixels.ColorLUT, error) {
-	if fd == nil || fd.Dataset == nil {
+	if fd == nil {
 		return pixels.ColorLUT{}, fmt.Errorf("godicom: either a dataset or a palette is required")
 	}
-	if pres, ok := fd.GetString(tag.PixelPresentation); ok {
+	return colorLUTFromDataset(fd, fd.Dataset)
+}
+
+// colorLUTFromDataset builds a table from whichever dataset holds the Palette
+// Color Lookup Table Module: the file dataset top level for a classic image,
+// or one item of the Enhanced Palette Color Lookup Table Sequence. fd is still
+// needed for the transfer syntax that decides segmented-LUT byte order.
+func colorLUTFromDataset(fd *FileDataset, d *Dataset) (pixels.ColorLUT, error) {
+	if fd == nil || d == nil {
+		return pixels.ColorLUT{}, fmt.Errorf("godicom: either a dataset or a palette is required")
+	}
+	if pres, ok := d.GetString(tag.PixelPresentation); ok {
 		switch strings.ToUpper(strings.TrimSpace(pres)) {
 		case "MIXED", "COLOR":
 			return pixels.ColorLUT{}, fmt.Errorf("godicom: use of this function with the Supplemental Palette Color Lookup Table Module is not currently supported")
 		}
 	}
-	descElem, ok := fd.Get(tag.RedPaletteColorLookupTableDescriptor)
+	descElem, ok := d.Get(tag.RedPaletteColorLookupTableDescriptor)
 	if !ok || descElem == nil {
 		return pixels.ColorLUT{}, fmt.Errorf("godicom: No suitable Palette Color Lookup Table Module found")
 	}
@@ -136,16 +209,16 @@ func (fd *FileDataset) colorLUT() (pixels.ColorLUT, error) {
 		return pixels.ColorLUT{}, fmt.Errorf("godicom: the size of the LUT entries must be 8 or 16-bit, not %d-bit", nominal)
 	}
 
-	if raw, ok := fd.paletteBytes(tag.RedPaletteColorLookupTableData); ok {
-		return fd.directColorLUT(raw, nrEntries, firstMap, nominal)
+	if raw, ok := paletteBytesFromDataset(d, tag.RedPaletteColorLookupTableData); ok {
+		return directColorLUTFromDataset(d, raw, nrEntries, firstMap, nominal)
 	}
-	if raw, ok := fd.paletteBytes(tag.SegmentedRedPaletteColorLookupTableData); ok {
-		return fd.segmentedColorLUT(raw, nrEntries, firstMap, nominal)
+	if raw, ok := paletteBytesFromDataset(d, tag.SegmentedRedPaletteColorLookupTableData); ok {
+		return segmentedColorLUTFromDataset(fd, d, raw, nrEntries, firstMap, nominal)
 	}
 	return pixels.ColorLUT{}, fmt.Errorf("godicom: No suitable Palette Color Lookup Table Module found")
 }
 
-func (fd *FileDataset) directColorLUT(red []byte, nrEntries, firstMap, nominal int) (pixels.ColorLUT, error) {
+func directColorLUTFromDataset(d *Dataset, red []byte, nrEntries, firstMap, nominal int) (pixels.ColorLUT, error) {
 	actual := float64(len(red)) / float64(nrEntries) * 8
 	if actual != 8 && actual != 16 {
 		return pixels.ColorLUT{}, fmt.Errorf("godicom: the bit depth of the LUT data '%.1f' is invalid (only 8 or 16 bits per entry allowed)", actual)
@@ -162,7 +235,7 @@ func (fd *FileDataset) directColorLUT(red []byte, nrEntries, firstMap, nominal i
 	}
 	tables := make([][]uint16, 0, 4)
 	for _, ch := range channels {
-		raw, ok := fd.paletteBytes(ch.tg)
+		raw, ok := paletteBytesFromDataset(d, ch.tg)
 		if !ok {
 			if ch.need {
 				return pixels.ColorLUT{}, fmt.Errorf("godicom: No suitable Palette Color Lookup Table Module found")
@@ -183,7 +256,7 @@ func (fd *FileDataset) directColorLUT(red []byte, nrEntries, firstMap, nominal i
 	}, nil
 }
 
-func (fd *FileDataset) segmentedColorLUT(red []byte, nrEntries, firstMap, nominal int) (pixels.ColorLUT, error) {
+func segmentedColorLUTFromDataset(fd *FileDataset, d *Dataset, red []byte, nrEntries, firstMap, nominal int) (pixels.ColorLUT, error) {
 	if nominal != 8 && nominal != 16 {
 		return pixels.ColorLUT{}, fmt.Errorf("godicom: the bit depth of the LUT data '%.1f' is invalid (only 8 or 16 bits per entry allowed)", float64(nominal))
 	}
@@ -202,7 +275,7 @@ func (fd *FileDataset) segmentedColorLUT(red []byte, nrEntries, firstMap, nomina
 	}
 	tables := make([][]uint16, 0, 4)
 	for _, ch := range channels {
-		raw, ok := fd.paletteBytes(ch.tg)
+		raw, ok := paletteBytesFromDataset(d, ch.tg)
 		if !ok {
 			if ch.need {
 				return pixels.ColorLUT{}, fmt.Errorf("godicom: No suitable Palette Color Lookup Table Module found")
@@ -236,6 +309,9 @@ func (fd *FileDataset) segmentedColorLUT(red []byte, nrEntries, firstMap, nomina
 }
 
 func (fd *FileDataset) segmentEndian() (bool, error) {
+	if fd == nil {
+		return false, fmt.Errorf("godicom: unable to determine the endianness of the dataset, please set an appropriate Transfer Syntax UID in FileDataset.FileMeta")
+	}
 	if fd.FileMeta != nil {
 		if ts, ok := fd.TransferSyntaxUID(); ok && ts != "" {
 			return ts.IsLittleEndian(), nil
@@ -248,7 +324,17 @@ func (fd *FileDataset) segmentEndian() (bool, error) {
 }
 
 func (fd *FileDataset) paletteBytes(tg tag.Tag) ([]byte, bool) {
-	elem, ok := fd.Get(tg)
+	if fd == nil {
+		return nil, false
+	}
+	return paletteBytesFromDataset(fd.Dataset, tg)
+}
+
+func paletteBytesFromDataset(d *Dataset, tg tag.Tag) ([]byte, bool) {
+	if d == nil {
+		return nil, false
+	}
+	elem, ok := d.Get(tg)
 	if !ok || elem == nil {
 		return nil, false
 	}
