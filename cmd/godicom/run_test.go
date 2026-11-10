@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,26 +9,32 @@ import (
 	"github.com/godicom-dev/godicom"
 )
 
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what it
-// wrote. The commands print to os.Stdout directly, and the point of these tests
-// is the entry points themselves -- the formatting is covered by writeShow's own
-// tests -- so the redirect is what makes the wiring testable without a subprocess.
+// captureStdout runs fn with os.Stdout redirected to a temporary file and
+// returns what it wrote. The commands print to os.Stdout directly, and the point
+// of these tests is the entry points themselves -- the formatting is covered by
+// writeShow's own tests -- so the redirect is what makes the wiring testable
+// without a subprocess.
+//
+// A file rather than a pipe: nothing reads a pipe until fn returns, so on a
+// platform whose pipe buffer is smaller than the output -- 4 KiB on Windows --
+// the writer blocks and the test hangs instead of failing.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	r, w, err := os.Pipe()
+
+	f, err := os.CreateTemp(t.TempDir(), "stdout")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	old := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = old }()
-
+	os.Stdout = f
 	fn()
+	os.Stdout = old
 
-	if err := w.Close(); err != nil {
+	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	out, err := io.ReadAll(r)
+	out, err := os.ReadFile(f.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
