@@ -257,12 +257,41 @@ Without a hook nothing about the parse changes, so tools that browse historical
 dirty data keep working. Legal CS padding such as `"GB18030 \ISO_IR 100"` is
 normalized and never reported.
 
+`DiagnosticInvalidCharacterData` is reported element by element only up to a
+point: one dirty study fails thousands of values, and a library that hands a hook
+a struct and a log line per value wastes the caller's memory to say the same
+thing repeatedly. The reader reports the first eight
+(`DefaultMaxInvalidCharacterDataDiagnostics`) and then, when the dataset
+finishes, one summary whose `Count` says how many that summary stands for and
+whose tag, offset and path point at the first of them. `ReadOptions.
+MaxInvalidCharacterDataDiagnostics` moves the cap; a negative value removes it,
+which is what a caller building a per-element report wants.
+
 Both diagnostics describe a declaration godicom can see is wrong. They do not
 catch a file that declares `ISO_IR 6` — or omits `(0008,0005)` — and ships
 national bytes anyway. That declaration is legal, and godicom keeps the
 repertoire the file asked for instead of guessing, so such a value still comes
-back undecoded. Detecting it would mean validating every text value against
-`ISO_IR 6`, which is a separate decision with its own compatibility cost.
+back undecoded. Detecting it means validating every text value against
+`ISO_IR 6`, which would also flag Latin-1 free text that has been archived
+unremarked for twenty years, so it is opt-in:
+
+```go
+opts := &godicom.ReadOptions{
+	ReportNonASCIIUnderDefaultCharset: true,
+	OnDiagnostic: func(d godicom.Diagnostic) error {
+		if d.Kind == godicom.DiagnosticMisdeclaredCharacterSet {
+			// d.Tag names the first element that proves the declaration wrong
+			return d // or quarantine the study and re-read it with the right set
+		}
+		return nil
+	},
+}
+```
+
+It fires once per dataset, not once per element: the wrong declaration is one
+fact about the file. Even then the reader does not guess — it only tells you the
+bytes cannot mean what the header says, and leaves the repair to
+`ReinterpretCharacterSet`.
 
 When you know the declaration is wrong, say what it should have been instead of
 editing `(0008,0005)` and saving: the value holds the bytes of the file, not

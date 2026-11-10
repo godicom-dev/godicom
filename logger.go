@@ -30,6 +30,7 @@ const (
 	AttrSequencePath   = "sequence_path" // enclosing sequences as "(gggg,eeee)[i]", outermost first
 	AttrNeed           = "need"          // bytes the encoding called for
 	AttrHave           = "have"          // bytes actually available
+	AttrCount          = "count"         // elements a summary diagnostic stands for
 	AttrError          = "error"
 )
 
@@ -155,6 +156,9 @@ func logDiagnostic(ctx context.Context, d Diagnostic) {
 	}
 	if d.Need != 0 || d.Have != 0 {
 		args = append(args, AttrNeed, d.Need, AttrHave, d.Have)
+	}
+	if d.Count > 0 {
+		args = append(args, AttrCount, d.Count)
 	}
 	if d.Err != nil {
 		args = append(args, AttrError, d.Err.Error())

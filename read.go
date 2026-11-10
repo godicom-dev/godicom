@@ -99,6 +99,44 @@ type ReadOptions struct {
 	// load. Deferred loads are triggered by Dataset.Get, so a hook must be safe
 	// to call from wherever the dataset is used.
 	OnDiagnostic func(Diagnostic) error
+	// MaxInvalidCharacterDataDiagnostics caps how many
+	// DiagnosticInvalidCharacterData the reader reports element by element for a
+	// single dataset. Once the cap is reached the reader stops reporting them
+	// individually and, when the dataset finishes, reports one more carrying the
+	// count in Diagnostic.Count and the tag, offset and path of the first element
+	// it stands for.
+	//
+	// Zero means DefaultMaxInvalidCharacterDataDiagnostics, which is eight. A
+	// negative value removes the cap and reports every element, for a caller
+	// building a per-element report rather than a summary. The option only
+	// changes how much is reported: what gets parsed, and what a value holds,
+	// is the same either way.
+	MaxInvalidCharacterDataDiagnostics int
+	// ReportNonASCIIUnderDefaultCharset makes the reader report a text value
+	// whose bytes leave the default repertoire -- 0x00-0x7F, which is what
+	// ISO_IR 6 declares and what an absent (0008,0005) implies -- through
+	// DiagnosticMisdeclaredCharacterSet, once per dataset.
+	//
+	// This is off by default on purpose. The bytes it catches are two
+	// populations: text from older Chinese and Japanese equipment, which ships a
+	// national encoding without declaring it and reads as mojibake today, and
+	// Latin-1 free text that has been archived unremarked for twenty years. There
+	// is no way to tell them apart from the bytes, so a reader that reported them
+	// by default would start failing studies that read exactly as they always
+	// did under any hook that rejects diagnostics.
+	//
+	//	A scan that wants to find these files, without changing what it stores:
+	//	opts := &ReadOptions{ReportNonASCIIUnderDefaultCharset: true,
+	//		OnDiagnostic: func(d Diagnostic) error {
+	//			if d.Kind == DiagnosticMisdeclaredCharacterSet {
+	//				log.Println(d) // names the element and how many bytes are above 0x7F
+	//			}
+	//			return nil
+	//		}}
+	//
+	// The reporting is not the repair: Dataset.ReinterpretCharacterSet decodes the
+	// same bytes under the set the caller names, whether or not this was on.
+	ReportNonASCIIUnderDefaultCharset bool
 	// Dictionary resolves tags to their data dictionary entries for this read.
 	// When nil, Standard is used.
 	//
@@ -142,6 +180,21 @@ func diagnosticHook(opts *ReadOptions) func(Diagnostic) error {
 		return nil
 	}
 	return opts.OnDiagnostic
+}
+
+// invalidCharLimitFrom carries ReadOptions.MaxInvalidCharacterDataDiagnostics
+// into a parse unchanged, including its zero value: the reader resolves zero to
+// DefaultMaxInvalidCharacterDataDiagnostics when it counts, so the zero value of
+// readContext behaves the same as the default option.
+func invalidCharLimitFrom(opts *ReadOptions) int {
+	if opts == nil {
+		return 0
+	}
+	return opts.MaxInvalidCharacterDataDiagnostics
+}
+
+func reportsDefaultCharset(opts *ReadOptions) bool {
+	return opts != nil && opts.ReportNonASCIIUnderDefaultCharset
 }
 
 func hasExplicitVRAt(data []byte, pos int64) bool {
@@ -335,12 +388,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 	allElements := make([]*DataElement, 0)
 	cc.Charsets = []string{DefaultCharacterSet}
 	readCtx := &readContext{
-		data:     data,
-		filename: filename,
-		modTime:  modTime,
-		ctx:      ctx,
-		onDiag:   diagnosticHook(opts),
-		dict:     readDictionary(opts),
+		data:                 data,
+		filename:             filename,
+		modTime:              modTime,
+		ctx:                  ctx,
+		onDiag:               diagnosticHook(opts),
+		dict:                 readDictionary(opts),
+		invalidCharLimit:     invalidCharLimitFrom(opts),
+		reportDefaultCharset: reportsDefaultCharset(opts),
 	}
 	resolve := elementsResolver(readCtx, &allElements)
 
@@ -574,6 +629,14 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		fd.Timestamp = fmt.Sprintf("%d", modTime)
 	}
 	ds.readCtx = readCtx
+
+	// One element's worth of diagnostics was reported as it was parsed; what the
+	// cap held back is reported as a single summary now, while there is still a
+	// hook to report through. A strict hook fails the read here, which is the
+	// right moment: the dataset is complete and nothing has been handed over.
+	if err := readCtx.flushInvalidCharacterData(); err != nil {
+		return nil, err
+	}
 
 	return fd, nil
 }
@@ -1053,16 +1116,13 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext,
 		if !vrUsesCharacterSet(vr) {
 			return nil
 		}
-		return rc.report(Diagnostic{
-			Kind:   DiagnosticInvalidCharacterData,
-			Tag:    elem.Tag,
-			VR:     vr,
-			Offset: valueStart,
-			Err:    err,
-		})
+		return rc.reportInvalidCharacterData(elem.Tag, vr, valueStart, err)
 	}
 	elem.Value = converted
-	return nil
+	// The value decoded, which for the default repertoire proves nothing: every
+	// byte sequence "decodes" when the set is not used at all. Ask the other
+	// question, and only when the caller said they want it answered.
+	return rc.checkDefaultCharacterSet(elem.Tag, vr, valueStart, value, decodeCharsets)
 }
 
 // ReadFile reads a DICOM file from filename.
