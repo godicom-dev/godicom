@@ -64,6 +64,23 @@ type readContext struct {
 	// baseOffset shifts diagnostic offsets back into source coordinates when a
 	// parser is handed a buffer copied out of the middle of the source.
 	baseOffset int64
+
+	// invalidCharLimit caps the per-element DiagnosticInvalidCharacterData this
+	// dataset reports, straight from ReadOptions: zero means the default cap,
+	// negative means no cap. The counters that follow are what a summary is
+	// assembled from at the end of the parse, and they are why this state lives
+	// here rather than in codecContext -- codecContext is per nesting level, and
+	// the cap is per dataset.
+	invalidCharLimit      int
+	invalidCharReported   int
+	invalidCharSuppressed int
+	invalidCharFirst      Diagnostic
+
+	// reportDefaultCharset is ReadOptions.ReportNonASCIIUnderDefaultCharset, and
+	// misdeclaredReported makes the diagnostic it enables fire once per dataset
+	// rather than once per element.
+	reportDefaultCharset bool
+	misdeclaredReported  bool
 }
 
 // dictionary returns the data dictionary this parse resolves against: the one

@@ -2,9 +2,29 @@ package godicom
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+)
+
+// DefaultMaxInvalidCharacterDataDiagnostics is how many
+// DiagnosticInvalidCharacterData the reader reports element by element for one
+// dataset before it collapses the rest into a single summary. It is the value
+// ReadOptions.MaxInvalidCharacterDataDiagnostics of zero resolves to.
+//
+// Eight is arbitrary but not accidental: it is enough to show a caller the shape
+// of the damage -- which VRs, which sequences, whether it is one value or the
+// whole file -- and small enough that a study with three thousand bad elements
+// does not produce three thousand structs and three thousand log lines.
+const DefaultMaxInvalidCharacterDataDiagnostics = 8
+
+// errInvalidCharacterDataSuppressed is the Err of the summary diagnostic that
+// stands for every invalid_character_data the cap held back. It names the option
+// that lifts the cap, because the caller who reads this message is the one who
+// wants every element.
+var errInvalidCharacterDataSuppressed = errors.New(
+	"more elements could not be decoded; set ReadOptions.MaxInvalidCharacterDataDiagnostics to a negative value to report each one",
 )
 
 // DiagnosticKind classifies an anomaly reported to ReadOptions.OnDiagnostic or
@@ -56,7 +76,36 @@ const (
 	// DiagnosticInvalidCharacterData: a text VR could not be converted with the
 	// character set in effect. The undecoded bytes remain in RawValue, so a
 	// strict caller can reject the dataset without losing the source bytes.
+	//
+	// Reported for at most ReadOptions.MaxInvalidCharacterDataDiagnostics
+	// elements -- eight by default -- and then once more for the dataset as a
+	// whole, with Count holding how many elements that summary stands for. One
+	// dirty study fails thousands of elements, and the first few say everything
+	// the rest would; a caller who really wants each one sets the option to a
+	// negative value.
 	DiagnosticInvalidCharacterData DiagnosticKind = "invalid_character_data"
+
+	// DiagnosticMisdeclaredCharacterSet: a text VR carries bytes outside
+	// 0x00-0x7F while the character set in effect is the default repertoire --
+	// ISO_IR 6, or no (0008,0005) at all. PS3.5 defines no meaning for those
+	// bytes under that declaration, and in practice they are a national encoding
+	// that was never declared: a GBK name in a file whose header says ASCII,
+	// which is what older Chinese and Japanese equipment and several gateways
+	// emit.
+	//
+	// Raised only when ReadOptions.ReportNonASCIIUnderDefaultCharset is set, and
+	// then once per dataset -- the wrong declaration is one fact about the file,
+	// and the element named here is the first that showed it. It is off by
+	// default because the same bytes also occur in Latin-1 free text that has
+	// been archived unremarked for twenty years, so turning it on by default
+	// would reject files that read exactly as they always did. pydicom does not
+	// detect the case at all: it decodes the default repertoire as Latin-1, which
+	// never fails.
+	//
+	// Detection is not the repair. Dataset.ReinterpretCharacterSet decodes the
+	// stored bytes under the set the caller declares, and works whether or not
+	// this was reported.
+	DiagnosticMisdeclaredCharacterSet DiagnosticKind = "misdeclared_character_set"
 )
 
 // raisedWhileWriting reports whether k comes from the writer rather than the
@@ -112,6 +161,13 @@ type Diagnostic struct {
 	Need int64
 	Have int64
 
+	// Count is how many elements the diagnostic stands for, set only on a
+	// summary that collapsed a run of them: the invalid_character_data reported
+	// once a dataset has produced more than its cap allows. Tag, VR, Offset and
+	// Path then describe the first element the summary covers. It is zero on a
+	// diagnostic that concerns exactly one element, which is every other case.
+	Count int
+
 	// Err is the underlying cause, when the anomaly wraps one.
 	Err error
 }
@@ -141,6 +197,9 @@ func (d Diagnostic) Error() string {
 	}
 	if d.Need != 0 || d.Have != 0 {
 		fmt.Fprintf(&b, ": need %d bytes, have %d", d.Need, d.Have)
+	}
+	if d.Count > 0 {
+		fmt.Fprintf(&b, " for %d elements", d.Count)
 	}
 	if d.Err != nil {
 		fmt.Fprintf(&b, ": %v", d.Err)
@@ -270,6 +329,123 @@ func (rc *readContext) reportUnknownCharacterSets(value interface{}, valueStart 
 		Offset: valueStart,
 		Err:    unknown,
 	})
+}
+
+// reportInvalidCharacterData offers one text element that could not be decoded
+// with the character set in effect, as long as this dataset has not already used
+// up ReadOptions.MaxInvalidCharacterDataDiagnostics.
+//
+// Past the cap the element is counted and dropped, and flushInvalidCharacterData
+// reports one summary at the end of the parse. The first few diagnostics say
+// everything the rest would -- same Kind, same cause, different tags -- so a
+// caller auditing an archive gets a readable report instead of one line per bad
+// element, and a caller building a data structure does not allocate thousands of
+// Diagnostics it will throw away.
+func (rc *readContext) reportInvalidCharacterData(tag Tag, vr VR, pos int64, cause error) error {
+	if rc == nil {
+		return nil
+	}
+	// A zero limit is the default cap, not "report nothing": readContext is built
+	// in several places and the zero value has to mean the sane thing, or a
+	// decoder that forgets to set the field silently loses the diagnostic.
+	limit := rc.invalidCharLimit
+	if limit == 0 {
+		limit = DefaultMaxInvalidCharacterDataDiagnostics
+	}
+	if limit > 0 && rc.invalidCharReported >= limit {
+		if rc.invalidCharSuppressed == 0 {
+			// Kept as the offset and path of the element itself, already in
+			// source coordinates: the summary is raised from the top level, long
+			// after the sequence this element was in has been popped, so nothing
+			// down there can be recomputed at flush time.
+			rc.invalidCharFirst = Diagnostic{
+				Tag:    tag,
+				VR:     vr,
+				Offset: pos + rc.baseOffset,
+			}
+			if len(rc.seqPath) > 0 {
+				rc.invalidCharFirst.Path = append([]PathStep(nil), rc.seqPath...)
+			}
+		}
+		rc.invalidCharSuppressed++
+		return nil
+	}
+	rc.invalidCharReported++
+	return rc.report(Diagnostic{
+		Kind:   DiagnosticInvalidCharacterData,
+		Tag:    tag,
+		VR:     vr,
+		Offset: pos,
+		Err:    cause,
+	})
+}
+
+// flushInvalidCharacterData reports what the cap held back, once, when the
+// top-level parse ends. It is a no-op when nothing was suppressed, which is the
+// case for every file whose text all decodes.
+//
+// rc.baseOffset is zero here by construction -- every setBase is undone on the
+// way out of the function that made it -- so the offset recorded with the first
+// suppressed element is already final and rc.report adds nothing to it.
+func (rc *readContext) flushInvalidCharacterData() error {
+	if rc == nil || rc.invalidCharSuppressed == 0 {
+		return nil
+	}
+	suppressed := rc.invalidCharSuppressed
+	rc.invalidCharSuppressed = 0
+	d := rc.invalidCharFirst
+	d.Kind = DiagnosticInvalidCharacterData
+	d.Count = suppressed
+	d.Err = errInvalidCharacterDataSuppressed
+	return rc.report(d)
+}
+
+// checkDefaultCharacterSet offers one text value to OnDiagnostic when it carries
+// bytes the default repertoire does not define. Off unless the caller asked for
+// it, and then once per dataset: the declaration is wrong or it is not, and the
+// element that proves it is this one.
+//
+// Nothing about the value changes. The bytes are already in RawValue and the
+// element value is the same string it was before -- what the caller gains is a
+// way to refuse, quarantine, or re-declare the file, which is what
+// Dataset.ReinterpretCharacterSet is for.
+func (rc *readContext) checkDefaultCharacterSet(tag Tag, vr VR, pos int64, value []byte, charsets []string) error {
+	if rc == nil || !rc.reportDefaultCharset || rc.misdeclaredReported {
+		return nil
+	}
+	if !vrUsesCharacterSet(vr) || !defaultCharacterSetInEffect(charsets) {
+		return nil
+	}
+	high := 0
+	for _, b := range value {
+		if b >= 0x80 {
+			high++
+		}
+	}
+	if high == 0 {
+		return nil
+	}
+	rc.misdeclaredReported = true
+	return rc.report(Diagnostic{
+		Kind:   DiagnosticMisdeclaredCharacterSet,
+		Tag:    tag,
+		VR:     vr,
+		Offset: pos,
+		Err: fmt.Errorf(
+			"%d byte(s) above 0x7F, which %s does not define: the value is most likely a national encoding that was never declared",
+			high, DefaultCharacterSet),
+	})
+}
+
+// defaultCharacterSetInEffect reports whether the declared character set is the
+// default repertoire, for which PS3.5 defines nothing above 0x7F. An absent or
+// empty (0008,0005) is the default too.
+func defaultCharacterSetInEffect(charsets []string) bool {
+	normalized := ConvertCharacterSets(charsets)
+	if len(normalized) == 0 {
+		return true
+	}
+	return isDefaultCharacterSet(normalized[0])
 }
 
 // report logs d and offers it to the OnDiagnostic hook, returning whatever the

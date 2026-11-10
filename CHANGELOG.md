@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file instead of silently storing a GB18030 Chinese name as mojibake
 - `DiagnosticInvalidCharacterData` is reported when a text VR cannot be decoded
   with the declared character set. `RawValue` keeps the undecoded bytes
+- `ReadOptions.ReportNonASCIIUnderDefaultCharset` makes the reader report a text
+  value carrying bytes above `0x7F` while the default repertoire is in effect —
+  `ISO_IR 6`, or no `(0008,0005)` at all — as `DiagnosticMisdeclaredCharacterSet`,
+  once per dataset with the first offending element. This is the declaration
+  older Chinese and Japanese equipment ships without saying so, and it used to
+  read as mojibake with nothing reported. It is off by default: the same bytes
+  also occur in Latin-1 free text that archives without complaint, and turning it
+  on would reject studies that read exactly as they always did under any hook
+  that fails closed. pydicom does not detect the case at all
 - `Dataset.ReinterpretCharacterSet` decodes the text of a dataset that was read
   from bytes using the set the caller declares, and updates `(0008,0005)` to
   match. That is the repair for a file whose declaration is wrong, which is the
@@ -27,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   since the read are left alone
 
 ### Changed
+- `DiagnosticInvalidCharacterData` is reported for at most
+  `DefaultMaxInvalidCharacterDataDiagnostics` (eight) elements per dataset, and
+  then once more as a summary whose `Count` holds how many elements it stands
+  for, with the tag, offset and path of the first of them. A dirty study used to
+  emit one diagnostic and one warn log line per undecodable value — thousands for
+  a real archive — which buried the signal the diagnostics were added for.
+  `ReadOptions.MaxInvalidCharacterDataDiagnostics` moves the cap, and a negative
+  value reports every element as before. What gets parsed and what a value holds
+  are unchanged
 - Writing a dataset after changing `(0008,0005)` is refused with
   `ErrCharsetChangeLosesText` when the dataset was read under a set that does
   not decode and a text value still holds non-ASCII bytes from the source. The

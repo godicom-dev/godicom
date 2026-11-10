@@ -64,6 +64,10 @@ func DecodeDatasetEncodingContext(ctx context.Context, data []byte, isImplicitVR
 	if err != nil {
 		return nil, fmt.Errorf("godicom: error decoding dataset: %w", err)
 	}
+	// No hook is reachable from these entry points, so this only emits the
+	// summary log line; without it a caller logging the first eight bad elements
+	// of a dataset would never learn there were more.
+	_ = rc.flushInvalidCharacterData()
 	ds.originalEnc = enc
 	propagateEncoding(ds, ds.originalEnc)
 	captureOriginalCharsets(ds)

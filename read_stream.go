@@ -186,13 +186,15 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 	// No in-memory copy of the file: deferred loads reopen filename, or re-read
 	// through ra when there is no path to reopen (a non-*os.File ReadSeeker).
 	readCtx := &readContext{
-		filename: filename,
-		modTime:  modTime,
-		size:     size,
-		src:      ra,
-		ctx:      ctx,
-		onDiag:   diagnosticHook(opts),
-		dict:     readDictionary(opts),
+		filename:             filename,
+		modTime:              modTime,
+		size:                 size,
+		src:                  ra,
+		ctx:                  ctx,
+		onDiag:               diagnosticHook(opts),
+		dict:                 readDictionary(opts),
+		invalidCharLimit:     invalidCharLimitFrom(opts),
+		reportDefaultCharset: reportsDefaultCharset(opts),
 	}
 	resolve := elementsResolver(readCtx, &allElements)
 
@@ -395,7 +397,11 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		continue
 	}
 
-	return assembleFileDataset(allElements, preamble, filename, modTime, cc.EncodingInfo, readCtx), nil
+	fd := assembleFileDataset(allElements, preamble, filename, modTime, cc.EncodingInfo, readCtx)
+	if err := readCtx.flushInvalidCharacterData(); err != nil {
+		return nil, err
+	}
+	return fd, nil
 }
 
 // readElementHeaderAt decodes the header at pos by pulling the at most 12 bytes
@@ -562,6 +568,8 @@ func finishDeflated(
 		sub.SpecificTags = opts.SpecificTags
 		sub.Logger = opts.Logger
 		sub.OnDiagnostic = opts.OnDiagnostic
+		sub.MaxInvalidCharacterDataDiagnostics = opts.MaxInvalidCharacterDataDiagnostics
+		sub.ReportNonASCIIUnderDefaultCharset = opts.ReportNonASCIIUnderDefaultCharset
 		// Every field the caller set has to be carried across, and this one decides
 		// what the elements past the File Meta *mean*: dropping it would read the
 		// inflated dataset against PS3.6 alone, so a Deflated file would resolve a
