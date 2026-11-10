@@ -74,6 +74,11 @@ type writeSource struct {
 
 // writeFile writes a Dataset to a DICOM file.
 func writeFile(ctx context.Context, filename string, source writeSource, opts *WriteOptions) error {
+	// Checked before the file is created: refusing after os.Create would leave an
+	// empty file where a good one used to be.
+	if err := validateCharsetChange(source.dataset); err != nil {
+		return err
+	}
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -104,6 +109,12 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 				"godicom: File Meta Information group elements (0002,eeee) must be in FileDataset.FileMeta, not the dataset",
 			)
 		}
+	}
+
+	// Before the preamble and File Meta go out: a refusal here leaves no partial
+	// file behind, which matters for a caller that writes straight to a path.
+	if err := validateCharsetChange(source.dataset); err != nil {
+		return err
 	}
 
 	fileMeta := source.fileMeta
@@ -407,6 +418,31 @@ func charsetChanged(ds *Dataset) bool {
 	return false
 }
 
+// validateCharsetChange refuses to write a dataset whose (0008,0005) was changed
+// while text values still hold the undecoded bytes of the source. Those bytes
+// were never text, so re-encoding them replaces every non-ASCII run with U+FFFD:
+// the value is destroyed, and the file looks fine afterwards. Dataset.
+// ReinterpretCharacterSet decodes the bytes under the declared set instead, and
+// leaves the dataset consistent so this passes. A dataset read under a set that
+// does decode is unaffected -- its values are Unicode, and re-encoding them is
+// the documented behaviour of a charset change.
+func validateCharsetChange(ds *Dataset) error {
+	if !charsetChanged(ds) || charsetDecodesText(ds.originalCharsets) {
+		return nil
+	}
+	tag, found, err := firstUndecodedTextTag(ds)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: %s holds bytes that were read as %q and never decoded; call Dataset.ReinterpretCharacterSet with the new %s before changing it",
+		ErrCharsetChangeLosesText, tagName(tag), strings.Join(ds.originalCharsets, `\`), TagCharset,
+	)
+}
+
 // writeDataset writes ds with a fresh write state, and so with no diagnostic
 // hook. Callers that have a *WriteOptions build the state themselves and use
 // writeDatasetState, so their hook survives the recursion into sequence items.
@@ -422,6 +458,15 @@ func writeDatasetState(fp *dicomIO, ds *Dataset, cc codecContext, reencodeValues
 		cc.Charsets = []string{DefaultCharacterSet}
 	}
 	cc.Charsets = append([]string(nil), cc.Charsets...)
+
+	// A dataset read under a set that does not decode (ISO_IR 6 or absent) keeps
+	// the file's bytes as its text values. Changing (0008,0005) then re-encodes
+	// those bytes as if they were text, and every non-ASCII run becomes U+FFFD.
+	// Refuse instead of writing a corrupted name; ReinterpretCharacterSet is the
+	// repair, and it leaves the dataset consistent so this check passes.
+	if err := validateCharsetChange(ds); err != nil {
+		return err
+	}
 
 	reencode := reencodeValues || charsetChanged(ds)
 	if !cc.IsImplicitVR || reencode {
