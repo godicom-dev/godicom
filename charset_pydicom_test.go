@@ -181,6 +181,40 @@ func TestMissingEscapeFallsBackToFirstEncoding(t *testing.T) {
 	}
 }
 
+// Pins what happens when the escape sequence names a character set the dataset
+// never declared: there is no decoder to switch to, so the whole fragment is
+// decoded with the first declared set and substitutions are tolerated. The file
+// is not rejected -- one stray escape should not make an otherwise readable
+// value unreadable -- which is why this path decodes with replacement while the
+// plain path reports "undecodable byte sequence" for the same bytes.
+//
+// No pydicom test covers this exact shape; the reachable behaviour is godicom's
+// own, so it is pinned here rather than ported.
+func TestUndeclaredEscapeDecodesWithReplacement(t *testing.T) {
+	t.Parallel()
+	// ESC $ B declares ISO 2022 IR 87 (JIS X 0208); neither dataset below
+	// declares it, and 0x80 / 0x81 are not valid in either first encoding.
+	raw := []byte("\x1b\x24\x42\x80\x81")
+
+	got := DecodeBytesWithDelimiters(raw, []string{"ISO 2022 IR 13"}, pnDelims)
+	want := "\x1b$B\u0080\ufffd"
+	if got != want {
+		t.Fatalf("decoded %q, want %q", got, want)
+	}
+
+	got = DecodeBytesWithDelimiters(raw, []string{"ISO_IR 126"}, pnDelims)
+	want = "\x1b$B\ufffd\ufffd"
+	if got != want {
+		t.Fatalf("decoded %q, want %q", got, want)
+	}
+
+	// The same bytes through the strict path, to show the two differ and that
+	// this is the branch being pinned.
+	if _, err := decodeSimpleBytesChecked(raw, "ISO_IR 126"); err == nil {
+		t.Fatal("strict decode of the same bytes should fail")
+	}
+}
+
 // Port of test_convert_encodings_warnings, behaviour half only: a stand-alone
 // character set cannot be used as a code extension, so it is dropped from the
 // extension position instead of breaking the first encoding. pydicom also warns
