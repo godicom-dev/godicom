@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with national bytes, and a single byte set in front of GBK bytes, where the
   read produced mojibake that nothing reported. Elements the caller has replaced
   since the read are left alone
+- `encaps.GetFrameFrom` reads one frame of encapsulated pixel data out of an
+  `io.ReaderAt` instead of a `[]byte`, so a frame can be had from a file without
+  holding the element. It covers what pydicom's `pixel_data_reader` parameter
+  does: with a Basic or Extended Offset Table, locating a frame costs the item
+  headers, and with neither it costs the last ten bytes of each fragment, where
+  the JPEG EOI marker that delimits frames lives. `GetFrame` now delegates to it,
+  so the two produce identical bytes and the identical error for an index out of
+  range. Reading frame 5 of 8 costs 12% of the element instead of all of it
 
 ### Changed
 - `DiagnosticInvalidCharacterData` is reported for at most

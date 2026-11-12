@@ -251,8 +251,8 @@ func TestFramesFromExtendedOutOfRange(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := framesFromExtended(rest, FramesOptions{
-				ExtendedOffsets: &ExtendedOffsetTable{Offsets: tc.offsets, Lengths: tc.lengths},
+			_, err := framesFromExtendedRanges(sliceReader{buf: rest}, 0, &ExtendedOffsetTable{
+				Offsets: tc.offsets, Lengths: tc.lengths,
 			})
 			if err == nil || !strings.Contains(err.Error(), "extended offset 0 out of range") {
 				t.Fatalf("err = %v, want extended offset 0 out of range", err)
@@ -330,14 +330,16 @@ func TestHasEOIMarker(t *testing.T) {
 func TestFramesByEOIMarkerFlushesTrailingFrame(t *testing.T) {
 	// A final group of fragments with no EOI marker is corrupt but still yielded,
 	// mirroring pydicom's "fewer frames than expected" warning path.
-	fragments := [][]byte{
-		{0x01, 0xFF, 0xD9},
-		{0x02, 0x00},
+	buf := append(item([]byte{0x01, 0xFF, 0xD9}), item([]byte{0x02, 0x00})...)
+	r := sliceReader{buf: buf}
+	fragments, err := fragmentRanges(r, 0)
+	if err != nil {
+		t.Fatalf("fragmentRanges: %v", err)
 	}
 
-	frames, err := framesByEOIMarker(fragments, 4)
+	frames, err := framesByEOIMarkerRanges(r, fragments)
 	if err != nil {
-		t.Fatalf("framesByEOIMarker: %v", err)
+		t.Fatalf("framesByEOIMarkerRanges: %v", err)
 	}
 	if len(frames) != 2 {
 		t.Fatalf("got %d frames, want 2", len(frames))
