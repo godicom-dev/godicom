@@ -24,7 +24,11 @@ func parseUnknownInlineBinary(tag godicom.Tag, value []byte) (*godicom.DataEleme
 
 func parseKnownVRValue(tag godicom.Tag, vr godicom.VR, value []byte) (interface{}, error) {
 	if vr == godicom.VRSQ {
-		return parseImplicitLittleEndianSequence(value)
+		seq, _, err := parseImplicitLittleEndianSequence(value)
+		if err != nil {
+			return nil, err
+		}
+		return seq, nil
 	}
 	if isBinaryVR(vr) {
 		return value, nil
@@ -55,7 +59,15 @@ func parseKnownVRValue(tag godicom.Tag, vr godicom.VR, value []byte) (interface{
 	return text, nil
 }
 
-func parseImplicitLittleEndianSequence(data []byte) (*godicom.Sequence, error) {
+// parseImplicitLittleEndianSequence parses the items of a sequence value and
+// returns the offset it stopped at: the Sequence Delimiter tag that ended the
+// sequence, or wherever the value ran out.
+//
+// Callers that continue reading after the sequence must use that offset. The
+// previous version searched the raw bytes for the delimiter instead, which a
+// legal value can contain -- an OB or UN value holding FE FF DD E0 ends the
+// search early and leaves the caller reading from the middle of a value.
+func parseImplicitLittleEndianSequence(data []byte) (*godicom.Sequence, int, error) {
 	items := make([]*godicom.Dataset, 0)
 	pos := 0
 	for pos+8 <= len(data) {
@@ -64,14 +76,14 @@ func parseImplicitLittleEndianSequence(data []byte) (*godicom.Sequence, error) {
 			break
 		}
 		if tag != godicom.ItemTag {
-			return nil, fmt.Errorf("dicomjson: expected item tag in UN SQ, got %s", tag)
+			return nil, 0, fmt.Errorf("dicomjson: expected item tag in UN SQ, got %s", tag)
 		}
 		length := binary.LittleEndian.Uint32(data[pos+4 : pos+8])
 		pos += 8
 		if length == 0xFFFFFFFF {
 			item, newPos, err := parseUndefinedLengthItem(data, pos)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			items = append(items, item)
 			pos = newPos
@@ -79,35 +91,37 @@ func parseImplicitLittleEndianSequence(data []byte) (*godicom.Sequence, error) {
 		}
 		end := pos + int(length)
 		if end > len(data) {
-			return nil, fmt.Errorf("dicomjson: UN SQ item length exceeds value")
+			return nil, 0, fmt.Errorf("dicomjson: UN SQ item length exceeds value")
 		}
-		item, err := parseImplicitLittleEndianDataset(data[pos:end])
+		item, _, err := parseImplicitLittleEndianDataset(data[pos:end])
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 		pos = end
 	}
-	return godicom.NewSequence(items), nil
+	return godicom.NewSequence(items), pos, nil
 }
 
+// parseUndefinedLengthItem parses an item whose length is undefined: its
+// dataset runs until the Item Delimiter tag that closes it. The delimiter comes
+// from the dataset parser's stop offset, so a value inside the item that
+// happens to hold the same four bytes no longer ends the item early.
 func parseUndefinedLengthItem(data []byte, pos int) (*godicom.Dataset, int, error) {
-	start := pos
-	for pos+8 <= len(data) {
-		tag := readLittleEndianTag(data[pos : pos+4])
-		if tag == godicom.ItemDelimiterTag {
-			item, err := parseImplicitLittleEndianDataset(data[start:pos])
-			if err != nil {
-				return nil, 0, err
-			}
-			return item, pos + 8, nil
-		}
-		pos++
+	item, stop, err := parseImplicitLittleEndianDataset(data[pos:])
+	if err != nil {
+		return nil, 0, err
 	}
-	return nil, 0, fmt.Errorf("dicomjson: unterminated undefined length item")
+	delim := pos + stop
+	if delim+8 > len(data) || readLittleEndianTag(data[delim:delim+4]) != godicom.ItemDelimiterTag {
+		return nil, 0, fmt.Errorf("dicomjson: unterminated undefined length item")
+	}
+	return item, delim + 8, nil
 }
 
-func parseImplicitLittleEndianDataset(data []byte) (*godicom.Dataset, error) {
+// parseImplicitLittleEndianDataset parses elements until an item or sequence
+// delimiter, and returns the offset that delimiter sits at.
+func parseImplicitLittleEndianDataset(data []byte) (*godicom.Dataset, int, error) {
 	ds := godicom.NewDataset()
 	pos := 0
 	for pos+8 <= len(data) {
@@ -123,11 +137,11 @@ func parseImplicitLittleEndianDataset(data []byte) (*godicom.Dataset, error) {
 		}
 		if length == 0xFFFFFFFF {
 			if vr != godicom.VRSQ {
-				return nil, fmt.Errorf("dicomjson: unsupported undefined length VR %s for %s", vr, tag)
+				return nil, 0, fmt.Errorf("dicomjson: unsupported undefined length VR %s for %s", vr, tag)
 			}
 			seq, newPos, err := parseUndefinedLengthSequence(data, pos)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			ds.Set(godicom.NewDataElement(tag, vr, seq))
 			pos = newPos
@@ -135,30 +149,30 @@ func parseImplicitLittleEndianDataset(data []byte) (*godicom.Dataset, error) {
 		}
 		end := pos + int(length)
 		if end > len(data) {
-			return nil, fmt.Errorf("dicomjson: element %s length exceeds dataset", tag)
+			return nil, 0, fmt.Errorf("dicomjson: element %s length exceeds dataset", tag)
 		}
 		value, err := parseKnownVRValue(tag, vr, data[pos:end])
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		ds.Set(godicom.NewDataElement(tag, vr, value))
 		pos = end
 	}
-	return ds, nil
+	return ds, pos, nil
 }
 
+// parseUndefinedLengthSequence parses a sequence element whose length is
+// undefined and returns the offset just past its Sequence Delimiter tag.
 func parseUndefinedLengthSequence(data []byte, pos int) (*godicom.Sequence, int, error) {
-	seq, err := parseImplicitLittleEndianSequence(data[pos:])
+	seq, stop, err := parseImplicitLittleEndianSequence(data[pos:])
 	if err != nil {
 		return nil, 0, err
 	}
-	for pos+8 <= len(data) {
-		if readLittleEndianTag(data[pos:pos+4]) == godicom.SequenceDelimiterTag {
-			return seq, pos + 8, nil
-		}
-		pos++
+	delim := pos + stop
+	if delim+8 > len(data) || readLittleEndianTag(data[delim:delim+4]) != godicom.SequenceDelimiterTag {
+		return nil, 0, fmt.Errorf("dicomjson: unterminated undefined length sequence")
 	}
-	return nil, 0, fmt.Errorf("dicomjson: unterminated undefined length sequence")
+	return seq, delim + 8, nil
 }
 
 func parseBinaryInts(value []byte, vr godicom.VR) (interface{}, error) {

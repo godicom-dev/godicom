@@ -201,9 +201,8 @@ func TestParseInlineBinaryUNSequenceDefinedLength(t *testing.T) {
 
 func TestParseInlineBinaryUNSequenceNestedDefinedLength(t *testing.T) {
 	// A sequence nested inside an item parses as long as both lengths are known.
-	// Nested *undefined* lengths are not supported: the item scan looks for the
-	// next Item Delimiter in the raw bytes and cannot tell the inner one from the
-	// outer, which is why that shape is left to the binary reader.
+	// Nested undefined lengths are covered separately, in
+	// TestParseInlineBinaryUNSequenceNestedUndefinedLength.
 	codeElement := implicitElement(godicom.MustTag("CodeValue"), []byte("IN"))
 	innerItem := make([]byte, 8)
 	putTag(innerItem, godicom.ItemTag)
