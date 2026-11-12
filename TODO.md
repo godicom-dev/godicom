@@ -13,7 +13,11 @@ lookup (`ApplyColorLUT`), `dicomjson` (a declined BulkDataURI is inlined),
 `uid.GenerateUID`, typed getters and setters, `Dictionary` with a per-read
 private dictionary, `PrivateBlock`, read/write diagnostic hooks, streaming
 `Read`, `ReadOptions.OnElement`, a
-read-only DICOMDIR (`OpenFileSet` / `LoadFileSet`), and `Dataset.OverlayArray`.
+read-only DICOMDIR (`OpenFileSet` / `LoadFileSet`), `Dataset.OverlayArray`, and
+enhanced multi-frame functional groups — resolved per frame → shared → top
+level by `DisplayFrame`, the `...ForFrame` entry points and
+`PixelMeasures(frameIndex)`, while the dataset-wide calls keep reading shared
+and top level only.
 
 Networking (DIMSE / DICOMweb) is **out of scope** — see
 [gonetdicom](https://github.com/godicom-dev/gonetdicom).
@@ -26,7 +30,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | File-set / DICOMDIR write | Read-only tree and File ID lookup (`OpenFileSet`) | Media interchange that must write a DICOMDIR |
 | SR / codes / waveforms | Not implemented | Domain-specific tooling |
-| Enhanced multi-frame functional groups | Top-level tags only; `(5200,9229)` / `(5200,9230)` are not read, so per-frame window, rescale, spacing and palette are ignored (#96) | Enhanced CT/MR/PT display or measurement |
+| Supplemental palettes | `Supplemental Palette Color Lookup Table Sequence (0028,1450)` is not applied, so a frame relying on one renders with the primary palette | A PET/CT series that actually carries one |
 
 Do not start these without a real consumer. Prefer fixing gaps that block
 gonetdicom or an application over expanding the matrix for its own sake.
