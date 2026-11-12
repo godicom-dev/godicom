@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -76,7 +77,7 @@ type writeSource struct {
 func writeFile(ctx context.Context, filename string, source writeSource, opts *WriteOptions) error {
 	// Checked before the file is created: refusing after os.Create would leave an
 	// empty file where a good one used to be.
-	if err := validateCharsetChange(source.dataset); err != nil {
+	if err := validateWriteSource(source); err != nil {
 		return err
 	}
 	f, err := os.Create(filename)
@@ -85,6 +86,33 @@ func writeFile(ctx context.Context, filename string, source writeSource, opts *W
 	}
 	defer f.Close()
 	return writeTo(ctx, f, source, opts)
+}
+
+// validateWriteSource runs every check that can reject a file before its first
+// byte is written. writeTo repeats them, because it is also reachable from the
+// io.Writer entry points where there is no file to protect -- but a caller that
+// names a path gets the refusal while the path is still untouched, which is the
+// only version of the failure it can recover from.
+func validateWriteSource(source writeSource) error {
+	if source.dataset == nil {
+		return fmt.Errorf("godicom: missing dataset")
+	}
+	for _, elem := range source.dataset.Iter() {
+		switch elem.Tag.Group() {
+		case 0x0000:
+			return fmt.Errorf(
+				"godicom: Command Set elements (0000,eeee) are not allowed when writing a file; write the dataset alone instead",
+			)
+		case 0x0002:
+			return fmt.Errorf(
+				"godicom: File Meta Information group elements (0002,eeee) must be in FileDataset.FileMeta, not the dataset",
+			)
+		}
+	}
+	if err := validateCharsetChange(source.dataset); err != nil {
+		return err
+	}
+	return ValidateFileMeta(source.fileMeta, false)
 }
 
 // writeTo encodes a Part 10 DICOM file to w.
@@ -802,7 +830,11 @@ func encodeValue(elem *DataElement, cc codecContext, st *writeState) ([]byte, er
 	le := cc.IsLittleEndian
 	switch elem.VR {
 	case VRAE, VRAS, VRCS, VRDA, VRDT, VRLO, VRLT, VRSH, VRST, VRTM, VRUC, VRUR, VRUT:
-		return encodeStringWithCharsets(elem, cc.Charsets), nil
+		encoded := encodeStringWithCharsets(elem, cc.Charsets)
+		if err := reportInvalidStringValue(elem, st); err != nil {
+			return nil, err
+		}
+		return encoded, nil
 	case VRDS, VRIS:
 		encoded, err := encodeNumberString(elem)
 		if err != nil {
@@ -813,9 +845,17 @@ func encodeValue(elem *DataElement, cc codecContext, st *writeState) ([]byte, er
 		}
 		return encoded, nil
 	case VRUI:
-		return encodeStringWithCharsets(elem, cc.Charsets), nil
+		encoded := encodeStringWithCharsets(elem, cc.Charsets)
+		if err := reportInvalidStringValue(elem, st); err != nil {
+			return nil, err
+		}
+		return encoded, nil
 	case VRPN:
-		return encodePNWithCharsets(elem, cc.Charsets), nil
+		encoded := encodePNWithCharsets(elem, cc.Charsets)
+		if err := reportInvalidStringValue(elem, st); err != nil {
+			return nil, err
+		}
+		return encoded, nil
 	case VRFD:
 		return encodeFloats(elem, le, 8), nil
 	case VRFL:
@@ -1113,6 +1153,119 @@ func numberStringReason(vr VR, part string) error {
 		return fmt.Errorf("%q is outside [%d, %d], the range an IS allows", part, minISValue, maxISValue)
 	}
 	return nil
+}
+
+// reportInvalidStringValue offers every value of a string-VR element that
+// violates PS3.5 Table 6.2-1 to the write-side hook -- wrong length, characters
+// the VR does not define, a date that is not a date, a UID with a leading zero
+// in a component, a PN with four component groups.
+//
+// DS and IS are not handled here: they have range rules on top of the spelling
+// rules, and reportInvalidNumberString already applies both.
+//
+// Nothing about the output changes on a nil return, or with no hook set, which
+// is what every existing caller gets: a caller re-writing a file it did not
+// create must not be forced to repair values it never chose, and godicom's
+// promise has always been that a round trip preserves what was read. Returning
+// the diagnostic turns it into a failure instead. pydicom spells the same
+// three-way choice IGNORE / WARN / RAISE in
+// config.settings.writing_validation_mode.
+//
+// Validation runs on the Go value, not on the encoded bytes: a LO in a
+// GB18030-declared dataset would otherwise be measured in the wrong units, and
+// counting its characters after encoding is not possible without decoding it
+// back with a character set this function is not given.
+func reportInvalidStringValue(elem *DataElement, st *writeState) error {
+	if st == nil || elem.Value == nil {
+		return nil
+	}
+	if !hasValueValidator(elem.VR) {
+		return nil
+	}
+
+	parts, ok := stringValueParts(elem)
+	if !ok {
+		return nil
+	}
+	for _, part := range parts {
+		if err := ValidateValue(elem.VR, part); err != nil {
+			var verr *ValueValidationError
+			if !errors.As(err, &verr) {
+				return err
+			}
+			if err := st.report(Diagnostic{
+				Kind: DiagnosticInvalidValue,
+				Tag:  elem.Tag,
+				VR:   elem.VR,
+				Err:  verr,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// stringValueParts flattens elem.Value into the individual values PS3.5 lets a
+// string VR hold, so each can be measured and pattern-checked on its own. A
+// multi-valued element is one element holding several values, and it is the
+// values the standard bounds -- a three-valued LO of 60 characters each is
+// legal, a single 65-character one is not.
+//
+// The ok return is false when the value is stored as raw bytes: those carry no
+// claim about which VR semantic they follow, and guessing would produce
+// diagnostics about a value godicom never interpreted.
+func stringValueParts(elem *DataElement) ([]string, bool) {
+	switch v := elem.Value.(type) {
+	case string:
+		if valueAllowsBackslash(elem.VR) {
+			return []string{v}, true
+		}
+		return strings.Split(v, "\\"), true
+	case []string:
+		return v, true
+	case *MultiValue[string]:
+		return v.Values(), true
+	case PersonName:
+		return []string{v.String()}, true
+	case *MultiValue[PersonName]:
+		vals := v.Values()
+		out := make([]string, len(vals))
+		for i, pn := range vals {
+			out[i] = pn.String()
+		}
+		return out, true
+	case UID:
+		return []string{string(v)}, true
+	case DA:
+		return []string{v.String()}, true
+	case TM:
+		return []string{v.String()}, true
+	case DT:
+		return []string{v.String()}, true
+	case []DA:
+		return dateTimeParts(len(v), func(i int) string { return v[i].String() }), true
+	case []TM:
+		return dateTimeParts(len(v), func(i int) string { return v[i].String() }), true
+	case []DT:
+		return dateTimeParts(len(v), func(i int) string { return v[i].String() }), true
+	case *MultiValue[DA]:
+		return dateTimeParts(v.Len(), func(i int) string { return v.Values()[i].String() }), true
+	case *MultiValue[TM]:
+		return dateTimeParts(v.Len(), func(i int) string { return v.Values()[i].String() }), true
+	case *MultiValue[DT]:
+		return dateTimeParts(v.Len(), func(i int) string { return v.Values()[i].String() }), true
+	}
+	return nil, false
+}
+
+// dateTimeParts collects the spelled forms of a multi-valued DA, TM or DT slice.
+func dateTimeParts(n int, at func(int) string) []string {
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		out[i] = at(i)
+	}
+	return out
 }
 
 func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {
