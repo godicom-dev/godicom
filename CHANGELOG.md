@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the JPEG EOI marker that delimits frames lives. `GetFrame` now delegates to it,
   so the two produce identical bytes and the identical error for an index out of
   range. Reading frame 5 of 8 costs 12% of the element instead of all of it
+- `godicom.ValidateValue` checks one string value against PS3.5 Table 6.2-1 for
+  every VR that defines a format — the length cap, the characters the VR allows,
+  and the shapes `DA`, `TM`, `DT`, `AS`, `UI` and `PN` have to have — and returns a `*ValueValidationError` naming each rule the
+  value breaks. It is the same set of 15 rules pydicom keeps in `VALIDATORS`,
+  written once instead of once per entry point. The writer runs it for every
+  value it is about to encode and reports a failure as
+  `DiagnosticInvalidValue`, so a value the reader would reject is no longer
+  written out quietly. With no `OnDiagnostic` hook set nothing changes: a round
+  trip still writes back what it read, even a value that was never legal, since
+  a caller re-saving a file it did not create must not be made to repair it
 
 ### Changed
 - `DiagnosticInvalidCharacterData` is reported for at most
@@ -128,6 +138,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   encode U+FFFD, so the codec is now asked which of the two happened instead of
   scanning the output for the replacement character. A strict `OnDiagnostic`
   hook used to reject a legal file whose text contained U+FFFD
+- `tag.Parse` rejected every tag with the high bit set in its group or element.
+  The bare eight-digit form was read with `strconv.ParseInt(s, 16, 32)`, which
+  overflows at `0x80000000`, so `"FFFEE000"` — the key `Tag.JSONKey` emits and
+  the key a DICOM JSON dataset uses for an item tag — came back as
+  `tag: unknown keyword`. PS3.5 §9.1 defines a tag as four *unsigned* hex
+  digits, and godicom's own `ParseTag` already read it that way
+- A DICOM JSON `UN` value carrying an undefined-length sequence was mis-parsed
+  when the payload itself contained the bytes `FE FF DD E0`. The item and
+  sequence parsers scanned the raw buffer for the delimiter after they had
+  finished, so a pixel fragment or a private string ending in those four bytes
+  ended the sequence early and the rest was reported as
+  `element (0100,0002) length exceeds dataset`. Both parsers now return the
+  offset where they stopped, which is what the scan was looking for anyway
 
 ## [0.34.0] - 2026-10-23
 
