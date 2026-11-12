@@ -3,9 +3,11 @@
 package encaps
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 )
 
 const (
@@ -41,51 +43,32 @@ func ParseBasicOffsets(buf []byte, littleEndian bool) (offsets []uint32, rest []
 	if !littleEndian {
 		return nil, nil, errors.New("encaps: only little endian encapsulated pixel data is supported")
 	}
-	if len(buf) < 8 {
-		return nil, nil, errors.New("encaps: buffer too short for Basic Offset Table item")
+	offsets, firstFragment, err := parseBasicOffsetTable(sliceReader{buf: buf})
+	if err != nil {
+		return nil, nil, err
 	}
-	order := binary.LittleEndian
-	tag := readTag(buf, 0, order)
-	if tag != itemTag {
-		return nil, nil, fmt.Errorf("encaps: expected item tag (FFFE,E000), got %08x", tag)
-	}
-	length := order.Uint32(buf[4:8])
-	if length%4 != 0 {
-		return nil, nil, errors.New("encaps: Basic Offset Table length is not a multiple of 4")
-	}
-	headerEnd := 8 + int(length)
-	if len(buf) < headerEnd {
-		return nil, nil, errors.New("encaps: truncated Basic Offset Table")
-	}
-	if length == 0 {
-		return nil, buf[headerEnd:], nil
-	}
-	count := int(length / 4)
-	offsets = make([]uint32, count)
-	for i := 0; i < count; i++ {
-		off := 8 + i*4
-		offsets[i] = order.Uint32(buf[off : off+4])
-	}
-	return offsets, buf[headerEnd:], nil
+	return offsets, buf[firstFragment:], nil
 }
 
 // GenerateFragmentedFrames splits encapsulated pixel data into per-frame fragment groups.
+// The fragments alias pixelData; nothing is copied.
 func GenerateFragmentedFrames(pixelData []byte, opts FramesOptions) ([][][]byte, error) {
-	if !opts.LittleEndian {
-		opts.LittleEndian = true
-	}
-	basicOffsets, rest, err := ParseBasicOffsets(pixelData, opts.LittleEndian)
+	groups, err := splitFrames(sliceReader{buf: pixelData}, opts)
 	if err != nil {
 		return nil, err
 	}
-
-	if opts.ExtendedOffsets != nil && len(opts.ExtendedOffsets.Offsets) > 0 {
-		return framesFromExtended(rest, opts)
+	if len(groups) == 0 {
+		return nil, nil
 	}
-	if len(basicOffsets) > 0 {
-		return framesFromBasic(rest, basicOffsets, opts)
+	out := make([][][]byte, len(groups))
+	for i, group := range groups {
+		fragments := make([][]byte, len(group))
+		for j, r := range group {
+			fragments[j] = pixelData[r.start : r.start+r.length]
+		}
+		out[i] = fragments
 	}
-	return framesWithoutOffsetTable(rest, opts)
+	return out, nil
 }
 
 // GenerateFrames returns one concatenated encoded frame per logical image frame.
@@ -111,14 +94,54 @@ func GenerateFrames(pixelData []byte, opts FramesOptions) ([][]byte, error) {
 
 // GetFrame returns the encoded data for the frame at index.
 func GetFrame(pixelData []byte, index int, opts FramesOptions) ([]byte, error) {
-	frames, err := GenerateFrames(pixelData, opts)
+	return GetFrameFrom(bytes.NewReader(pixelData), int64(len(pixelData)), index, opts)
+}
+
+// GetFrameFrom returns the encoded data for the frame at index, reading from src
+// only the bytes that frame occupies.
+//
+// src holds the encapsulated pixel data of one element: open a file with
+// os.Open and describe the element's value with the size and the offset,
+//
+//	section := io.NewSectionReader(f, valueOffset, valueLength)
+//	frame, err := encaps.GetFrameFrom(section, valueLength, 8, opts)
+//
+// Frame boundaries come from the Basic or Extended Offset Table when one is
+// present, so locating a frame costs the item headers and nothing more. With no
+// offset table the boundaries are the JPEG End-of-Image markers, and finding
+// them costs the last ten bytes of each fragment. In neither case is a fragment
+// this call does not return read.
+//
+// The frames GetFrameFrom produces are the ones GetFrame produces, byte for
+// byte; the difference is that GetFrame already has the whole element in memory
+// and this does not.
+func GetFrameFrom(src io.ReaderAt, size int64, index int, opts FramesOptions) ([]byte, error) {
+	if src == nil {
+		return nil, errors.New("encaps: nil source")
+	}
+	r := readerAtReader{src: src, bytes: size}
+	groups, err := splitFrames(r, opts)
 	if err != nil {
 		return nil, err
 	}
-	if index < 0 || index >= len(frames) {
-		return nil, fmt.Errorf("encaps: frame index %d out of range (have %d frames)", index, len(frames))
+	if index < 0 || index >= len(groups) {
+		return nil, fmt.Errorf("encaps: frame index %d out of range (have %d frames)", index, len(groups))
 	}
-	return frames[index], nil
+
+	group := groups[index]
+	total := int64(0)
+	for _, fragment := range group {
+		total += fragment.length
+	}
+	out := make([]byte, 0, total)
+	for _, fragment := range group {
+		b, err := r.at(fragment.start, fragment.length)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b...)
+	}
+	return out, nil
 }
 
 // CountFragments returns the number of fragment items in encapsulated pixel data
@@ -140,9 +163,6 @@ func readFragments(buf []byte, littleEndian bool) ([][]byte, error) {
 	for pos+8 <= len(buf) {
 		tag := readTag(buf, pos, order)
 		if tag == itemTag {
-			if pos+8 > len(buf) {
-				return nil, errors.New("encaps: truncated fragment item header")
-			}
 			length := order.Uint32(buf[pos+4 : pos+8])
 			if length == undefinedLen {
 				return nil, fmt.Errorf("encaps: undefined item length at offset %d", pos+4)
@@ -167,118 +187,6 @@ func readFragments(buf []byte, littleEndian bool) ([][]byte, error) {
 func countFragments(buf []byte, littleEndian bool) (int, error) {
 	frags, err := readFragments(buf, littleEndian)
 	return len(frags), err
-}
-
-func framesFromExtended(rest []byte, opts FramesOptions) ([][][]byte, error) {
-	eot := opts.ExtendedOffsets
-	if len(eot.Offsets) != len(eot.Lengths) {
-		return nil, errors.New("encaps: extended offset table lengths mismatch")
-	}
-	fragmentsStart := 0
-	out := make([][][]byte, len(eot.Offsets))
-	for i, off := range eot.Offsets {
-		start := fragmentsStart + int(off) + 8
-		end := start + int(eot.Lengths[i])
-		if start < 0 || end > len(rest) {
-			return nil, fmt.Errorf("encaps: extended offset %d out of range", i)
-		}
-		out[i] = [][]byte{rest[start:end]}
-	}
-	return out, nil
-}
-
-func framesFromBasic(rest []byte, basicOffsets []uint32, opts FramesOptions) ([][][]byte, error) {
-	fragments, err := readFragments(rest, opts.LittleEndian)
-	if err != nil {
-		return nil, err
-	}
-	if len(fragments) == 0 {
-		return nil, nil
-	}
-	finalIndex := len(basicOffsets) - 1
-	var out [][][]byte
-	var frame [][]byte
-	currentIndex := 0
-	currentOffset := uint32(0)
-
-	for _, fragment := range fragments {
-		if currentIndex == finalIndex {
-			frame = append(frame, fragment)
-			currentOffset += uint32(len(fragment) + 8)
-			continue
-		}
-		nextBoundary := basicOffsets[currentIndex+1]
-		if currentOffset < nextBoundary {
-			frame = append(frame, fragment)
-		} else {
-			out = append(out, frame)
-			currentIndex++
-			frame = [][]byte{fragment}
-		}
-		currentOffset += uint32(len(fragment) + 8)
-	}
-	if len(frame) > 0 {
-		out = append(out, frame)
-	}
-	return out, nil
-}
-
-func framesWithoutOffsetTable(rest []byte, opts FramesOptions) ([][][]byte, error) {
-	nrFragments, err := countFragments(rest, opts.LittleEndian)
-	if err != nil {
-		return nil, err
-	}
-	fragments, err := readFragments(rest, opts.LittleEndian)
-	if err != nil {
-		return nil, err
-	}
-
-	if nrFragments == 1 {
-		return [][][]byte{fragments}, nil
-	}
-
-	nrFrames := opts.NumberOfFrames
-	if nrFrames <= 0 {
-		return nil, errors.New(
-			"encaps: number of frames required when Basic and Extended Offset Tables are empty",
-		)
-	}
-
-	if nrFragments == nrFrames {
-		out := make([][][]byte, nrFrames)
-		for i, f := range fragments {
-			out[i] = [][]byte{f}
-		}
-		return out, nil
-	}
-
-	if nrFrames == 1 {
-		return [][][]byte{fragments}, nil
-	}
-
-	if nrFragments > nrFrames {
-		return framesByEOIMarker(fragments, nrFrames)
-	}
-
-	return nil, errors.New(
-		"encaps: fewer fragments than frames; dataset may be corrupt or NumberOfFrames incorrect",
-	)
-}
-
-func framesByEOIMarker(fragments [][]byte, nrFrames int) ([][][]byte, error) {
-	var out [][][]byte
-	var frame [][]byte
-	for _, fragment := range fragments {
-		frame = append(frame, fragment)
-		if hasEOIMarker(fragment) {
-			out = append(out, frame)
-			frame = nil
-		}
-	}
-	if len(frame) > 0 {
-		out = append(out, frame)
-	}
-	return out, nil
 }
 
 func hasEOIMarker(fragment []byte) bool {
