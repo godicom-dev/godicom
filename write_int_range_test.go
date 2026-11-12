@@ -39,9 +39,9 @@ func TestWriteRejectsIntegerOutOfRange(t *testing.T) {
 		{VRSS, 40000},
 		{VRSS, -32769},
 		{VRUL, -5},
-		{VRUL, 1 << 32},
-		{VRSL, 1 << 31},
-		{VRSL, -(1 << 31) - 1},
+		{VRUL, int64(1 << 32)},
+		{VRSL, int64(1 << 31)},
+		{VRSL, int64(-(1 << 31) - 1)},
 	}
 	for _, tc := range cases {
 		err := errorFrom(t, tc.vr, tc.value)
@@ -71,7 +71,7 @@ func TestWriteAcceptsIntegerBoundaries(t *testing.T) {
 		{VRUS, 65535, []byte{0xFF, 0xFF}},
 		{VRSS, -32768, []byte{0x00, 0x80}},
 		{VRSS, 32767, []byte{0xFF, 0x7F}},
-		{VRUL, 4294967295, []byte{0xFF, 0xFF, 0xFF, 0xFF}},
+		{VRUL, int64(4294967295), []byte{0xFF, 0xFF, 0xFF, 0xFF}},
 		{VRSL, -2147483648, []byte{0x00, 0x00, 0x00, 0x80}},
 		{VRSL, 2147483647, []byte{0xFF, 0xFF, 0xFF, 0x7F}},
 	}
