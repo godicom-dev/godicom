@@ -3,6 +3,13 @@ name: CI
 on:
   push:
     branches: [main, master]
+    # A release tag is what a user actually installs, so the commit behind it
+    # has to be tested. This used to be branches-only: a tag cut from a branch
+    # other than main pointed at a commit no run had ever seen, and nothing
+    # said so. Only the test matrix runs for a tag -- cross-build, coverage and
+    # lint already ran on main for the same commit, and re-uploading coverage
+    # would just overwrite the same report.
+    tags: ['v*']
   pull_request:
     branches: [main, master]
 
@@ -39,6 +46,9 @@ jobs:
 
   cross-build:
     name: cross-build (32-bit and codec-less platforms)
+    # Runs on branches and pull requests, not on a tag: the same commit has
+    # already been through this job as a push to main.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -91,6 +101,7 @@ jobs:
         run: GOARCH=386 CGO_ENABLED=0 go test -count=1 ./...
 
   coverage:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +126,7 @@ jobs:
           fail_ci_if_error: false
 
   lint:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
