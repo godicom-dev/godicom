@@ -38,7 +38,11 @@ func Parse(s string) (Tag, error) {
 		}
 	}
 
-	if val, err := strconv.ParseInt(s, 16, 32); err == nil {
+	// ParseUint, not ParseInt: a tag is an unsigned 32-bit value, so a signed
+	// parse rejects everything from 0x80000000 up -- the item and delimiter tags
+	// (FFFEE000, FFFEE00D, FFFEE0DD) among them. godicom.ParseTag already parses
+	// this way; the two entry points have to agree.
+	if val, err := strconv.ParseUint(s, 16, 32); err == nil {
 		return Tag(val), nil
 	}
 
