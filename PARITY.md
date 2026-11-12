@@ -8,7 +8,7 @@ This is a **coverage map**, not a claim of full parity.
 | Scale | Count |
 |-------|------:|
 | pydicom `def test_` | 2334 |
-| godicom `Test*` funcs | 895 |
+| godicom `Test*` funcs | 1047 |
 
 ## Verdict
 
