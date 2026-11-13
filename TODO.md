@@ -6,7 +6,7 @@ this file tracks deferred work and known gaps.
 ## Status
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
-As of **v0.39.0** the released surface covers Part 10 and dataset encode/decode,
+As of **v0.40.0** the released surface covers Part 10 and dataset encode/decode,
 transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
 JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, a single
 encapsulated frame read out of an `io.ReaderAt` (`encaps.GetFrameFrom`), the

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-13
+
+The last of pydicom's config surface that godicom lacked: hooks and the
+validation-mode enum. `ReadOptions.Hooks` carries the two raw-element
+callbacks pydicom 3.0 spells `raw_element_vr` and `raw_element_value` --
+per read rather than on a process-global singleton, and as middleware,
+each receiving the function godicom would otherwise call. `FixSeparatorValue`
+and `RetryValue` build the two fix-ups pydicom ships; against pydicom
+3.1.0.dev0 the converted values agree, including a five-byte US element
+retried to OB. `ReadOptions.ValueValidation` and
+`WriteOptions.ValueValidation` spell IGNORE / WARN / RAISE, with the zero
+value meaning what each side has always done -- on a read, nothing,
+because pydicom's `dcmread` never validates a value either; the same
+values are refused under the same VRs when Warn or Raise is asked for.
+With this, every domain of the PARITY table is complete.
+
 ### Added
 - The validation-mode enum pydicom spells IGNORE / WARN / RAISE, as
   `ReadOptions.ValueValidation` and `WriteOptions.ValueValidation`, with the
@@ -26,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are refused under the same VRs, the legal neighbours raise nothing, and the
   one count that differs -- the length of a padded value -- does so because
   godicom checks the value after the encoding's trailing pad came off
-### Added
 - The two callbacks pydicom's hooks module (3.0) spells "raw_element_vr" and
   "raw_element_value" arrive as `ReadOptions.Hooks`, per read rather than on a
   process-global singleton, and as middleware: each receives the function
@@ -43,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private element's two bytes to the same 57. Where pydicom hands back an
   unparsed string or raises, godicom keeps the raw bytes -- the standing
   difference, pinned with a comment in the tests.
-### Added
 - The write side of encapsulation takes the frames from readable, seekable
   buffers rather than from bytes in memory. `EncapsulatedBuffer` is one
   `io.ReadSeeker` over the complete encapsulated value -- the Basic Offset
@@ -72,7 +86,6 @@ Interpretation pairs, with every raw and corrected sample of the ECG fixture,
 134400 values, matching pydicom. Reading a pixel data value of undefined
 length no longer stops its delimiter scan three bytes short of the truth.
 
-### Added
 - `sr` is the coded terminology of PS3.16: the codes, and the contexts (CIDs)
   that group them. It is `pydicom.sr`, which since 3.0 is the code dictionary
   and nothing else. `sr.Scheme("SCT").Lookup("Lung")` is pydicom's
@@ -238,7 +251,6 @@ of being skipped quietly.
 
 ## [0.35.0] - 2026-11-12
 
-### Added
 - Enhanced multi-frame functional groups are read. An enhanced CT/MR/PT
   instance keeps rescale, window, pixel measures and palette inside
   `(5200,9229)` / `(5200,9230)` rather than at the top level, so those frames
@@ -403,7 +415,6 @@ of being skipped quietly.
 
 ## [0.32.0] - 2026-10-20
 
-### Added
 - `ApplyColorLUT` maps stored pixels through a Palette Color Lookup Table,
   including segmented tables and the eight PS3.6 well-known palettes (`PET`,
   `HOT_IRON`, `SPRING`, and the rest, by name or SOP Instance UID).
@@ -453,7 +464,6 @@ of being skipped quietly.
 
 ## [0.30.0] - 2026-09-01
 
-### Added
 - Six Storage SOP Class UIDs that PS3.6 Table A-1 registers but pydicom's
   `_uid_dict.py` does not carry, so `uid.LookupKeyword` and `UID.Name` resolve them
   instead of returning the raw UID string: `CTImageStorageForProcessing`
@@ -788,7 +798,6 @@ of being skipped quietly.
   adjacent and interchangeable, so a transposed call site used to compile and
   silently encode or parse a file in the wrong byte order
 
-### Added
 - **VR disagreement diagnostics**: reading now reports an explicit VR the data
   dictionary cannot reconcile with its tag — a `(0010,0010)` encoded as `SH`
   when the dictionary says `PN`, or a known tag sent as `UN`. The new
@@ -895,7 +904,6 @@ of being skipped quietly.
 
 ## [0.26.0] - 2026-08-13
 
-### Added
 - **Logging**: quiet-by-default `log/slog` foundation (`WithLogger` /
   `LoggerFromContext` / `SetDefaultLogger`); `ReadOptions.Logger` /
   `WriteOptions.Logger`; `*Context` entry points; CLI `godicom show -debug`
@@ -928,7 +936,6 @@ of being skipped quietly.
 
 ## [0.24.0] - 2026-07-18
 
-### Added
 - **uid**: `GenerateUID` / `MustGenerateUID` with `WithPrefix`, `WithUUIDPrefix`, `WithEntropy` (pydicom `generate_uid` behaviour; default root `1.2.826.0.1.3680043.8.498.`)
 - **Read**: `Read(io.Reader)` — seekable sources (`*os.File`, `io.ReadSeeker`) parse without `ReadAll`; `StopBeforePixels` / `DeferSize` / `SpecificTags` skip large values; deferred loads reopen the file path
 
@@ -949,7 +956,6 @@ of being skipped quietly.
 
 ## [0.22.0] - 2026-07-13
 
-### Added
 - **Dataset**: `DecodeDataset` / `DecodeDatasetEncoding` — decode dataset bytes without preamble / File Meta (DIMSE Identifiers / C-STORE payloads; Deflated TS supported)
 
 **Tests**: 696 passed (v0.21.0: 692); roundtrip + pynetdicom C-FIND Identifier golden
@@ -963,7 +969,6 @@ of being skipped quietly.
 
 ## [0.20.0] - 2026-07-13
 
-### Added
 - **Pixels / FileDataset**: JPEG 2000 Lossless (and default lossy JPEG 2000) via `goopenjpeg` v1.1.1 `Encode`
 - `CompressPixelData` now supports `JPEG2000Lossless` / `JPEG2000` in addition to RLE / Deflated / native
 
@@ -986,7 +991,6 @@ of being skipped quietly.
 
 ## [0.18.0] - 2026-07-13
 
-### Added
 - **Pixels**: `UnpackSamples`, `ApplyRescale` / `ApplyModalityLUT`, `ApplyWindowing` / `ApplyVOI` / `ApplyVOILUT`, `InvertValues` / `ApplyPresentationLUTShape`
 - **FileDataset**: `PixelSamples`, `ApplyModalityLUT`, `ApplyVOILUT`, `ApplyPresentationLUTShape` (pydicom display pipeline helpers; not auto-applied in `PixelBytes`)
 - **Dataset**: `GetFloats` for multi-valued DS/FD window tags
@@ -1003,7 +1007,6 @@ of being skipped quietly.
 
 ## [0.16.0] - 2026-07-13
 
-### Added
 - **Dataset**: `FormattedLines` / `Top`; nested `String()` pretty-print for sequences (pydicom `formatted_lines` / `top`)
 - **Element**: UI string values resolve to known UID names in `ReprValue`
 
@@ -1020,7 +1023,6 @@ of being skipped quietly.
 
 ## [0.14.0] - 2026-07-13
 
-### Added
 - **Dataset**: pydicom-aligned APIs — `Clear`, `Pop`, `Update`, `GroupDataset`, `RemovePrivateTags`, `ElementByKeyword`, `IterAll`, `Equal`
 - **Dataset**: `IsOriginalEncoding` / `SetOriginalEncoding` / `SetWriteEncoding`; deep `Element.Equal` for sequences
 
@@ -1043,7 +1045,6 @@ of being skipped quietly.
 
 ## [0.12.0] - 2026-07-13
 
-### Added
 - **File Writer**: implicit VR byte-layout tests for OD/OL/UC/UR/UN; UC multi-value explicit cases; file meta unchanged on non-enforced save
 - **Reader / File Writer**: private-tag VR resolution from private dictionary during implicit reads; implicit↔explicit conversion keeps private creator/data VRs
 
@@ -1065,7 +1066,6 @@ of being skipped quietly.
 
 ## [0.10.0] - 2026-07-10
 
-### Added
 - **File Writer**: reject group 2 elements in dataset; implicit VR + big endian validation; explicit/implicit SQ ambiguous VR via tag-number access
 - **File Writer**: `writeFileMetaInfo` validates non-group-2 elements; raw ambiguous element conversion tests
 
@@ -1085,7 +1085,6 @@ of being skipped quietly.
 
 ## [0.8.0] - 2026-07-10
 
-### Added
 - **File Writer**: pydicom-aligned ambiguous VR tests for LUTDescriptor VM3, LUTData, PixelData, and implicit sequence pixel-representation nearest lookup
 - **File Writer**: non-standard write paths without enforced file format (no preamble, empty file meta, dataset-only)
 
@@ -1112,7 +1111,6 @@ of being skipped quietly.
 
 ## [0.6.0] - 2026-07-04
 
-### Added
 - **File Writer**: byte-identical roundtrip tests for undefined-length sequences, private nested SQ, `MR_small_implicit.dcm`, and additional pydicom fixtures
 - **File Writer**: implicit nested ambiguous VR via sequence owner/parent ancestor chain; pydicom-aligned P2 tests (index/nearest access, parent change, `(FFFF,FFFF)`, no-preamble/prefix)
 - **File Writer**: `CorrectAmbiguousVRPreservingRaw` for implicit writes with in-memory values while keeping raw byte roundtrips
@@ -1151,7 +1149,6 @@ of being skipped quietly.
 
 ## [0.4.0] - 2026-07-03
 
-### Added
 - **Value Representation**: `DA` / `TM` / `DT` types and `GetDA` / `GetTM` / `GetDT`
 - **Value Representation**: `DS` / `IS` typed values and `GetDS` / `GetIS` (with `Original` string preserved)
 - **CLI**: `godicom show` / `read` with file meta + dataset display
@@ -1178,7 +1175,6 @@ of being skipped quietly.
 
 ## [0.2.0] - 2026-07-02
 
-### Added
 - Pixel read path: `PixelBytes` / `PixelFrames`, encaps frame splitting
 - JPEG / JPEG-LS / JPEG 2000 / RLE decode via `golibjpeg`, `goopenjpeg`, `gorle`
 - DICOM JSON Model (`dicomjson` subpackage)
