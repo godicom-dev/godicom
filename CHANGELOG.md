@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Writing an integer that its VR cannot hold is refused instead of truncated:
+  a `US` set to 70000 used to reach the file as 4464, and `US` with -1 as
+  65535. `US`/`SS` now check the 16-bit range and `UL`/`SL` the 32-bit one,
+  naming the VR and the tag in the error. pydicom refuses the same values at
+  pack time (`'H' format requires 0 <= number <= 65535`). This is a behaviour
+  change: the call fails where it used to succeed with a different number
+- A value whose Go type has no encoding for its VR is refused instead of
+  written as a zero-length element. `AT` holding a `uint32`, `OB` holding a
+  `uint32` and `OW` holding a `[]uint16` all used to disappear without an
+  error; pydicom raises `TypeError` for the last one. The error names the
+  dynamic type, the VR and the tag. The types a VR does accept were widened in
+  the same pass — `int8`, `int16`, `uint8`, `[]uint16`, `[]uint32`, `[]uint64`
+  for the integer VRs — so a caller who wrote the natural Go type is not
+  rejected for it
+
 ## [0.35.0] - 2026-11-12
 
 ### Added

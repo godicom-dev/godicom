@@ -818,10 +818,11 @@ func padToEven(vr VR, encoded []byte) []byte {
 }
 
 // encodeValue renders elem's value to its on-the-wire bytes. It returns an error
-// only when the value cannot be represented in elem's VR at all -- a non-finite
-// float in a DS, say -- rather than letting a value godicom's own validators
-// reject reach the file. A value that is merely misspelled for its VR goes to
-// st's diagnostic hook instead, which decides whether to write it or fail.
+// when the value cannot be represented in elem's VR at all -- a non-finite float
+// in a DS, an integer wider than the VR's field, a Go type the VR has no encoding
+// for -- rather than letting a value godicom's own validators reject reach the
+// file. A value that is merely misspelled for its VR goes to st's diagnostic
+// hook instead, which decides whether to write it or fail.
 func encodeValue(elem *DataElement, cc codecContext, st *writeState) ([]byte, error) {
 	if elem.Value == nil {
 		return nil, nil
@@ -857,25 +858,25 @@ func encodeValue(elem *DataElement, cc codecContext, st *writeState) ([]byte, er
 		}
 		return encoded, nil
 	case VRFD:
-		return encodeFloats(elem, le, 8), nil
+		return encodeFloats(elem, le, 8)
 	case VRFL:
-		return encodeFloats(elem, le, 4), nil
+		return encodeFloats(elem, le, 4)
 	case VRUL:
-		return encodeInts(elem, le, 4, false), nil
+		return encodeInts(elem, le, 4, false)
 	case VRUS:
-		return encodeInts(elem, le, 2, false), nil
+		return encodeInts(elem, le, 2, false)
 	case VRUV:
-		return encodeInts(elem, le, 8, false), nil
+		return encodeInts(elem, le, 8, false)
 	case VRSL:
-		return encodeInts(elem, le, 4, true), nil
+		return encodeInts(elem, le, 4, true)
 	case VRSS:
-		return encodeInts(elem, le, 2, true), nil
+		return encodeInts(elem, le, 2, true)
 	case VRSV:
-		return encodeInts(elem, le, 8, true), nil
+		return encodeInts(elem, le, 8, true)
 	case VRAT:
-		return encodeAT(elem, le), nil
+		return encodeAT(elem, le)
 	case VROB, VROD, VROF, VROL, VROW, VROV, VRUN:
-		return encodeBytes(elem), nil
+		return encodeBytes(elem)
 	case VRSQ:
 		return nil, nil // Handled separately
 	default:
@@ -1300,7 +1301,7 @@ func encodePNWithCharsets(elem *DataElement, charsets []string) []byte {
 	return []byte(fmt.Sprintf("%v", elem.Value))
 }
 
-func encodeFloats(elem *DataElement, le bool, size int) []byte {
+func encodeFloats(elem *DataElement, le bool, size int) ([]byte, error) {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !le {
 		order = binary.BigEndian
@@ -1325,10 +1326,12 @@ func encodeFloats(elem *DataElement, le bool, size int) []byte {
 				floats = append(floats, float64(x))
 			case int:
 				floats = append(floats, float64(x))
+			default:
+				return nil, unencodableValue(elem, item)
 			}
 		}
 	default:
-		return nil
+		return nil, unencodableValue(elem, elem.Value)
 	}
 
 	buf := make([]byte, len(floats)*size)
@@ -1339,10 +1342,10 @@ func encodeFloats(elem *DataElement, le bool, size int) []byte {
 			order.PutUint64(buf[i*8:], math.Float64bits(f))
 		}
 	}
-	return buf
+	return buf, nil
 }
 
-func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
+func encodeInts(elem *DataElement, le bool, size int, signed bool) ([]byte, error) {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !le {
 		order = binary.BigEndian
@@ -1351,6 +1354,12 @@ func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
 	var ints []uint64
 	switch v := elem.Value.(type) {
 	case int:
+		ints = []uint64{uint64(v)}
+	case int8:
+		ints = []uint64{uint64(v)}
+	case uint8:
+		ints = []uint64{uint64(v)}
+	case int16:
 		ints = []uint64{uint64(v)}
 	case uint16:
 		ints = []uint64{uint64(v)}
@@ -1374,6 +1383,16 @@ func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
 		for _, x := range v {
 			ints = append(ints, uint64(x))
 		}
+	case []uint16:
+		for _, x := range v {
+			ints = append(ints, uint64(x))
+		}
+	case []uint32:
+		for _, x := range v {
+			ints = append(ints, uint64(x))
+		}
+	case []uint64:
+		ints = append(ints, v...)
 	case *MultiValue[int64]:
 		for _, x := range v.Values() {
 			ints = append(ints, uint64(x))
@@ -1389,14 +1408,20 @@ func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
 				ints = append(ints, uint64(x))
 			case uint64:
 				ints = append(ints, x)
+			default:
+				return nil, unencodableValue(elem, item)
 			}
 		}
 	default:
-		return nil
+		return nil, unencodableValue(elem, elem.Value)
 	}
 
 	buf := make([]byte, len(ints)*size)
 	for i, v := range ints {
+		if !intFitsVR(v, size, signed) {
+			return nil, fmt.Errorf("godicom: value %d does not fit in %s for tag %s",
+				int64(v), elem.VR, elem.Tag)
+		}
 		switch size {
 		case 2:
 			order.PutUint16(buf[i*2:], uint16(v))
@@ -1406,10 +1431,49 @@ func encodeInts(elem *DataElement, le bool, size int, signed bool) []byte {
 			order.PutUint64(buf[i*8:], v)
 		}
 	}
-	return buf
+	return buf, nil
 }
 
-func encodeAT(elem *DataElement, le bool) []byte {
+// intFitsVR reports whether v can be stored in size bytes without changing its
+// value. The switch that collects integers is deliberately permissive -- Go has
+// no implicit conversions, so a caller who wrote uint32(7) for a US meant the
+// number 7 -- but permissive types must not become permissive ranges: a US that
+// holds 70000 would read back as 4464, and a silent wrong number is worse than
+// a refused write. pydicom refuses the same values at pack time (`'H' format
+// requires 0 <= number <= 65535`).
+//
+// Signed values arrive as the bit pattern of an int, so they are interpreted
+// back through int64 before the range check. Size 8 always fits: the widest Go
+// integer an SV or UV can be set from is 64 bits, and the check exists for the
+// narrow VRs only.
+func intFitsVR(v uint64, size int, signed bool) bool {
+	switch size {
+	case 2:
+		if signed {
+			n := int64(v)
+			return n >= math.MinInt16 && n <= math.MaxInt16
+		}
+		return v <= math.MaxUint16
+	case 4:
+		if signed {
+			n := int64(v)
+			return n >= math.MinInt32 && n <= math.MaxInt32
+		}
+		return v <= math.MaxUint32
+	}
+	return true
+}
+
+// unencodableValue reports a value whose Go type has no encoding for the
+// element's VR. Before this existed the encoders returned nil for such a value
+// and the writer emitted a zero-length element, which turns a type mistake into
+// data loss that only a reader can notice.
+func unencodableValue(elem *DataElement, value any) error {
+	return fmt.Errorf("godicom: cannot encode %T value as %s for tag %s",
+		value, elem.VR, elem.Tag)
+}
+
+func encodeAT(elem *DataElement, le bool) ([]byte, error) {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !le {
 		order = binary.BigEndian
@@ -1440,10 +1504,12 @@ func encodeAT(elem *DataElement, le bool) []byte {
 				tags = append(tags, x)
 			case int:
 				tags = append(tags, Tag(x))
+			default:
+				return nil, unencodableValue(elem, item)
 			}
 		}
 	default:
-		return nil
+		return nil, unencodableValue(elem, elem.Value)
 	}
 
 	// PS3.5 7.1.1: AT is a pair of 16-bit values (group then element), not one
@@ -1454,20 +1520,20 @@ func encodeAT(elem *DataElement, le bool) []byte {
 		order.PutUint16(buf[i*4:], uint16(t.Group()))
 		order.PutUint16(buf[i*4+2:], uint16(t.Element()))
 	}
-	return buf
+	return buf, nil
 }
 
-func encodeBytes(elem *DataElement) []byte {
+func encodeBytes(elem *DataElement) ([]byte, error) {
 	if elem.Value == nil {
-		return nil
+		return nil, nil
 	}
 	switch v := elem.Value.(type) {
 	case []byte:
-		return v
+		return v, nil
 	case string:
-		return []byte(v)
+		return []byte(v), nil
 	}
-	return nil
+	return nil, unencodableValue(elem, elem.Value)
 }
 
 // WriteFile writes a Dataset to a DICOM file.
