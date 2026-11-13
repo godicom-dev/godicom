@@ -31,6 +31,10 @@ type writeState struct {
 	// enclosing whatever is being written, so a Diagnostic can name its Path.
 	onDiag  func(Diagnostic) error
 	seqPath []PathStep
+
+	// valueValidation is WriteOptions.ValueValidation, Default for the paths
+	// that take no options.
+	valueValidation ValidationMode
 }
 
 func newWriteState() *writeState {
@@ -69,6 +73,24 @@ type WriteOptions struct {
 	// had its own chance to report. Only write paths that take a *WriteOptions
 	// can carry a hook, so EncodeDataset and WriteDataset never call one.
 	OnDiagnostic func(Diagnostic) error
+	// ValueValidation is pydicom's writing_validation_mode. The zero value is
+	// the behaviour godicom has always had: every value checked, every
+	// rejection offered to OnDiagnostic, the value written when the hook
+	// returns nil -- which is pydicom's WARN, spelled by a hook's return
+	// value until an enum was worth having. ValidationIgnore skips the checks
+	// entirely, for a caller round-tripping a file at speed. ValidationRaise
+	// fails the write with the first rejected value's Diagnostic, hook or no
+	// hook, refusing to produce a file a strict receiver would reject:
+	//
+	//	err := godicom.WriteFile("out.dcm", ds, &godicom.WriteOptions{
+	//		ValueValidation: godicom.ValidationRaise,
+	//	})
+	//
+	// The hook is not consulted in a Raise mode: it fails on its own, where a
+	// Warn mode leaves the decision to the hook's return value. The paths
+	// without a *WriteOptions -- EncodeDataset, WriteDataset, WriteElement --
+	// keep the zero value.
+	ValueValidation ValidationMode
 }
 
 type writeSource struct {
@@ -371,6 +393,7 @@ func writeTo(ctx context.Context, w io.Writer, source writeSource, opts *WriteOp
 	// the way readContext does for one parse.
 	st := newWriteStateCtx(ctx)
 	st.onDiag = opts.OnDiagnostic
+	st.valueValidation = opts.ValueValidation
 
 	if tsUID.IsDeflated() {
 		var datasetBuf bytes.Buffer
@@ -1225,17 +1248,24 @@ func reportInvalidNumberString(elem *DataElement, encoded []byte, st *writeState
 	if len(encoded) == 0 || (elem.VR != VRDS && elem.VR != VRIS) {
 		return nil
 	}
+	if st != nil && st.valueValidation == ValidationIgnore {
+		return nil
+	}
 	for _, part := range strings.Split(string(encoded), "\\") {
 		reason := numberStringReason(elem.VR, part)
 		if reason == nil {
 			continue
 		}
-		if err := st.report(Diagnostic{
+		d := Diagnostic{
 			Kind: DiagnosticInvalidValue,
 			Tag:  elem.Tag,
 			VR:   elem.VR,
 			Err:  reason,
-		}); err != nil {
+		}
+		if st != nil && st.valueValidation == ValidationRaise {
+			return d
+		}
+		if err := st.report(d); err != nil {
 			return err
 		}
 	}
@@ -1295,6 +1325,9 @@ func reportInvalidStringValue(elem *DataElement, st *writeState) error {
 	if st == nil || elem.Value == nil {
 		return nil
 	}
+	if st.valueValidation == ValidationIgnore {
+		return nil
+	}
 	if !hasValueValidator(elem.VR) {
 		return nil
 	}
@@ -1309,12 +1342,16 @@ func reportInvalidStringValue(elem *DataElement, st *writeState) error {
 			if !errors.As(err, &verr) {
 				return err
 			}
-			if err := st.report(Diagnostic{
+			d := Diagnostic{
 				Kind: DiagnosticInvalidValue,
 				Tag:  elem.Tag,
 				VR:   elem.VR,
 				Err:  verr,
-			}); err != nil {
+			}
+			if st.valueValidation == ValidationRaise {
+				return d
+			}
+			if err := st.report(d); err != nil {
 				return err
 			}
 		}

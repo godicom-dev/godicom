@@ -194,6 +194,7 @@ func readReaderAt(ctx context.Context, ra io.ReaderAt, size int64, filename stri
 		onDiag:               diagnosticHook(opts),
 		dict:                 readDictionary(opts),
 		hooks:                opts.Hooks,
+		valueValidation:      opts.ValueValidation,
 		invalidCharLimit:     invalidCharLimitFrom(opts),
 		reportDefaultCharset: reportsDefaultCharset(opts),
 	}

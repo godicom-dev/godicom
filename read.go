@@ -59,6 +59,26 @@ type ReadOptions struct {
 	// historical fallback so a reload never behaves differently from the
 	// original read.
 	Hooks *Hooks
+	// ValueValidation is pydicom's reading_validation_mode, opt-in: the
+	// zero value is the quiet path godicom has always run, where values are
+	// never checked against PS3.5 Table 6.2-1 on the way in. ValidationWarn
+	// offers every value a text VR cannot hold -- a DA that is not a date, a
+	// UI with a leading zero in a component, a PN with five component groups
+	// -- to OnDiagnostic as DiagnosticInvalidValue, named element, offset and
+	// reason, and keeps the value when the hook returns nil. ValidationRaise
+	// fails the read with the first such diagnostic, hook or no hook, the
+	// way pydicom's RAISE raises out of dcmread:
+	//
+	//	ds, err := godicom.ReadFile("ct.dcm", &godicom.ReadOptions{
+	//		ValueValidation: godicom.ValidationRaise,
+	//	})
+	//
+	// Only the text VRs are checked -- the numeric and byte VRs cannot be
+	// wrong in Go the way they can in Python -- and the same Diagnostic kind
+	// the writer reports is reported here, with an Offset, since on this side
+	// the element has a position in the file. A deferred reload, which runs
+	// after the read returned, keeps the historical fallback.
+	ValueValidation ValidationMode
 	// OnElement decides, per element, whether to parse its value, step over it,
 	// or stop reading -- the whole point being that a caller who wants seven index
 	// tags out of a 200 MB file should not pay to decode the other 199:
@@ -414,6 +434,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		onDiag:               diagnosticHook(opts),
 		dict:                 readDictionary(opts),
 		hooks:                opts.Hooks,
+		valueValidation:      opts.ValueValidation,
 		invalidCharLimit:     invalidCharLimitFrom(opts),
 		reportDefaultCharset: reportsDefaultCharset(opts),
 	}
@@ -1151,6 +1172,12 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext,
 	if raw.VR != vr {
 		elem.VR = raw.VR
 		vr = raw.VR
+	}
+	// A mode the caller set has the value checked against PS3.5 Table 6.2-1
+	// now that it is a Go value; the wrong-length bytes that never converted
+	// are not checked, because what they hold is not a value.
+	if err := rc.validateElementValue(elem, vr, valueStart); err != nil {
+		return err
 	}
 	// The value decoded, which for the default repertoire proves nothing: every
 	// byte sequence "decodes" when the set is not used at all. Ask the other

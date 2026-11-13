@@ -8,7 +8,7 @@ This is a **coverage map**, not a claim of full parity.
 | Scale | Count |
 |-------|------:|
 | pydicom `def test_` | 2334 |
-| godicom `Test*` funcs | 1166 |
+| godicom `Test*` funcs | 1171 |
 
 ## Verdict
 
@@ -46,7 +46,7 @@ areas are thinner on edge fixtures.
 | SR / codes | **complete** | sr/ (codedict 348, coding 65 + 88k lines of generated data) | `sr/`: `Code` (+`Equal`), `Scheme`/`CID`/`NewCollection`, `Collection.Dir`/`Lookup`/`Concepts`/`ContainsCode`/`String`, `Codes()` | pydicom reaches a code as an attribute (`codes.SCT.Lung`), which Go has no room for: it is `sr.Scheme("SCT").Lookup("Lung")`. A `Code` is not a map key, because Go's `==` cannot apply the SRT/SCT equivalence that makes two codes one concept -- `Code.Equal` is the comparison. Everything else, data included, is pydicom's: all 45766 (collection, keyword, code) triples agree with 3.1.0.dev0, and `Collection.String()` is its `str()` for 1360 of 1361 collections (CID8134 raises in pydicom) |
 | Overlays | **partial** | overlays/ | `OverlayArray` | 1-bit `(60xx,3000)`; not bits embedded in pixel data |
 | Waveforms | **complete** | waveforms/ (numpy_handler 216) | `waveforms/`: `MultiplexArray`/`Multiplexes` (+`WithChannelSensitivity`, `RawAt`/`At`/`Sample`) | pydicom reaches the handler as `pydicom.waveforms.numpy_handler` when numpy is installed; here it is one pure Go package. The raw samples come back as exact integers (`RawAt`), corrected ones as float64. Waveform Data is read little endian, which is what pydicom's hardcoded dtypes do even for a big endian file |
-| Config / hooks | **partial** | config, hooks | slog + `OnDiagnostic` | The raw element hooks are here: `ReadOptions.Hooks` middleware (`ResolveVR` / `ConvertValue`, with `FixSeparatorValue` / `RetryValue`), per read rather than pydicom 3.0's global singleton. No validation-mode enum: the write-side IGNORE / WARN / RAISE choice is the `OnDiagnostic` hook's return value, and the read side has no value validation to put a mode on |
+| Config / hooks | **complete** | config, hooks | slog + `OnDiagnostic` | The raw element hooks are `ReadOptions.Hooks` middleware (`ResolveVR` / `ConvertValue`, with `FixSeparatorValue` / `RetryValue`), per read rather than pydicom 3.0's global singleton. The validation-mode enum is `ReadOptions.ValueValidation` / `WriteOptions.ValueValidation`; on a read the zero value does what pydicom's `dcmread` does (nothing -- its mode governs the `DataElement` a caller constructs afterwards), and on a write it is the check-and-offer the `OnDiagnostic` hook's return value already spelled, with `Ignore` and `Raise` added |
 | CLI | partial | cli (~17) | show/read/readcopy | Minimal |
 | Networking | out of scope | → pynetdicom | → gonetdicom | Separate library |
 
