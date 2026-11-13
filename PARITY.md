@@ -8,7 +8,7 @@ This is a **coverage map**, not a claim of full parity.
 | Scale | Count |
 |-------|------:|
 | pydicom `def test_` | 2334 |
-| godicom `Test*` funcs | 1092 |
+| godicom `Test*` funcs | 1117 |
 
 ## Verdict
 
@@ -42,7 +42,7 @@ areas are thinner on edge fixtures.
 | Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K/HTJ2K | |
 | Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Enhanced multi-frame functional groups (`(5200,9229)`, `(5200,9230)`) are read with per-frame → shared → top-level precedence by `DisplayFrame`, the `...ForFrame` variants and `PixelMeasures(frameIndex)`; the dataset-wide entry points see shared/top-level only. Supplemental palettes unsupported |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
-| File-set / DICOMDIR | **partial** | fileset (~124) | `OpenFileSet`, record tree, `Find`, `DirectoryRecords` (record building, `generate_filename`, `is_conformant_file_id`) | Writing the DICOMDIR, add/remove/copy, orphan re-inclusion |
+| File-set / DICOMDIR | **partial** | fileset (~124) | `OpenFileSet`, record tree, `Find`, `DirectoryRecords`, `WriteDICOMDIR`/`EncodeDICOMDIR` (layout byte-identical to pydicom), `NewFileSet`/`Add`/`Remove`/`Save` | `FileSet.copy()`, PRIVATE records (`add_custom`), orphan re-inclusion |
 | SR / codes | **gap** | sr/ | — | Not implemented |
 | Overlays | **partial** | overlays/ | `OverlayArray` | 1-bit `(60xx,3000)`; not bits embedded in pixel data |
 | Waveforms | **gap** | waveforms/ | — | Tag constants only |

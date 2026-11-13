@@ -7,3 +7,6 @@ testdata/dcm/*.dcm
 # dictionary against the standard. ~10 MB, and reproducible from the URL in that
 # script.
 part06.xml
+
+# WorkBuddy workspace data
+.workbuddy/

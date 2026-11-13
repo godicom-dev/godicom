@@ -32,6 +32,13 @@ type FileSet struct {
 	Tree     *RecordNode
 
 	instances []*FileInstance
+
+	// alphanumericIDs says whether File IDs are built from the alphanumeric
+	// character set rather than the numeric one. A File-set read from a
+	// DICOMDIR does not record which was used; a new one starts numeric and
+	// switches above a million instances, which is where the numeric
+	// components run out.
+	alphanumericIDs bool
 }
 
 // FileSetOptions controls how a DICOMDIR is loaded.
@@ -56,6 +63,11 @@ type FileInstance struct {
 	Node *RecordNode
 	fs   *FileSet
 	rel  string
+
+	// ds is set for an instance added to the File-set but not written yet.
+	// The file it would go to does not exist, so the dataset is the only copy
+	// of it.
+	ds *FileDataset
 }
 
 // OpenFileSet reads the DICOMDIR at path.
@@ -164,8 +176,12 @@ func (n *RecordNode) Type() string {
 }
 
 // Path returns the absolute path of the referenced file.
+//
+// It is empty for an instance that has been added to the File-set but not
+// written yet: that instance exists only as a dataset until Save gives it a
+// place.
 func (f *FileInstance) Path() string {
-	if f == nil || f.fs == nil {
+	if f == nil || f.fs == nil || f.ds != nil {
 		return ""
 	}
 	return filepath.Join(f.fs.RootPath, f.rel)
@@ -218,9 +234,16 @@ func (f *FileInstance) GetString(tg Tag) (string, bool) {
 	return elementString(elem), true
 }
 
-// Load reads the referenced SOP instance.
+// Load reads the referenced SOP instance. An instance that was added but not
+// written yet is returned as the dataset it was added as.
 func (f *FileInstance) Load() (*FileDataset, error) {
-	if f == nil || f.Path() == "" {
+	if f == nil {
+		return nil, fmt.Errorf("godicom: file instance has no path")
+	}
+	if f.ds != nil {
+		return f.ds, nil
+	}
+	if f.Path() == "" {
 		return nil, fmt.Errorf("godicom: file instance has no path")
 	}
 	return ReadFile(f.Path(), nil)
