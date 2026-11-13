@@ -608,7 +608,7 @@ func TestDirectoryRecordsRefusesAnEmptyType1Element(t *testing.T) {
 const ctSmallFixture = "pydicom/src/pydicom/data/test_files/CT_small.dcm"
 
 // TestDirectoryRecordsMatchPyDicomOnAnInstance locks the whole record set for a
-// real instance against what pydicom 3.0.0's FileSet._recordify() produces for
+// real instance against what pydicom 3.1.0.dev0's FileSet._recordify() produces for
 // the same file. Both sides were dumped as sorted (tag, value) lines and
 // compared: 40 lines, identical. The element counts below are what makes this
 // more than a spot check -- a record that gained or lost an attribute would

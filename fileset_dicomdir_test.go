@@ -158,7 +158,7 @@ func TestWriteDICOMDIRRoundTrip(t *testing.T) {
 // TestEncodeDICOMDIRMatchesPyDicom pins the bytes.
 //
 // Both digests are of the File-set in pydicom's own DICOMDIR test fixture, and
-// were confirmed against pydicom 3.0.0: loading that fixture and calling
+// were confirmed against pydicom 3.1.0.dev0: loading that fixture and calling
 // FileSet._write_dicomdir() produces a file identical to ours, byte for byte,
 // in explicit VR and with force_implicit=True alike. The same holds for the
 // reordered, no-offset, big endian and implicit VR fixtures.

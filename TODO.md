@@ -32,7 +32,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | File-set / DICOMDIR write | Read-only tree and File ID lookup (`OpenFileSet`) | Media interchange that must write a DICOMDIR |
-| SR / codes / waveforms | Not implemented | Domain-specific tooling |
+| Waveforms | Not implemented | Tag constants only |
 | Supplemental palettes | `Supplemental Palette Color Lookup Table Sequence (0028,1450)` is not applied, so a frame relying on one renders with the primary palette | A PET/CT series that actually carries one |
 
 Do not start these without a real consumer. Prefer fixing gaps that block

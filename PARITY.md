@@ -8,7 +8,7 @@ This is a **coverage map**, not a claim of full parity.
 | Scale | Count |
 |-------|------:|
 | pydicom `def test_` | 2334 |
-| godicom `Test*` funcs | 1123 |
+| godicom `Test*` funcs | 1146 |
 
 ## Verdict
 
@@ -43,7 +43,7 @@ areas are thinner on edge fixtures.
 | Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Enhanced multi-frame functional groups (`(5200,9229)`, `(5200,9230)`) are read with per-frame → shared → top-level precedence by `DisplayFrame`, the `...ForFrame` variants and `PixelMeasures(frameIndex)`; the dataset-wide entry points see shared/top-level only. Supplemental palettes unsupported |
 | DICOM JSON | solid | jsonrep (~30) | `dicomjson/` | Main Model + BulkDataURI |
 | File-set / DICOMDIR | **complete** | fileset (~124) | `OpenFileSet` (orphans re-filed by default), record tree, `Find`, `DirectoryRecords`, `WriteDICOMDIR`/`EncodeDICOMDIR` (layout byte-identical to pydicom), `NewFileSet`/`Add`/`AddCustom`/`Remove`/`Save`/`CopyTo` | staging semantics differ by design: `Remove` keeps the file, `Save` will not change roots |
-| SR / codes | **gap** | sr/ | — | Not implemented |
+| SR / codes | **complete** | sr/ (codedict 348, coding 65 + 88k lines of generated data) | `sr/`: `Code` (+`Equal`), `Scheme`/`CID`/`NewCollection`, `Collection.Dir`/`Lookup`/`Concepts`/`ContainsCode`/`String`, `Codes()` | pydicom reaches a code as an attribute (`codes.SCT.Lung`), which Go has no room for: it is `sr.Scheme("SCT").Lookup("Lung")`. A `Code` is not a map key, because Go's `==` cannot apply the SRT/SCT equivalence that makes two codes one concept -- `Code.Equal` is the comparison. Everything else, data included, is pydicom's: all 45766 (collection, keyword, code) triples agree with 3.1.0.dev0, and `Collection.String()` is its `str()` for 1360 of 1361 collections (CID8134 raises in pydicom) |
 | Overlays | **partial** | overlays/ | `OverlayArray` | 1-bit `(60xx,3000)`; not bits embedded in pixel data |
 | Waveforms | **gap** | waveforms/ | — | Tag constants only |
 | Config / hooks | **partial** | config, hooks | slog + `OnDiagnostic` | No global validation-mode enum |
@@ -67,7 +67,7 @@ areas are thinner on edge fixtures.
 | Priority | Item | Why |
 |----------|------|-----|
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
-| P3 | SR / waveform | File-sets and overlay planes are in |
+| P3 | waveform | File-sets, SR codes and overlay planes are in |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | done | `Read` streaming / seekable skip | Large studies without full RAM |
 | done | `ReadOptions.OnElement` | Per-element keep / skip / stop, since v0.31.0 |

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `sr` is the coded terminology of PS3.16: the codes, and the contexts (CIDs)
+  that group them. It is `pydicom.sr`, which since 3.0 is the code dictionary
+  and nothing else. `sr.Scheme("SCT").Lookup("Lung")` is pydicom's
+  `codes.SCT.Lung`, `sr.CID(2).Lookup("Transverse")` is `codes.CID2.Transverse`,
+  and `Dir`, `Concepts`, `ContainsCode` and `Codes().Schemes()`/`CIDs()` are the
+  rest of the surface. `Code.Equal` compares the concept rather than the text:
+  the meaning does not take part, and a SNOMED code given under the retired
+  "SRT" designator equals the same code under "SCT"
+- The terminology itself is pydicom's three generated dictionaries flattened
+  into `sr/codes.txt` by `generate_sr_dict.py`: 18 schemes, 18735 codes, 1355
+  CIDs, 27033 CID memberships and 7990 SRT/SCT equivalences, 2.4 MB read once on
+  first use rather than built into map literals that a program pays for at
+  start-up whether it looks at a code or not. Against pydicom 3.1.0.dev0, all
+  45766 (collection, keyword, code) triples agree, and the table
+  `Collection.String()` prints is pydicom's `str()` line for line for 1360 of
+  the 1361 collections
+
+### Fixed
+- The File-set notes in 0.38.0 name pydicom 3.0.0 as what they were compared
+  against. The checkout they were compared against is 3.1.0.dev0, the one in
+  `pydicom/`; only the name was wrong, the comparisons were run against it
+
 ## [0.38.0] - 2026-11-13
 
 File-sets are whole. `OpenFileSet` used to read a DICOMDIR and nothing else
@@ -14,8 +37,8 @@ could touch one; this release writes a DICOMDIR, builds a File-set from
 instances, copies one to another root, and files the instances of a broken link
 back in instead of dropping them.
 
-Every part of it was compared against pydicom 3.0.0 rather than against an idea
-of what pydicom does. A written DICOMDIR is byte for byte what
+Every part of it was compared against pydicom 3.1.0.dev0 rather than against
+an idea of what pydicom does. A written DICOMDIR is byte for byte what
 `FileSet._write_dicomdir()` writes for the same File-set, in explicit VR and
 with `force_implicit`, from the conformant fixture and from the reordered,
 no-offset, big endian and implicit VR variants of it. A File-set built here with
@@ -42,7 +65,7 @@ produces the records, the File IDs and the files that `FileSet.copy()` does.
   Directory Record* and *Offset of Referenced Lower Level Directory Entity* set
   to where the record it links to landed, and the root's first and last record
   pointers filled in last. `FileSet.Write` replaces the DICOMDIR of the File-set
-  it was read from. The result is byte for byte what pydicom 3.0.0's
+  it was read from. The result is byte for byte what pydicom 3.1.0.dev0's
   `FileSet._write_dicomdir()` produces for the same File-set, in explicit VR
   and with `ForceImplicitVR` alike, from the reordered, no-offset, big endian
   and implicit VR DICOMDIR test fixtures as well as the conformant one
