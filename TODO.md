@@ -14,7 +14,7 @@ encapsulation of frames held in buffers (`EncapsulateBuffer` / `EncapsulatedBuff
 color lookup (`ApplyColorLUT`), `dicomjson` (a declined BulkDataURI is inlined),
 `uid.GenerateUID`, typed getters and setters, PS3.5 value validation
 (`ValidateValue`), `Dictionary` with a per-read
-private dictionary, `PrivateBlock`, read/write diagnostic hooks, `ReadOptions.Hooks` raw element middleware (`ResolveVR` / `ConvertValue`, `FixSeparatorValue` / `RetryValue`), streaming
+private dictionary, `PrivateBlock`, read/write diagnostic hooks, `ReadOptions.Hooks` raw element middleware (`ResolveVR` / `ConvertValue`, `FixSeparatorValue` / `RetryValue`), validation modes (`ReadOptions.ValueValidation` / `WriteOptions.ValueValidation`), streaming
 `Read`, `ReadOptions.OnElement`, File-sets (`OpenFileSet` / `LoadFileSet`,
 `NewFileSet` / `Add` / `AddCustom` / `Remove` / `Save` / `CopyTo`,
 `WriteDICOMDIR`), the coded terminology (`sr.Scheme` / `sr.CID` / `sr.Codes`, backed by `sr/codes.txt`), `waveforms.MultiplexArray` / `Multiplexes` / `WithChannelSensitivity`, `Dataset.OverlayArray`, and enhanced multi-frame functional
@@ -31,7 +31,7 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 | Item | Today | Trigger |
 |------|-------|---------|
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
-| Validation-mode enum (IGNORE / WARN / RAISE) | The write-side three-way choice is the `OnDiagnostic` hook's return value; no read-side value validation to put a mode on | A strict caller who wants an invalid value to fail the read |
+
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
 | Supplemental palettes | `Supplemental Palette Color Lookup Table Sequence (0028,1450)` is not applied, so a frame relying on one renders with the primary palette | A PET/CT series that actually carries one |
 

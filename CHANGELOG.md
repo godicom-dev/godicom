@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The validation-mode enum pydicom spells IGNORE / WARN / RAISE, as
+  `ReadOptions.ValueValidation` and `WriteOptions.ValueValidation`, with the
+  zero value meaning what each side has always done. On a read the zero value
+  is what pydicom's read does too -- nothing checked, because pydicom's
+  `dcmread` never validates a value; its `reading_validation_mode` governs the
+  `DataElement` a caller constructs afterwards, and the comparison that makes
+  that checkable is in the tests. `ValidationWarn` offers every value a text
+  VR cannot hold to `OnDiagnostic` as `DiagnosticInvalidValue`, named element,
+  offset and reason, and keeps the value; `ValidationRaise` fails the read or
+  write with the first such diagnostic, hook or no hook. On a write the zero
+  value is the check-and-offer godicom has always done, `ValidationIgnore`
+  skips the checks, and `ValidationRaise` is the strict hook's failure without
+  needing the hook. Only the text VRs are checked, because a value of a
+  numeric or byte VR cannot be wrong in Go the way it can in Python; against
+  pydicom 3.1.0.dev0, run with `scripts/check_validation.py`, the same values
+  are refused under the same VRs, the legal neighbours raise nothing, and the
+  one count that differs -- the length of a padded value -- does so because
+  godicom checks the value after the encoding's trailing pad came off
+### Added
 - The two callbacks pydicom's hooks module (3.0) spells "raw_element_vr" and
   "raw_element_value" arrive as `ReadOptions.Hooks`, per read rather than on a
   process-global singleton, and as middleware: each receives the function

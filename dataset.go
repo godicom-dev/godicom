@@ -88,6 +88,12 @@ type readContext struct {
 	// directly, and the deferred path passes nil to the conversion anyway, so
 	// a reload never runs a caller's hook.
 	hooks *Hooks
+
+	// valueValidation is ReadOptions.ValueValidation. It lives here for the
+	// same reason hooks does -- the conversion it governs is rerun by a
+	// deferred load -- and a reload, whose readContext is nil, keeps the
+	// historical fallback.
+	valueValidation ValidationMode
 }
 
 // hooksFrom returns the ReadOptions.Hooks this parse carries, or nil. Nil-safe,
