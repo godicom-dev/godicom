@@ -26,9 +26,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the 1361 collections
 
 ### Fixed
+- A pixel data value of undefined length whose item stream runs out without the
+  Sequence Delimiter Item was parsed three bytes short: the byte-wise scan that
+  finds the delimiter stopped where the next tag could no longer start, so the
+  last bytes of the value came back to the element loop as a would-be element
+  header. The scan now ends at the end of what is there, the value keeps every
+  byte, and reading stops there instead of misparsing. This holds for the
+  degraded path -- an item that itself has the undefined length -- and for the
+  same scan in the buffered reader and in skipping. Where pydicom warns and
+  drops the element, this keeps the value; the delimiter that is there is read
+  the same way pydicom reads it, byte for byte
 - The File-set notes in 0.38.0 name pydicom 3.0.0 as what they were compared
   against. The checkout they were compared against is 3.1.0.dev0, the one in
   `pydicom/`; only the name was wrong, the comparisons were run against it
+
 
 ## [0.38.0] - 2026-11-13
 

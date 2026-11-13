@@ -1023,7 +1023,12 @@ func readBytesUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleE
 		}
 		pos++
 	}
-	return append([]byte(nil), data[offset:pos]...), pos
+	// The scan ran to the end without meeting the delimiter: the value is
+	// everything the slice holds and the next element begins after it. The
+	// trailing bytes that do not fit a whole tag are part of the value, not
+	// the start of a header -- returning short would have the caller parse
+	// three bytes of value as an element header.
+	return append([]byte(nil), data[offset:]...), int64(len(data))
 }
 
 // scanUntilDelimiter is readBytesUntilDelimiter without the copy: it returns
@@ -1036,7 +1041,7 @@ func scanUntilDelimiter(data []byte, offset int64, delimiter Tag, isLittleEndian
 		}
 		pos++
 	}
-	return pos
+	return int64(len(data))
 }
 
 // readEncapsulatedPixelData reads undefined-length encapsulated pixel data
