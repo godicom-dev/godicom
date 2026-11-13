@@ -19,11 +19,12 @@ import (
 // actually uses. Referenced File ID is resolved against the directory that
 // contains the DICOMDIR.
 //
-// Writing a DICOMDIR, adding or removing instances, and folding orphaned
-// records back in by re-reading the instances are not part of this reader.
-// An orphan is a directory record the offset links never reach. By default
-// those records are left out of the tree. FileSetOptions.RaiseOrphans reports
-// them instead.
+// An orphan is a directory record the offset links never reach. Like pydicom,
+// the instances those records name are filed back into the tree by reading
+// them, so a File-set with a broken link loses nothing; the records the reader
+// rebuilt are the ones the instance's own elements call for, and the instance
+// keeps the Referenced File ID it had. FileSetOptions.ExcludeOrphans leaves
+// them out instead, and FileSetOptions.RaiseOrphans reports them.
 type FileSet struct {
 	Dataset  *FileDataset
 	RootPath string
@@ -46,6 +47,14 @@ type FileSetOptions struct {
 	// RaiseOrphans returns an error when the DICOMDIR contains a directory
 	// record that is not linked from the root.
 	RaiseOrphans bool
+
+	// ExcludeOrphans leaves the instances of orphaned directory records out
+	// of the File-set. The default -- the zero value -- files them back in by
+	// reading each instance and rebuilding the records it calls for, which is
+	// what pydicom's include_orphans=True does. The two are not both useful,
+	// but RaiseOrphans wins when both are set: nothing is filed in and the
+	// caller hears about the damage instead.
+	ExcludeOrphans bool
 }
 
 // RecordNode is one directory record in the File-set tree.
@@ -273,16 +282,86 @@ func (fs *FileSet) parseRecords(opts *FileSetOptions) error {
 			return err
 		}
 	}
-	var orphans int
+	var orphans []*RecordNode
 	for _, node := range records {
 		if node.Parent == nil {
-			orphans++
+			orphans = append(orphans, node)
 		}
 	}
-	if orphans > 0 && opts != nil && opts.RaiseOrphans {
+	if len(orphans) > 0 && opts != nil && opts.RaiseOrphans {
 		return fmt.Errorf("godicom: The DICOMDIR contains orphaned directory records")
 	}
-	return fs.collect(fs.Tree)
+	if err := fs.collect(fs.Tree); err != nil {
+		return err
+	}
+	if len(orphans) == 0 {
+		return nil
+	}
+	if opts != nil && opts.ExcludeOrphans {
+		logFileSet(fs.Dataset, fmt.Sprintf("The DICOMDIR has %d orphaned directory records that reference an instance that will not be included in the File-set", countOrphansWithFileID(orphans)))
+		return nil
+	}
+	return fs.readdOrphans(orphans)
+}
+
+// countOrphansWithFileID counts the orphaned records that name an instance.
+func countOrphansWithFileID(orphans []*RecordNode) int {
+	n := 0
+	for _, node := range orphans {
+		if parts, ok := referencedFileID(node.Record); ok && len(parts) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// readdOrphans files the instances named by orphaned records back into the
+// tree, which is what pydicom does rather than losing them: the instance is
+// read and the records it calls for are rebuilt, so the record that was
+// orphaned is not reused.
+//
+// A PRIVATE record is the exception -- nothing but private data can say what
+// its ancestors were, so the record itself becomes the leaf and joins the tree
+// where its own key puts it, which is pydicom's FileSet.add_custom().
+func (fs *FileSet) readdOrphans(orphans []*RecordNode) error {
+	for _, node := range orphans {
+		original, ok := referencedFileID(node.Record)
+		if !ok || len(original) == 0 {
+			continue
+		}
+		// A Referenced File ID that leaves the File-set is not a file to read
+		// back, and pydicom skips those too.
+		rel, err := fileIDRelative(original)
+		if err != nil {
+			continue
+		}
+		ds, err := ReadFile(filepath.Join(fs.RootPath, rel), nil)
+		if err != nil {
+			return err
+		}
+		// An instance the File-set already has keeps where it is: the orphan
+		// is a second record for the same instance, not a second instance.
+		sop, _ := ds.GetString(tag.SOPInstanceUID)
+		if fs.instanceBySOP(sop) != nil {
+			continue
+		}
+
+		var inst *FileInstance
+		if node.Type() == "PRIVATE" {
+			inst, err = fs.AddCustom(ds, node)
+		} else {
+			inst, err = fs.Add(ds)
+		}
+		if err != nil {
+			return err
+		}
+		// The instance is on disk -- it was just read from there -- so the
+		// staged dataset is only a copy of what the file already holds.
+		inst.ds = nil
+		inst.rel = rel
+		inst.Node.Record.Set(NewDataElement(tag.ReferencedFileID, VRCS, original))
+	}
+	return nil
 }
 
 func linkLower(n *RecordNode, byOffset map[uint64]*RecordNode) error {

@@ -37,8 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ID its position implies (PT000000/ST000000/SE000000/IM000000 and so on) and
   then the DICOMDIR. A File-set built this way opens in pydicom with the same
   records and File IDs pydicom itself would give it. `Save` refuses to move an
-  existing File-set to another root, and `UseExisting` keeps the layout a
-  File-set was read with and rewrites only the DICOMDIR
+  existing File-set to another root -- that is `CopyTo` -- and `UseExisting`
+  keeps the layout a File-set was read with and rewrites only the DICOMDIR
+- `AddCustom` files an instance under directory records the caller supplies,
+  which is the only way to write a PRIVATE record: it carries nothing that says
+  where it belongs, so no recorder could derive one. The chain the leaf hangs
+  from joins the tree where it meets it, the three Referenced UID elements are
+  filled in from the instance, and the records are checked the way pydicom
+  checks them -- a Directory Record Type, the element that identifies the
+  record among its siblings, and no more than eight levels
+- `CopyTo` copies a File-set to another root and returns the File-set that
+  lives there, laid out at the File IDs the records imply, with the original
+  left exactly as it was. The DICOMDIR it writes is the same one pydicom's
+  `FileSet.copy()` writes for the same File-set, and the destination has to be
+  a new one: an existing DICOMDIR or an occupied File ID is a refusal
+- Orphaned directory records -- records the offset links never reach -- are
+  filed back in by reading each instance they name and rebuilding the records
+  it calls for, which is pydicom's default too. `FileSetOptions.ExcludeOrphans`
+  leaves them out instead, and `RaiseOrphans` still reports them
 
 ## [0.37.0] - 2026-11-13
 

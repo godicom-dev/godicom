@@ -1,6 +1,7 @@
 package godicom_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -174,12 +175,32 @@ func TestFileSetOrphans(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "orphaned directory records") {
 		t.Fatalf("err = %v", err)
 	}
-	loaded, err := godicom.LoadFileSet(fs.Dataset, nil)
+
+	loaded, err := godicom.LoadFileSet(fs.Dataset, &godicom.FileSetOptions{ExcludeOrphans: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loaded.Len() != fs.Len()-dropped {
-		t.Fatalf("instances = %d, want %d", loaded.Len(), fs.Len()-dropped)
+		t.Fatalf("without orphans: instances = %d, want %d", loaded.Len(), fs.Len()-dropped)
+	}
+
+	// The default files the instances back in, which is what pydicom does:
+	// the records are rebuilt from each instance, so nothing is lost to a
+	// broken link.
+	recovered, err := godicom.LoadFileSet(fs.Dataset, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Len() != fs.Len() {
+		t.Fatalf("with orphans: instances = %d, want %d", recovered.Len(), fs.Len())
+	}
+	if got := len(recovered.Tree.Children); got != len(fs.Tree.Children) {
+		t.Fatalf("with orphans: top-level records = %d, want %d", got, len(fs.Tree.Children))
+	}
+	for _, inst := range recovered.Instances() {
+		if _, err := os.Stat(inst.Path()); err != nil {
+			t.Fatalf("%s: %v", inst.FileID(), err)
+		}
 	}
 }
 
