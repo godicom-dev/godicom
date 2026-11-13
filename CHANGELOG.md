@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-13
+
+Nothing in the library changed. What this release accepts and what it writes is
+what `v0.36.0` did; the work in it is the test suite and the coverage reporting
+catching up.
+
+Two tests now cover behaviour that had none. Writing through a symlink still
+updates the file the link points at and leaves the link a link — a rename would
+have replaced the name instead — and the test compares the inode of the target
+before and after, so it tells those two implementations apart rather than
+passing either way. And every VR in `StandardVRs` is written and read back, so
+a VR added without a sample value fails with `no sample value for <VR>` instead
+of being skipped quietly.
+
+### Changed
+- Coverage is published again on every push to `main`, so the badge in
+  `README.md` shows a percentage instead of `unknown`. The upload step had been
+  in the workflow all along but never received the `CODECOV_TOKEN` secret, so
+  Codecov turned every report away with "Token required because branch is
+  protected" — and the step is non-fatal, so the job stayed green and the
+  failure never showed
+
 ## [0.36.0] - 2026-11-13
 
 ### Changed
@@ -994,7 +1016,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/godicom-dev/godicom/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/godicom-dev/godicom/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/godicom-dev/godicom/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/godicom-dev/godicom/compare/v0.33.0...v0.34.0
