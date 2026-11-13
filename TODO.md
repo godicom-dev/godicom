@@ -9,7 +9,8 @@ this file tracks deferred work and known gaps.
 As of **v0.39.0** the released surface covers Part 10 and dataset encode/decode,
 transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
 JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, a single
-encapsulated frame read out of an `io.ReaderAt` (`encaps.GetFrameFrom`), palette
+encapsulated frame read out of an `io.ReaderAt` (`encaps.GetFrameFrom`), the
+encapsulation of frames held in buffers (`EncapsulateBuffer` / `EncapsulatedBuffer`), palette
 color lookup (`ApplyColorLUT`), `dicomjson` (a declined BulkDataURI is inlined),
 `uid.GenerateUID`, typed getters and setters, PS3.5 value validation
 (`ValidateValue`), `Dictionary` with a per-read

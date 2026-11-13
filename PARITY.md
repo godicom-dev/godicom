@@ -8,7 +8,7 @@ This is a **coverage map**, not a claim of full parity.
 | Scale | Count |
 |-------|------:|
 | pydicom `def test_` | 2334 |
-| godicom `Test*` funcs | 1162 |
+| godicom `Test*` funcs | 1161 |
 
 ## Verdict
 
@@ -37,7 +37,7 @@ areas are thinner on edge fixtures.
 | File reader | solid | filereader (~110) | `Read` / `ReadFile` / `ReadBytes` | Seekable skip; deferred values use `io.ReaderAt`; `OnElement` keep / skip / stop; no string `DeferSize` |
 | File writer | partial | filewriter (~168) | `WriteFile` / `SaveAs` | Key roundtrips; not full suite |
 | Dataset / Part 10 bytes API | solid | (app helpers) | Encode/Decode, EncodeFile/ReadBytes | Network payload path |
-| Encapsulation | partial | encaps (~164) | `encaps/` | BOT/EOT/frames, plus `GetFrameFrom` for one frame out of an `io.ReaderAt`, which is what pydicom's `pixel_data_reader` parameter is for. No write-side `EncapsulatedBuffer` equivalent: godicom's writer takes value bytes, so a seekable synthesized stream would have no consumer. Thinner suite |
+| Encapsulation | **complete** | encaps (~164) | `encaps/` | BOT/EOT/frames, `GetFrameFrom` for one frame out of an `io.ReaderAt` (pydicom's `pixel_data_reader` parameter), and the write side: `EncapsulateBuffer` / `EncapsulateExtendedBuffer` / `EncapsulatedBuffer` (an `io.ReadSeeker` over the encapsulated value, so frames in buffers need not be in memory together), plus `ItemizeFrame` / `ParseFragments`. godicom's writer takes value bytes, so the buffer is read out rather than handed to the writer as a stream; the bytes are pydicom's |
 | Pixel decode | partial | pixels+handlers (~900) | native/RLE/JPEG/JLS/J2K/HTJ2K | Common TS; fixture depth << |
 | Pixel encode | partial | encoders | native/RLE/Deflated/JPEG/JLS/J2K/HTJ2K | |
 | Pixel processing | partial | processing.py | Modality/VOI/YBR/planar, `PixelArray`, `DisplayFrame`, `ApplyColorLUT` | Explicit; not auto in PixelBytes. Enhanced multi-frame functional groups (`(5200,9229)`, `(5200,9230)`) are read with per-frame → shared → top-level precedence by `DisplayFrame`, the `...ForFrame` variants and `PixelMeasures(frameIndex)`; the dataset-wide entry points see shared/top-level only. Supplemental palettes unsupported |
