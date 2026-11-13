@@ -305,10 +305,10 @@ func TestEncapsulatedBufferReadNone(t *testing.T) {
 // TestExtendedOffsets.
 func TestEncapsulatedBufferExtendedTables(t *testing.T) {
 	tests := []struct {
-		name     string
-		frames   [][]byte
-		offsets  string
-		lengths  string
+		name    string
+		frames  [][]byte
+		offsets string
+		lengths string
 	}{
 		{"empty", [][]byte{{}}, "0000000000000000", "0000000000000000"},
 		{"two_empty", [][]byte{{}, {}}, "00000000000000000800000000000000", "00000000000000000000000000000000"},
