@@ -35,7 +35,7 @@ jobs:
         run: bash scripts/fetch-testdata.sh
 
       - name: Test
-        run: go test -count=1 -p 4 ./...
+        run: go test -count=1 -p 4 -v ./...
 
   cross-build:
     name: cross-build (32-bit and codec-less platforms)
