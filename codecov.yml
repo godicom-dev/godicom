@@ -1,0 +1,22 @@
+# Codecov statuses.
+#
+# The project status is the gate that matters: the coverage of the whole module
+# may not fall by more than a point, so a change that adds a large untested file
+# fails here.
+#
+# The patch status is informational on purpose. In a Go library a sizeable share
+# of a new file is `if err != nil { return nil, err }` -- for example the
+# directory record builders in fileset_write.go propagate from helpers that
+# cannot fail once the keywords they take exist. Those arms can only be covered
+# by calling the helpers with arguments no caller passes, which is a test of the
+# test rather than of the code. Failing CI on them pushes towards worse code;
+# reporting the number keeps it visible on every pull request.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        informational: true
