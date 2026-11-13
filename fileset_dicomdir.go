@@ -86,6 +86,16 @@ func (fs *FileSet) EncodeDICOMDIR(opts *WriteDICOMDIROptions) ([]byte, error) {
 	}
 
 	ds := fs.Dataset.Dataset
+	// The File-set ID is a field on FileSet rather than part of the dataset,
+	// so it is copied in here: assigning to it and saving has to be enough.
+	if fs.ID != "" {
+		if len(fs.ID) > 16 {
+			return nil, fmt.Errorf("godicom: the File-set ID must be at most 16 characters, got %d", len(fs.ID))
+		}
+		if current, ok := ds.GetString(tag.FileSetID); !ok || current != fs.ID {
+			ds.Set(NewDataElement(tag.FileSetID, VRCS, fs.ID))
+		}
+	}
 	if err := CorrectAmbiguousVR(ds, true, nil); err != nil {
 		return nil, err
 	}
@@ -106,8 +116,8 @@ func (fs *FileSet) EncodeDICOMDIR(opts *WriteDICOMDIROptions) ([]byte, error) {
 	// Every byte goes through the counter, including the preamble: the offsets
 	// are positions in the file, and the preamble is part of it.
 	cw := &countWriter{w: &out}
-	cw.Write(make([]byte, 128))
-	cw.Write([]byte("DICM"))
+	_, _ = cw.Write(make([]byte, 128))
+	_, _ = cw.Write([]byte("DICM"))
 
 	metaFP := newDicomWriter(cw)
 	metaFP.SetByteOrder(true)
@@ -285,6 +295,12 @@ func (fs *FileSet) dicomdirFileMeta(forceImplicit bool) (*FileMetaDataset, error
 		return nil, fmt.Errorf("godicom: unable to write the DICOMDIR as the File-set has no Media Storage SOP Instance UID")
 	}
 	meta.Set(NewDataElement(tag.MediaStorageSOPInstanceUID, VRUI, string(fs.UID)))
+	// Adds the File Meta Information Version and the implementation elements
+	// PS3.10 Section 7.1 makes mandatory, which a File-set read from a
+	// conformant DICOMDIR already has and a new one does not.
+	if err := ValidateFileMeta(meta, true); err != nil {
+		return nil, err
+	}
 	return meta, nil
 }
 
@@ -359,13 +375,13 @@ func writeSequenceHeader(w io.Writer, contentLen int64, forceImplicit bool) {
 	binary.LittleEndian.PutUint16(hdr[2:], uint16(tag.DirectoryRecordSequence.Element()))
 	if forceImplicit {
 		binary.LittleEndian.PutUint32(hdr[4:], uint32(contentLen))
-		w.Write(hdr[:8])
+		_, _ = w.Write(hdr[:8])
 		return
 	}
 	copy(hdr[4:], "SQ")
 	binary.LittleEndian.PutUint16(hdr[6:], 0)
 	binary.LittleEndian.PutUint32(hdr[8:], uint32(contentLen))
-	w.Write(hdr[:])
+	_, _ = w.Write(hdr[:])
 }
 
 // writeItem writes one sequence item around the encoded record.
@@ -377,8 +393,8 @@ func writeItem(w io.Writer, content []byte) error {
 	binary.LittleEndian.PutUint16(hdr[0:], uint16(ItemTag.Group()))
 	binary.LittleEndian.PutUint16(hdr[2:], uint16(ItemTag.Element()))
 	binary.LittleEndian.PutUint32(hdr[4:], uint32(len(content)))
-	w.Write(hdr[:])
-	w.Write(content)
+	_, _ = w.Write(hdr[:])
+	_, _ = w.Write(content)
 	return nil
 }
 
@@ -453,8 +469,8 @@ func writeFileBytes(filename string, data []byte) error {
 	committed := false
 	defer func() {
 		if !committed {
-			f.Close()
-			os.Remove(name)
+			_ = f.Close()
+			_ = os.Remove(name)
 		}
 	}()
 

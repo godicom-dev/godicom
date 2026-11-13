@@ -448,8 +448,25 @@ err = fs.WriteDICOMDIR("out/DICOMDIR", nil)
 ```
 
 `WriteDICOMDIROptions{ForceImplicitVR: true}` writes implicit VR little endian,
-which PS3.10 forbids for a DICOMDIR and some older readers require. Adding or
-removing instances is not included.
+which PS3.10 forbids for a DICOMDIR and some older readers require.
+
+`NewFileSet` builds one from instances instead:
+
+```go
+fs, err := godicom.NewFileSet()
+fs.ID = "STUDY42"
+_, err = fs.AddFile("img/ct1.dcm")
+_, err = fs.AddFile("img/ct2.dcm")
+err = fs.Save("out/fileset", nil)
+```
+
+`Add` files an instance under the records its Patient, Study and Series UIDs
+put it in, sharing the PATIENT, STUDY and SERIES records the File-set already
+has, and `Save` writes each file at the File ID its place implies
+(`PT000000/ST000000/SE000000/IM000000`) and then the DICOMDIR. `Remove` drops an
+instance from the tree but leaves its file on disk, so a removal can be undone.
+`Save` with `FileSetWriteOptions{UseExisting: true}` keeps the layout a File-set
+was read with and rewrites only the DICOMDIR.
 
 ## Overlays
 

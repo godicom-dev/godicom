@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FileSet._write_dicomdir()` produces for the same File-set, in explicit VR
   and with `ForceImplicitVR` alike, from the reordered, no-offset, big endian
   and implicit VR DICOMDIR test fixtures as well as the conformant one
+- `NewFileSet`, `Add`, `AddFile`, `Remove` and `Save` build a File-set instead
+  of only reading one: an instance is filed under the PATIENT/STUDY/SERIES
+  records its SOP Instance UID and Study/Series UIDs put it in, sharing the
+  records the File-set already has, and `Save` writes each instance at the File
+  ID its position implies (PT000000/ST000000/SE000000/IM000000 and so on) and
+  then the DICOMDIR. A File-set built this way opens in pydicom with the same
+  records and File IDs pydicom itself would give it. `Save` refuses to move an
+  existing File-set to another root, and `UseExisting` keeps the layout a
+  File-set was read with and rewrites only the DICOMDIR
 
 ## [0.37.0] - 2026-11-13
 
