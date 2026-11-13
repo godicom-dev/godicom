@@ -453,9 +453,56 @@ func copyElement(tg Tag, elem *DataElement) *DataElement {
 	return NewDataElement(tg, elem.VR, elem.Value)
 }
 
-// copyRecordElement copies the element at keyword from the instance to the
-// record. A missing element is an error, for the Type 1 elements.
-func copyRecordElement(record, ds *Dataset, keyword string) error {
+// copyRequired copies each keyword's element from the instance onto the record.
+//
+// The recorders check these keywords with checkRecordDataset first, so the only
+// way this fails is a keyword that is not in the dictionary -- a mistake in this
+// file rather than in the instance, which TestEveryRecorderProducesItsRecord
+// turns into a failure.
+func copyRequired(record, ds *Dataset, keywords ...string) error {
+	for _, keyword := range keywords {
+		tg, ok := tag.ByKeyword(keyword)
+		if !ok {
+			return fmt.Errorf("godicom: unknown element keyword %q", keyword)
+		}
+		elem, ok := ds.Get(tg)
+		if !ok {
+			return fmt.Errorf("the instance's %s element is missing", tg)
+		}
+		record.Set(copyElement(tg, elem))
+	}
+	return nil
+}
+
+// copyOptional copies each keyword's element when the instance has it, and adds
+// an empty element of the dictionary's VR when it does not.
+//
+// pydicom reaches the same place by assigning ds.get(keyword) to the record: a
+// missing element becomes a present but empty one, so the DICOMDIR carries the
+// attribute with a zero length instead of omitting it. The two are different
+// datasets.
+func copyOptional(record, ds *Dataset, keywords ...string) error {
+	for _, keyword := range keywords {
+		tg, ok := tag.ByKeyword(keyword)
+		if !ok {
+			return fmt.Errorf("godicom: unknown element keyword %q", keyword)
+		}
+		if elem, ok := ds.Get(tg); ok {
+			record.Set(copyElement(tg, elem))
+			continue
+		}
+		vr, err := dictionaryVR(tg)
+		if err != nil {
+			return fmt.Errorf("godicom: no VR for %s: %w", tg, err)
+		}
+		record.Set(NewDataElement(tg, vr, nil))
+	}
+	return nil
+}
+
+// copySequence copies a sequence the recorder checked for, or that PS3.3 does
+// not make optional.
+func copySequence(record, ds *Dataset, keyword string) error {
 	tg, ok := tag.ByKeyword(keyword)
 	if !ok {
 		return fmt.Errorf("godicom: unknown element keyword %q", keyword)
@@ -468,13 +515,31 @@ func copyRecordElement(record, ds *Dataset, keyword string) error {
 	return nil
 }
 
-// copyRecordElementOrEmpty copies the element at keyword when the instance has
-// it and adds an empty element of the dictionary's VR when it does not.
-//
-// pydicom reaches the same place by assigning ds.get(keyword) to the record: a
-// missing element becomes a present but empty one, and the DICOMDIR then
-// carries the attribute with a zero length instead of omitting it.
-func copyRecordElementOrEmpty(record, ds *Dataset, keyword string) error {
+// copySequenceIfPresent copies each sequence the instance has, and refuses one
+// that is there with no items.
+func copySequenceIfPresent(record, ds *Dataset, keywords ...string) error {
+	for _, keyword := range keywords {
+		tg, ok := tag.ByKeyword(keyword)
+		if !ok {
+			return fmt.Errorf("godicom: unknown element keyword %q", keyword)
+		}
+		if _, ok := ds.Get(tg); !ok {
+			continue
+		}
+		if err := checkRecordDataset(ds, keyword); err != nil {
+			return err
+		}
+		if err := copySequence(record, ds, keyword); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copySequenceOrEmpty copies a sequence when the instance has one and writes an
+// empty sequence when it does not, which is what ds.get(keyword, []) does in
+// pydicom.
+func copySequenceOrEmpty(record, ds *Dataset, keyword string) error {
 	tg, ok := tag.ByKeyword(keyword)
 	if !ok {
 		return fmt.Errorf("godicom: unknown element keyword %q", keyword)
@@ -483,25 +548,7 @@ func copyRecordElementOrEmpty(record, ds *Dataset, keyword string) error {
 		record.Set(copyElement(tg, elem))
 		return nil
 	}
-	vr, err := dictionaryVR(tg)
-	if err != nil {
-		return fmt.Errorf("godicom: no VR for %s: %w", tg, err)
-	}
-	record.Set(NewDataElement(tg, vr, nil))
-	return nil
-}
-
-// sequenceElement copies a sequence element across unchanged.
-func sequenceElement(record, ds *Dataset, keyword string) error {
-	tg, ok := tag.ByKeyword(keyword)
-	if !ok {
-		return fmt.Errorf("godicom: unknown element keyword %q", keyword)
-	}
-	elem, ok := ds.Get(tg)
-	if !ok {
-		return fmt.Errorf("the instance's %s element is missing", tg)
-	}
-	record.Set(copyElement(tg, elem))
+	record.Set(NewDataElement(tg, VRSQ, NewSequence(nil)))
 	return nil
 }
 
@@ -512,10 +559,10 @@ func definePatientRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElementOrEmpty(record, ds, "PatientName"); err != nil {
+	if err := copyOptional(record, ds, "PatientName"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElement(record, ds, "PatientID"); err != nil {
+	if err := copyRequired(record, ds, "PatientID"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -528,26 +575,24 @@ func defineStudyRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"StudyDate", "StudyTime"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "StudyDate", "StudyTime"); err != nil {
+		return nil, err
 	}
-	if err := copyRecordElementOrEmpty(record, ds, "StudyDescription"); err != nil {
+	if err := copyOptional(record, ds, "StudyDescription"); err != nil {
 		return nil, err
 	}
 	if _, ok := ds.Get(tag.StudyInstanceUID); ok {
 		if err := checkRecordDataset(ds, "StudyInstanceUID"); err != nil {
 			return nil, err
 		}
-		if err := copyRecordElement(record, ds, "StudyInstanceUID"); err != nil {
+		if err := copyRequired(record, ds, "StudyInstanceUID"); err != nil {
 			return nil, err
 		}
 	}
-	if err := copyRecordElement(record, ds, "StudyID"); err != nil {
+	if err := copyRequired(record, ds, "StudyID"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElementOrEmpty(record, ds, "AccessionNumber"); err != nil {
+	if err := copyOptional(record, ds, "AccessionNumber"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -560,10 +605,8 @@ func defineSeriesRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"Modality", "SeriesInstanceUID", "SeriesNumber"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "Modality", "SeriesInstanceUID", "SeriesNumber"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -575,7 +618,7 @@ func defineImageRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "InstanceNumber"); err != nil {
+	if err := copyRequired(record, ds, "InstanceNumber"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -588,10 +631,8 @@ func defineRTDoseRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"InstanceNumber", "DoseSummationType"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "InstanceNumber", "DoseSummationType"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -603,15 +644,11 @@ func defineRTStructureSetRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"InstanceNumber", "StructureSetLabel"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "InstanceNumber", "StructureSetLabel"); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{"StructureSetDate", "StructureSetTime"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyOptional(record, ds, "StructureSetDate", "StructureSetTime"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -623,15 +660,11 @@ func defineRTPlanRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"InstanceNumber", "RTPlanLabel"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "InstanceNumber", "RTPlanLabel"); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{"RTPlanDate", "RTPlanTime"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyOptional(record, ds, "RTPlanDate", "RTPlanTime"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -643,13 +676,11 @@ func defineRTTreatmentRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "InstanceNumber"); err != nil {
+	if err := copyRequired(record, ds, "InstanceNumber"); err != nil {
 		return nil, err
 	}
-	for _, keyword := range []string{"TreatmentDate", "TreatmentTime"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyOptional(record, ds, "TreatmentDate", "TreatmentTime"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -666,31 +697,21 @@ func definePresentationRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{
+	// The first four are Presentation Creation and the Content Identification
+	// Macro; pydicom copies them in this order.
+	if err := copyRequired(record, ds,
 		"PresentationCreationDate",
 		"PresentationCreationTime",
-		// Content Identification Macro
 		"InstanceNumber",
 		"ContentLabel",
-	} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{"ContentDescription", "ContentCreatorName"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyOptional(record, ds, "ContentDescription", "ContentCreatorName"); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{"ReferencedSeriesSequence", "BlendingSequence"} {
-		if _, ok := ds.Get(mustTagForKeyword(keyword)); ok {
-			if err := checkRecordDataset(ds, keyword); err != nil {
-				return nil, err
-			}
-			if err := sequenceElement(record, ds, keyword); err != nil {
-				return nil, err
-			}
-		}
+	if err := copySequenceIfPresent(record, ds, "ReferencedSeriesSequence", "BlendingSequence"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -709,35 +730,28 @@ func defineSRDocumentRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{
+	if err := copyRequired(record, ds,
 		"InstanceNumber",
 		"CompletionFlag",
 		"VerificationFlag",
 		"ContentDate",
 		"ContentTime",
-	} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	); err != nil {
+		return nil, err
 	}
 	if _, ok := ds.Get(tag.VerificationDateTime); ok {
 		if err := checkRecordDataset(ds, "VerificationDateTime"); err != nil {
 			return nil, err
 		}
-		if err := copyRecordElement(record, ds, "VerificationDateTime"); err != nil {
+		if err := copyRequired(record, ds, "VerificationDateTime"); err != nil {
 			return nil, err
 		}
 	}
-	if err := sequenceElement(record, ds, "ConceptNameCodeSequence"); err != nil {
+	if err := copySequence(record, ds, "ConceptNameCodeSequence"); err != nil {
 		return nil, err
 	}
-	if _, ok := ds.Get(tag.ContentSequence); ok {
-		if err := checkRecordDataset(ds, "ContentSequence"); err != nil {
-			return nil, err
-		}
-		if err := sequenceElement(record, ds, "ContentSequence"); err != nil {
-			return nil, err
-		}
+	if err := copySequenceIfPresent(record, ds, "ContentSequence"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -754,21 +768,14 @@ func defineKeyObjectDocRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"ContentDate", "ContentTime", "InstanceNumber"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
-	}
-	if err := sequenceElement(record, ds, "ConceptNameCodeSequence"); err != nil {
+	if err := copyRequired(record, ds, "ContentDate", "ContentTime", "InstanceNumber"); err != nil {
 		return nil, err
 	}
-	if _, ok := ds.Get(tag.ContentSequence); ok {
-		if err := checkRecordDataset(ds, "ContentSequence"); err != nil {
-			return nil, err
-		}
-		if err := sequenceElement(record, ds, "ContentSequence"); err != nil {
-			return nil, err
-		}
+	if err := copySequence(record, ds, "ConceptNameCodeSequence"); err != nil {
+		return nil, err
+	}
+	if err := copySequenceIfPresent(record, ds, "ContentSequence"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -790,34 +797,25 @@ func defineSpectroscopyRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{
+	if err := copyRequired(record, ds,
 		"ImageType",
 		"ContentDate",
 		"ContentTime",
 		"InstanceNumber",
-	} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	); err != nil {
+		return nil, err
 	}
-	if _, ok := ds.Get(tag.ReferencedImageEvidenceSequence); ok {
-		if err := checkRecordDataset(ds, "ReferencedImageEvidenceSequence"); err != nil {
-			return nil, err
-		}
-		if err := sequenceElement(record, ds, "ReferencedImageEvidenceSequence"); err != nil {
-			return nil, err
-		}
+	if err := copySequenceIfPresent(record, ds, "ReferencedImageEvidenceSequence"); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{
+	if err := copyRequired(record, ds,
 		"NumberOfFrames",
 		"Rows",
 		"Columns",
 		"DataPointRows",
 		"DataPointColumns",
-	} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -834,21 +832,21 @@ func defineHangingProtocolRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "HangingProtocolCreator"); err != nil {
+	if err := copyRequired(record, ds,
+		"HangingProtocolCreator",
+		"HangingProtocolCreationDateTime",
+	); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElement(record, ds, "HangingProtocolCreationDateTime"); err != nil {
+	if err := copySequence(record, ds, "HangingProtocolDefinitionSequence"); err != nil {
 		return nil, err
 	}
-	if err := sequenceElement(record, ds, "HangingProtocolDefinitionSequence"); err != nil {
-		return nil, err
-	}
-	if err := copyRecordElement(record, ds, "NumberOfPriorsReferenced"); err != nil {
+	if err := copyRequired(record, ds, "NumberOfPriorsReferenced"); err != nil {
 		return nil, err
 	}
 	// pydicom defaults this to an empty list, so the element is present and
 	// empty rather than absent.
-	if err := copyRecordElementOrEmpty(record, ds, "HangingProtocolUserIdentificationCodeSequence"); err != nil {
+	if err := copySequenceOrEmpty(record, ds, "HangingProtocolUserIdentificationCodeSequence"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -861,29 +859,27 @@ func defineEncapDocRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"ContentDate", "ContentTime"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
-	}
-	if err := copyRecordElement(record, ds, "InstanceNumber"); err != nil {
+	if err := copyOptional(record, ds, "ContentDate", "ContentTime"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElementOrEmpty(record, ds, "DocumentTitle"); err != nil {
+	if err := copyRequired(record, ds, "InstanceNumber"); err != nil {
+		return nil, err
+	}
+	if err := copyOptional(record, ds, "DocumentTitle"); err != nil {
 		return nil, err
 	}
 	if _, ok := ds.Get(tag.HL7InstanceIdentifier); ok {
 		if err := checkRecordDataset(ds, "HL7InstanceIdentifier"); err != nil {
 			return nil, err
 		}
-		if err := copyRecordElement(record, ds, "HL7InstanceIdentifier"); err != nil {
+		if err := copyRequired(record, ds, "HL7InstanceIdentifier"); err != nil {
 			return nil, err
 		}
 	}
-	if err := copyRecordElementOrEmpty(record, ds, "ConceptNameCodeSequence"); err != nil {
+	if err := copySequenceOrEmpty(record, ds, "ConceptNameCodeSequence"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElement(record, ds, "MIMETypeOfEncapsulatedDocument"); err != nil {
+	if err := copyRequired(record, ds, "MIMETypeOfEncapsulatedDocument"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -896,10 +892,10 @@ func definePaletteRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "ContentLabel"); err != nil {
+	if err := copyRequired(record, ds, "ContentLabel"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElementOrEmpty(record, ds, "ContentDescription"); err != nil {
+	if err := copyOptional(record, ds, "ContentDescription"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -912,20 +908,18 @@ func defineImplantRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"Manufacturer", "ImplantName"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "Manufacturer", "ImplantName"); err != nil {
+		return nil, err
 	}
 	if _, ok := ds.Get(tag.ImplantSize); ok {
 		if err := checkRecordDataset(ds, "ImplantSize"); err != nil {
 			return nil, err
 		}
-		if err := copyRecordElement(record, ds, "ImplantSize"); err != nil {
+		if err := copyRequired(record, ds, "ImplantSize"); err != nil {
 			return nil, err
 		}
 	}
-	if err := copyRecordElement(record, ds, "ImplantPartNumber"); err != nil {
+	if err := copyRequired(record, ds, "ImplantPartNumber"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -942,13 +936,10 @@ func defineImplantAssyRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "ImplantAssemblyTemplateName"); err != nil {
+	if err := copyRequired(record, ds, "ImplantAssemblyTemplateName", "Manufacturer"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElement(record, ds, "Manufacturer"); err != nil {
-		return nil, err
-	}
-	if err := sequenceElement(record, ds, "ProcedureTypeCodeSequence"); err != nil {
+	if err := copySequence(record, ds, "ProcedureTypeCodeSequence"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -961,10 +952,8 @@ func defineImplantGroupRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"ImplantTemplateGroupName", "ImplantTemplateGroupIssuer"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "ImplantTemplateGroupName", "ImplantTemplateGroupIssuer"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -976,10 +965,8 @@ func defineSurfaceScanRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"ContentDate", "ContentTime"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "ContentDate", "ContentTime"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -991,13 +978,10 @@ func defineAssessmentRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "InstanceNumber"); err != nil {
+	if err := copyRequired(record, ds, "InstanceNumber", "InstanceCreationDate"); err != nil {
 		return nil, err
 	}
-	if err := copyRecordElement(record, ds, "InstanceCreationDate"); err != nil {
-		return nil, err
-	}
-	if err := copyRecordElementOrEmpty(record, ds, "InstanceCreationTime"); err != nil {
+	if err := copyOptional(record, ds, "InstanceCreationTime"); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -1010,23 +994,22 @@ func defineRadiotherapyRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	if err := copyRecordElement(record, ds, "InstanceNumber"); err != nil {
+	if err := copyRequired(record, ds, "InstanceNumber"); err != nil {
 		return nil, err
 	}
 	for _, keyword := range []string{"UserContentLabel", "UserContentLongLabel"} {
-		if _, ok := ds.Get(mustTagForKeyword(keyword)); ok {
-			if err := checkRecordDataset(ds, keyword); err != nil {
-				return nil, err
-			}
-			if err := copyRecordElement(record, ds, keyword); err != nil {
-				return nil, err
-			}
+		if _, ok := ds.Get(mustTagForKeyword(keyword)); !ok {
+			continue
 		}
-	}
-	for _, keyword := range []string{"ContentDescription", "ContentCreatorName"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
+		if err := checkRecordDataset(ds, keyword); err != nil {
 			return nil, err
 		}
+		if err := copyRequired(record, ds, keyword); err != nil {
+			return nil, err
+		}
+	}
+	if err := copyOptional(record, ds, "ContentDescription", "ContentCreatorName"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -1038,10 +1021,8 @@ func defineGenericContentRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"InstanceNumber", "ContentDate", "ContentTime"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "InstanceNumber", "ContentDate", "ContentTime"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
@@ -1055,15 +1036,11 @@ func defineGenericContentIDRecord(ds *Dataset) (*Dataset, error) {
 	}
 
 	record := NewDataset()
-	for _, keyword := range []string{"InstanceNumber", "ContentDate", "ContentTime", "ContentLabel"} {
-		if err := copyRecordElement(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyRequired(record, ds, "InstanceNumber", "ContentDate", "ContentTime", "ContentLabel"); err != nil {
+		return nil, err
 	}
-	for _, keyword := range []string{"ContentDescription", "ContentCreatorName"} {
-		if err := copyRecordElementOrEmpty(record, ds, keyword); err != nil {
-			return nil, err
-		}
+	if err := copyOptional(record, ds, "ContentDescription", "ContentCreatorName"); err != nil {
+		return nil, err
 	}
 	return record, nil
 }
