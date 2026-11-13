@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `SaveAs`, `WriteFile` and `WriteFileContext` write to a temporary file beside
+  the target and rename it onto the target only once the whole write succeeded.
+  Every error the writer can raise after `os.Create` — a value the VR cannot
+  hold, a strict `OnDiagnostic` hook, a character set changed under an
+  un-decoded element, a full disk — used to leave a truncated file where a good
+  one had been, and a truncated DICOM file still opens, so nothing downstream
+  noticed. A failed write now leaves the previous file as it was, or no file at
+  all where there was none. Two consequences worth knowing: the directory has to
+  be writable, which truncating an existing file did not need, and a hard link
+  to the old file keeps the old contents. A path that is a symlink, a device or
+  a pipe is still written through in place, because a rename would replace the
+  name rather than the thing it pointed at
+
 ### Fixed
 - Writing an integer that its VR cannot hold is refused instead of truncated:
   a `US` set to 70000 used to reach the file as 4464, and `US` with -1 as
