@@ -81,6 +81,22 @@ type readContext struct {
 	// rather than once per element.
 	reportDefaultCharset bool
 	misdeclaredReported  bool
+
+	// hooks is ReadOptions.Hooks, kept beside onDiag and dict because a
+	// deferred load reruns the header decode and the value conversion after
+	// the read returned. It is read through the method below rather than
+	// directly, and the deferred path passes nil to the conversion anyway, so
+	// a reload never runs a caller's hook.
+	hooks *Hooks
+}
+
+// hooksFrom returns the ReadOptions.Hooks this parse carries, or nil. Nil-safe,
+// because a decoder handed no readContext at all has no hooks to run.
+func (rc *readContext) hooksFrom() *Hooks {
+	if rc == nil {
+		return nil
+	}
+	return rc.hooks
 }
 
 // dictionary returns the data dictionary this parse resolves against: the one
