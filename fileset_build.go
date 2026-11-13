@@ -2,6 +2,7 @@ package godicom
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -84,10 +85,8 @@ func (fs *FileSet) Add(ds *FileDataset) (*FileInstance, error) {
 	}
 
 	if sop, ok := ds.GetString(tag.SOPInstanceUID); ok {
-		for _, inst := range fs.instances {
-			if existing, ok := inst.SOPInstanceUID(); ok && existing == sop {
-				return inst, nil
-			}
+		if existing := fs.instanceBySOP(sop); existing != nil {
+			return existing, nil
 		}
 	}
 
@@ -120,6 +119,128 @@ func (fs *FileSet) AddFile(path string) (*FileInstance, error) {
 		return nil, err
 	}
 	return fs.Add(ds)
+}
+
+// AddCustom stages an instance under directory records the caller supplies.
+//
+// Add builds the records from the instance, which is what a conformant
+// File-set needs; this takes them as they are, which is the only way to write
+// a PRIVATE record: the standard gives private records no elements of their
+// own that say where they belong, so no recorder could derive one. The records
+// are the caller's, and leaf's ancestors have to be set: the chain leaf hangs
+// from is inserted at the point where it meets the tree.
+//
+// The elements that link a record to a file are set here rather than by the
+// caller -- Referenced File ID, and the Referenced SOP Class, SOP Instance and
+// Transfer Syntax UIDs -- because they come from the instance.
+func (fs *FileSet) AddCustom(ds *FileDataset, leaf *RecordNode) (*FileInstance, error) {
+	if fs == nil || fs.Dataset == nil {
+		return nil, fmt.Errorf("godicom: unable to add an instance to a nil File-set")
+	}
+	if ds == nil || ds.Dataset == nil {
+		return nil, fmt.Errorf("godicom: unable to add a nil instance to the File-set")
+	}
+	if leaf == nil || leaf.Record == nil {
+		return nil, fmt.Errorf("godicom: unable to add an instance without a directory record to file it under")
+	}
+	if len(leaf.Children) > 0 {
+		return nil, fmt.Errorf("godicom: unable to add an instance under the %q record: it has records below it", leaf.Type())
+	}
+	// A File-set is eight levels deep at most, and the leaf is the eighth.
+	if depth := leaf.depth(); depth > 7 {
+		return nil, fmt.Errorf("godicom: unable to add an instance under the %q record: it is %d levels down, and a File-set is 8", leaf.Type(), depth+1)
+	}
+	top := leaf.top()
+	if top.Parent != nil {
+		return nil, fmt.Errorf("godicom: unable to add an instance under the %q record: its ancestors are already in a File-set", leaf.Type())
+	}
+	sop, ok := ds.GetString(tag.SOPInstanceUID)
+	if !ok || sop == "" {
+		return nil, fmt.Errorf("godicom: unable to add an instance without a SOP Instance UID")
+	}
+	if existing := fs.instanceBySOP(sop); existing != nil {
+		return existing, nil
+	}
+
+	// pydicom normalises every record it wraps: the flag says the record is in
+	// use, and the two offsets are set by the writer anyway.
+	for n := leaf; n != nil && n.Record != nil; n = n.Parent {
+		if err := checkCustomRecord(n.Record); err != nil {
+			return nil, err
+		}
+		normaliseRecord(n.Record)
+	}
+
+	leaf.Record.Set(NewDataElement(tag.ReferencedFileID, VRCS, nil))
+	leaf.Record.Set(NewDataElement(tag.ReferencedSOPInstanceUIDInFile, VRUI, sop))
+	if class, ok := ds.GetString(tag.SOPClassUID); ok {
+		leaf.Record.Set(NewDataElement(tag.ReferencedSOPClassUIDInFile, VRUI, class))
+	}
+	if ts, ok := ds.TransferSyntaxUID(); ok {
+		leaf.Record.Set(NewDataElement(tag.ReferencedTransferSyntaxUIDInFile, VRUI, ts))
+	}
+
+	fs.Tree.insertRecordChain(top)
+	inst := &FileInstance{Node: leaf, fs: fs, ds: ds}
+	leaf.Instance = inst
+	fs.instances = append(fs.instances, inst)
+	return inst, nil
+}
+
+// instanceBySOP returns the instance with the given SOP Instance UID.
+func (fs *FileSet) instanceBySOP(sop string) *FileInstance {
+	if sop == "" {
+		return nil
+	}
+	for _, inst := range fs.instances {
+		if existing, ok := inst.SOPInstanceUID(); ok && existing == sop {
+			return inst
+		}
+	}
+	return nil
+}
+
+// checkCustomRecord reports why a record handed to AddCustom cannot join a
+// File-set: it needs a Directory Record Type, and the element that makes it
+// unique among its siblings. pydicom refuses both, and a File-set written with
+// either missing is not one another reader can file anything into.
+func checkCustomRecord(rec *Dataset) error {
+	recordType, ok := rec.GetString(tag.DirectoryRecordType)
+	if !ok || strings.TrimSpace(recordType) == "" {
+		return fmt.Errorf("godicom: unable to add a directory record without a Directory Record Type")
+	}
+	if recordKey(rec) != "" {
+		return nil
+	}
+	return fmt.Errorf("godicom: the %q directory record is missing its %s, which identifies it among its siblings", recordType, recordKeyName(recordType))
+}
+
+// recordKeyName returns the element that recordKey reads for a record type.
+func recordKeyName(recordType string) string {
+	switch recordType {
+	case "PATIENT":
+		return "Patient ID"
+	case "STUDY":
+		return "Study Instance UID or Referenced SOP Instance UID in File"
+	case "SERIES":
+		return "Series Instance UID"
+	case "PRIVATE":
+		return "Private Record UID"
+	default:
+		return "Referenced SOP Instance UID in File"
+	}
+}
+
+// normaliseRecord sets the elements every directory record carries and that
+// the writer would otherwise have to invent.
+func normaliseRecord(rec *Dataset) {
+	rec.Set(NewDataElement(tag.RecordInUseFlag, VRUS, uint16(0xFFFF)))
+	if _, ok := rec.Get(tag.OffsetOfTheNextDirectoryRecord); !ok {
+		rec.Set(NewDataElement(tag.OffsetOfTheNextDirectoryRecord, VRUL, uint32(0)))
+	}
+	if _, ok := rec.Get(tag.OffsetOfReferencedLowerLevelDirectoryEntity); !ok {
+		rec.Set(NewDataElement(tag.OffsetOfReferencedLowerLevelDirectoryEntity, VRUL, uint32(0)))
+	}
 }
 
 // Remove takes an instance out of the File-set.
@@ -160,8 +281,8 @@ func (fs *FileSet) Remove(inst *FileInstance) error {
 //
 // root may be empty for a File-set that already has one, which is written in
 // place; a File-set created by NewFileSet needs the path given. A File-set that
-// already has a root cannot be moved to another one -- that is a copy, and it
-// is not implemented.
+// already has a root cannot be moved to another one -- CopyTo copies it
+// somewhere else and leaves it where it is.
 //
 // Every instance the File-set holds is written from the dataset Add was given,
 // so an instance that was never saved does not have to exist on disk. An
@@ -310,6 +431,135 @@ func (fs *FileSet) Save(root string, opts *FileSetWriteOptions) error {
 	return nil
 }
 
+// CopyTo copies the File-set to root and returns the File-set that lives
+// there.
+//
+// Every instance is copied to the File ID its records imply, so the copy is
+// laid out the way a File-set built here is rather than the way the original
+// happened to be, and then the DICOMDIR is written. The original is left as it
+// was, down to the Referenced File ID of every record, which is why a copy can
+// be taken of a File-set that is only partly written.
+//
+// The destination has to be somewhere else and empty: a DICOMDIR that already
+// exists there, or a file where an instance would go, is a refusal rather than
+// an overwrite.
+func (fs *FileSet) CopyTo(root string, opts *WriteDICOMDIROptions) (*FileSet, error) {
+	if fs == nil || fs.Dataset == nil {
+		return nil, fmt.Errorf("godicom: unable to copy a nil File-set")
+	}
+	if root == "" {
+		return nil, fmt.Errorf("godicom: unable to copy the File-set without a destination directory")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("godicom: the File-set destination %q is not a valid path: %w", root, err)
+	}
+	if fs.RootPath != "" && samePath(abs, fs.RootPath) {
+		return nil, fmt.Errorf("godicom: unable to copy the File-set: %s is already its root", abs)
+	}
+	if len(fs.instances) > maxFileSetInstances {
+		return nil, fmt.Errorf("godicom: unable to copy a File-set with %d instances: at most %d fit in the File ID character set", len(fs.instances), maxFileSetInstances)
+	}
+	if len(fs.instances) > 1_000_000 {
+		fs.alphanumericIDs = true
+	}
+
+	dicomdirPath := filepath.Join(abs, "DICOMDIR")
+	if _, err := os.Lstat(dicomdirPath); err == nil {
+		return nil, fmt.Errorf("godicom: unable to copy the File-set: %s already exists", dicomdirPath)
+	}
+
+	// Where each instance goes, worked out before anything is written so a
+	// refusal leaves the destination untouched.
+	dests := make([]string, len(fs.instances))
+	for i, inst := range fs.instances {
+		rel, err := fs.fileIDFor(inst.Node)
+		if err != nil {
+			return nil, err
+		}
+		dests[i] = rel
+		if _, err := os.Lstat(filepath.Join(abs, rel)); err == nil {
+			return nil, fmt.Errorf("godicom: unable to copy the File-set: %s already exists", filepath.Join(abs, rel))
+		}
+	}
+
+	// The records have to name the copies while the DICOMDIR is encoded; the
+	// originals go back afterwards, so copying does not move the File-set it
+	// copied.
+	type hadFileID struct {
+		elem *DataElement
+		ok   bool
+	}
+	before := make([]hadFileID, len(fs.instances))
+	for i, inst := range fs.instances {
+		elem, ok := inst.Node.Record.Get(tag.ReferencedFileID)
+		before[i] = hadFileID{elem, ok}
+	}
+	restore := func() {
+		for i, inst := range fs.instances {
+			if before[i].ok {
+				inst.Node.Record.Set(before[i].elem)
+				continue
+			}
+			inst.Node.Record.Delete(tag.ReferencedFileID)
+		}
+	}
+
+	for i, inst := range fs.instances {
+		dest := filepath.Join(abs, dests[i])
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			restore()
+			return nil, err
+		}
+		if inst.ds != nil {
+			data, err := EncodeFile(inst.ds, &WriteOptions{EnforceFileFormat: true})
+			if err != nil {
+				restore()
+				return nil, fmt.Errorf("godicom: unable to encode the instance to copy: %w", err)
+			}
+			if err := writeFileBytes(dest, data); err != nil {
+				restore()
+				return nil, err
+			}
+		} else if err := copyInstanceFile(inst.Path(), dest); err != nil {
+			restore()
+			return nil, fmt.Errorf("godicom: unable to copy %s: %w", inst.Path(), err)
+		}
+		parts := strings.Split(filepath.ToSlash(dests[i]), "/")
+		if !IsConformantFileID(parts) {
+			restore()
+			return nil, fmt.Errorf("godicom: the File ID %q is not conformant to PS3.10 Section 8.2", dests[i])
+		}
+		inst.Node.Record.Set(NewDataElement(tag.ReferencedFileID, VRCS, parts))
+	}
+
+	err = fs.WriteDICOMDIR(dicomdirPath, opts)
+	restore()
+	if err != nil {
+		return nil, err
+	}
+	return OpenFileSet(dicomdirPath, nil)
+}
+
+// copyInstanceFile copies src to dst, which must not exist.
+func copyInstanceFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 // insertRecordChain files the chain starting at top in the tree.
 //
 // A File-set holds one record per patient, study and series, so the chain
@@ -452,6 +702,18 @@ func (n *RecordNode) index() int {
 		}
 	}
 	return 0
+}
+
+// maxFileSetInstances is how many instances fit in the File ID character set
+// pydicom switches to above a million: six components of 35 characters.
+const maxFileSetInstances = 35 * 35 * 35 * 35 * 35 * 35
+
+// top returns the furthest ancestor of n, or n itself when it has none.
+func (n *RecordNode) top() *RecordNode {
+	for n != nil && n.Parent != nil && n.Parent.Record != nil {
+		n = n.Parent
+	}
+	return n
 }
 
 // depth returns how many records are above n, with a top-level record at 0.

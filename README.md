@@ -468,6 +468,31 @@ instance from the tree but leaves its file on disk, so a removal can be undone.
 `Save` with `FileSetWriteOptions{UseExisting: true}` keeps the layout a File-set
 was read with and rewrites only the DICOMDIR.
 
+A PRIVATE record carries nothing that says where it belongs, so `Add` cannot
+build one; `AddCustom` takes the records and fills in only the elements that
+link them to the file:
+
+```go
+record := godicom.NewDataset()  // the PATIENT record
+record.Set(godicom.NewDataElement(tag.DirectoryRecordType, godicom.VRCS, "PATIENT"))
+record.Set(godicom.NewDataElement(tag.PatientID, godicom.VRLO, "77654033"))
+top := &godicom.RecordNode{Record: record}
+// ... the PRIVATE record, hung under top, becomes the leaf ...
+_, err = fs.AddCustom(ds, leaf)
+```
+
+`CopyTo` copies a File-set to another root and returns the File-set that lives
+there. The original keeps its layout, so it can still be saved:
+
+```go
+copied, err := fs.CopyTo("out/copy", nil)
+```
+
+A DICOMDIR whose offset links never reach some records still holds everything
+those records named: the reader reads each instance and rebuilds the records it
+calls for, which is what pydicom does. `FileSetOptions{ExcludeOrphans: true}`
+leaves them out, and `RaiseOrphans` reports them.
+
 ## Overlays
 
 `OverlayArray` unpacks a 1-bit Overlay Plane. `group` is the repeating group,
