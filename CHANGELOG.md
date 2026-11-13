@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Collection.String()` prints is pydicom's `str()` line for line for 1360 of
   the 1361 collections
 
+- `waveforms` reads the Waveform module of PS3.3 C.10.9: the multiplex groups
+  of a (5400,0100) Waveform Sequence as arrays of samples. It is
+  `pydicom.waveforms`, which is one handler over numpy. `MultiplexArray` and
+  `Multiplexes` decode the ten Bits Allocated / Sample Interpretation pairs the
+  module defines, and `WithChannelSensitivity` converts a group by each channel
+  definition's Channel Sensitivity, Correction Factor and Baseline, pydicom's
+  `as_raw=False`. Every raw and corrected sample of the ECG fixture -- 134400
+  values -- agrees with pydicom 3.1.0.dev0, and a digest pins them. The raw
+  samples come back as exact integers, which numpy cannot offer and float64
+  alone would not keep; Waveform Data is read little endian, which is what
+  pydicom's hardcoded dtypes do even for a big endian file
+
 ### Fixed
 - A pixel data value of undefined length whose item stream runs out without the
   Sequence Delimiter Item was parsed three bytes short: the byte-wise scan that
@@ -39,7 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The File-set notes in 0.38.0 name pydicom 3.0.0 as what they were compared
   against. The checkout they were compared against is 3.1.0.dev0, the one in
   `pydicom/`; only the name was wrong, the comparisons were run against it
-
 
 ## [0.38.0] - 2026-11-13
 

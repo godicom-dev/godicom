@@ -586,6 +586,31 @@ The terminology is 2.4 MB of text in `sr/codes.txt`, generated from pydicom's
 three dictionaries by `generate_sr_dict.py` and read on first use. It is all of
 PS3.16: 18 schemes, 18735 codes, 1355 contexts and 27033 memberships.
 
+## Waveforms
+
+`waveforms` reads the Waveform module of PS3.3 C.10.9: the multiplex groups of
+a (5400,0100) Waveform Sequence as arrays of samples. It is pydicom's
+`pydicom.waveforms`, which is one handler over numpy; this one is pure Go.
+
+```go
+import "github.com/godicom-dev/godicom/waveforms"
+
+groups, err := waveforms.Multiplexes(ds.Dataset)
+m := groups[0]                              // 10000 samples of 12 channels
+v := m.At(0, 0)                             // as float64
+r := m.RawAt(0, 0)                          // the raw sample, exactly
+
+convert, err := m.WithChannelSensitivity()  // the Channel Sensitivity of
+v = convert.At(0, 0)                        // every definition applied
+```
+
+`RawAt` returns the sample as the integer it is, exactly, for all ten
+Bits Allocated / Sample Interpretation pairs the module defines;
+`WithChannelSensitivity` converts by each channel definition's Channel
+Sensitivity, Correction Factor and Baseline, which is pydicom's `as_raw=False`.
+The Waveform Data is read little endian, which is what pydicom's hardcoded
+dtypes do even for a big endian file.
+
 ## CLI
 
 ```bash
