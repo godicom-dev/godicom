@@ -111,6 +111,11 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
+          # Without this the uploader sends an empty token and Codecov answers
+          # "Token required because branch is protected", which the action
+          # reports as an error but does not fail the job on -- so the badge
+          # stays blank with every run green.
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           fail_ci_if_error: false
 
