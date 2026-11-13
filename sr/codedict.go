@@ -82,6 +82,12 @@ func parse(source string) (*table, error) {
 	}
 
 	for line := range strings.SplitSeq(source, "\n") {
+		// A checkout that translated the line endings -- a Windows working
+		// tree without a .gitattributes -- ends every line with a carriage
+		// return, which would turn the last field of each record into one
+		// that fails to parse. The attribute file pins the endings; this is
+		// the floor under it.
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" || line[0] == '#' {
 			continue
 		}

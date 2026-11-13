@@ -167,13 +167,13 @@ func TestLookupAmbiguous(t *testing.T) {
 		schemes: []string{"TEST"},
 		concepts: map[string]map[string][]concept{
 			"TEST": {"Foo": {
-				{code: New("BAR", "TEST", "Test A"), cids: []int{99999999999}},
-				{code: New("BAZ", "TEST", "Test B"), cids: []int{99999999999}},
+				{code: New("BAR", "TEST", "Test A"), cids: []int{900001}},
+				{code: New("BAZ", "TEST", "Test B"), cids: []int{900001}},
 			}},
 		},
-		cidNames:    map[int]string{99999999999: "Test"},
-		members:     map[int]map[string][]string{99999999999: {"TEST": {"Foo"}}},
-		memberOrder: map[int][]string{99999999999: {"TEST"}},
+		cidNames:    map[int]string{900001: "Test"},
+		members:     map[int]map[string][]string{900001: {"TEST": {"Foo"}}},
+		memberOrder: map[int][]string{900001: {"TEST"}},
 	}
 
 	scheme := &Collection{name: "TEST"}
@@ -188,15 +188,15 @@ func TestLookupAmbiguous(t *testing.T) {
 	twoSchemes := &table{
 		schemes: []string{"TEST", "TEST2"},
 		concepts: map[string]map[string][]concept{
-			"TEST":  {"Foo": {{code: New("BAR", "TEST", "Test A"), cids: []int{99999999999}}}},
-			"TEST2": {"Foo": {{code: New("BAZ", "TEST2", "Test A"), cids: []int{99999999999}}}},
+			"TEST":  {"Foo": {{code: New("BAR", "TEST", "Test A"), cids: []int{900001}}}},
+			"TEST2": {"Foo": {{code: New("BAZ", "TEST2", "Test A"), cids: []int{900001}}}},
 		},
-		cidNames:    map[int]string{99999999999: "Test"},
-		members:     map[int]map[string][]string{99999999999: {"TEST": {"Foo"}, "TEST2": {"Foo"}}},
-		memberOrder: map[int][]string{99999999999: {"TEST", "TEST2"}},
+		cidNames:    map[int]string{900001: "Test"},
+		members:     map[int]map[string][]string{900001: {"TEST": {"Foo"}, "TEST2": {"Foo"}}},
+		memberOrder: map[int][]string{900001: {"TEST", "TEST2"}},
 	}
 
-	cid := &Collection{name: "CID99999999999", cid: 99999999999}
+	cid := &Collection{name: "CID900001", cid: 900001}
 	_, err = cid.lookup(twoSchemes, "Foo")
 	if !errors.Is(err, ErrAmbiguousCode) {
 		t.Fatalf("CID lookup error = %v, want ErrAmbiguousCode", err)
@@ -473,6 +473,33 @@ func TestParseCodes(t *testing.T) {
 	}
 	if tbl.srtToSCT["R-1"] != "99" {
 		t.Fatalf("SRT mapping = %v", tbl.srtToSCT)
+	}
+}
+
+// TestParseCodesToleratesCarriageReturns is for the working tree a Windows
+// checkout makes when the attribute file is missing: every line ends with a
+// carriage return, and the meaning and CID list of the last field of each
+// record would fail to parse with one attached. .gitattributes keeps the file
+// at LF; this keeps a stray translation from breaking the package anyway.
+func TestParseCodesToleratesCarriageReturns(t *testing.T) {
+	source := strings.Join([]string{
+		"# a comment",
+		"S\tTEST\tSecondThing\tBAR\t2,3\tsecond thing",
+		"C\t2\tTwo",
+		"I\t2\tTEST\tSecondThing",
+		"M\tR-1\t99",
+	}, "\r\n")
+
+	tbl, err := parse(source)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if got := tbl.concepts["TEST"]["SecondThing"][0]; got.code.Meaning != "second thing" || len(got.cids) != 2 {
+		t.Fatalf("SecondThing = %+v", got)
+	}
+	if tbl.cidNames[2] != "Two" || tbl.srtToSCT["R-1"] != "99" {
+		t.Fatalf("cid names = %v, srt = %v", tbl.cidNames, tbl.srtToSCT)
 	}
 }
 
