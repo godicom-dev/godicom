@@ -316,8 +316,8 @@ func (fs *FileSet) Save(root string, opts *FileSetWriteOptions) error {
 // shares the records it already has: the walk descends while the next record
 // in the chain matches a child of the tree, and the rest of the chain is
 // attached where it stops. This is pydicom's RecordNode.add().
-func (root *RecordNode) insertRecordChain(top *RecordNode) {
-	current := root
+func (n *RecordNode) insertRecordChain(top *RecordNode) {
+	current := n
 	node := top
 	for {
 		match := current.childWithKey(recordKey(node.Record))
