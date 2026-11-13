@@ -1,7 +1,7 @@
 # godicom ↔ pydicom parity audit
 
 Snapshot of **main** against the `pydicom/` submodule. The latest tag is
-**v0.37.0**, and it matches main.
+**v0.38.0**, and it matches main.
 
 This is a **coverage map**, not a claim of full parity.
 
@@ -67,7 +67,7 @@ areas are thinner on edge fixtures.
 | Priority | Item | Why |
 |----------|------|-----|
 | P2 | Thicker writer/charset fixtures | Confidence, not new APIs |
-| P3 | DICOMDIR write / SR / waveform | Read-only File-set and overlay planes are in |
+| P3 | SR / waveform | File-sets and overlay planes are in |
 | done | `uid.GenerateUID` | SCU / store paths invent SOP Instance UIDs |
 | done | `Read` streaming / seekable skip | Large studies without full RAM |
 | done | `ReadOptions.OnElement` | Per-element keep / skip / stop, since v0.31.0 |

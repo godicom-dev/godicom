@@ -6,7 +6,7 @@ this file tracks deferred work and known gaps.
 ## Status
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
-As of **v0.37.0** the released surface covers Part 10 and dataset encode/decode,
+As of **v0.38.0** the released surface covers Part 10 and dataset encode/decode,
 transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
 JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, a single
 encapsulated frame read out of an `io.ReaderAt` (`encaps.GetFrameFrom`), palette
@@ -14,9 +14,10 @@ color lookup (`ApplyColorLUT`), `dicomjson` (a declined BulkDataURI is inlined),
 `uid.GenerateUID`, typed getters and setters, PS3.5 value validation
 (`ValidateValue`), `Dictionary` with a per-read
 private dictionary, `PrivateBlock`, read/write diagnostic hooks, streaming
-`Read`, `ReadOptions.OnElement`, a
-read-only DICOMDIR (`OpenFileSet` / `LoadFileSet`), `Dataset.OverlayArray`, and
-enhanced multi-frame functional groups — resolved per frame → shared → top
+`Read`, `ReadOptions.OnElement`, File-sets (`OpenFileSet` / `LoadFileSet`,
+`NewFileSet` / `Add` / `AddCustom` / `Remove` / `Save` / `CopyTo`,
+`WriteDICOMDIR`), `Dataset.OverlayArray`, and enhanced multi-frame functional
+groups — resolved per frame → shared → top
 level by `DisplayFrame`, the `...ForFrame` entry points and
 `PixelMeasures(frameIndex)`, while the dataset-wide calls keep reading shared
 and top level only.

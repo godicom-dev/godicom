@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-13
+
+File-sets are whole. `OpenFileSet` used to read a DICOMDIR and nothing else
+could touch one; this release writes a DICOMDIR, builds a File-set from
+instances, copies one to another root, and files the instances of a broken link
+back in instead of dropping them.
+
+Every part of it was compared against pydicom 3.0.0 rather than against an idea
+of what pydicom does. A written DICOMDIR is byte for byte what
+`FileSet._write_dicomdir()` writes for the same File-set, in explicit VR and
+with `force_implicit`, from the conformant fixture and from the reordered,
+no-offset, big endian and implicit VR variants of it. A File-set built here with
+a PRIVATE record has the same elements as the one `add_custom()` builds, and
+pydicom reads it back with the File ID pydicom would have given it. `CopyTo`
+produces the records, the File IDs and the files that `FileSet.copy()` does.
+
 ### Added
 - `DirectoryRecords` builds the directory records a DICOMDIR holds for one SOP
   instance: the PATIENT/STUDY/SERIES/leaf chain for an ordinary instance, or a
