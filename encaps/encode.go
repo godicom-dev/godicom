@@ -35,6 +35,21 @@ func FragmentFrame(frame []byte, nrFragments int) ([][]byte, error) {
 	return out, nil
 }
 
+// ItemizeFrame returns the items generated from frame, mirroring
+// pydicom.encaps.itemize_frame: the frame is split into nrFragments fragments
+// and each fragment is wrapped as a DICOM Item.
+func ItemizeFrame(frame []byte, nrFragments int) ([][]byte, error) {
+	fragments, err := FragmentFrame(frame, nrFragments)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]byte, len(fragments))
+	for i, fragment := range fragments {
+		out[i] = ItemizeFragment(fragment)
+	}
+	return out, nil
+}
+
 // ItemizeFragment wraps a fragment as a DICOM Item (FFFE,E000) + length + data.
 func ItemizeFragment(fragment []byte) []byte {
 	out := make([]byte, 8+len(fragment))

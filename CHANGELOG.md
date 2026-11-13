@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The write side of encapsulation takes the frames from readable, seekable
+  buffers rather than from bytes in memory. `EncapsulatedBuffer` is one
+  `io.ReadSeeker` over the complete encapsulated value -- the Basic Offset
+  Table Item, then one Item per buffer, each padded to an even length -- so
+  frames synthesized straight into buffers never need to be in memory
+  together, which is what pydicom's `EncapsulatedBuffer` (3.0) is for, since
+  a seekable synthesized stream had no consumer here. `EncapsulateBuffer`
+  and `EncapsulateExtendedBuffer` read the value out of one, the latter with
+  the encoded Extended Offset Table values, pydicom's
+  `encapsulate_buffer` and `encapsulate_extended_buffer`. Also public, as
+  they are in pydicom: `ItemizeFrame` and `ParseFragments`, which returns
+  the number of fragments and the position of each item tag. Against
+  pydicom 3.1.0.dev0, the encapsulated values of the synthetic frames and of
+  the ten-frame JPEG 2000 fixture -- with and without Basic Offset Table
+  values, and the extended tables -- agree byte for byte, as does a read of
+  odd chunk sizes across every boundary of a three-buffer value
+
 ## [0.39.0] - 2026-11-13
 
 Two domains that pydicom reaches as generated Python modules are pure Go here,

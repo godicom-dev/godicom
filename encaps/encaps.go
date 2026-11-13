@@ -153,6 +153,55 @@ func CountFragments(fragmentData []byte, littleEndian bool) (int, error) {
 	return countFragments(fragmentData, littleEndian)
 }
 
+// ParseFragments returns the number of fragment items in encapsulated pixel
+// data and the position of the first byte of the item tag of each fragment,
+// mirroring pydicom.encaps.parse_fragments. The buffer starts at the first
+// byte of the item tag of a fragment, such as after the end of the Basic
+// Offset Table. Parsing stops at the Sequence Delimiter Item, or silently at
+// the end of the data.
+func ParseFragments(buf []byte, littleEndian bool) (nrFragments int, offsets []int64, err error) {
+	var order binary.ByteOrder = binary.LittleEndian
+	if !littleEndian {
+		order = binary.BigEndian
+	}
+
+	pos := 0
+	for {
+		if len(buf)-pos < 4 {
+			// The end of the data has been reached
+			break
+		}
+
+		tag := readTag(buf, pos, order)
+		switch tag {
+		case itemTag:
+			if len(buf)-pos < 8 {
+				return 0, nil, fmt.Errorf(
+					"encaps: unable to determine the length of the item at offset %d as the end of the data has been reached - the encapsulated pixel data may be invalid", pos,
+				)
+			}
+			length := order.Uint32(buf[pos+4 : pos+8])
+			if length == undefinedLen {
+				return 0, nil, fmt.Errorf(
+					"encaps: undefined item length at offset %d when parsing the encapsulated pixel data fragments", pos+4,
+				)
+			}
+			nrFragments++
+			offsets = append(offsets, int64(pos))
+			pos += 8 + int(length)
+		case seqDelimTag:
+			return nrFragments, offsets, nil
+		default:
+			return 0, nil, fmt.Errorf(
+				"encaps: unexpected tag '(%04x,%04x)' at offset %d when parsing the encapsulated pixel data fragment items",
+				tag>>16, tag&0xFFFF, pos,
+			)
+		}
+	}
+
+	return nrFragments, offsets, nil
+}
+
 func readFragments(buf []byte, littleEndian bool) ([][]byte, error) {
 	var order binary.ByteOrder = binary.LittleEndian
 	if !littleEndian {
