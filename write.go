@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"compress/flate"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -74,18 +78,129 @@ type writeSource struct {
 }
 
 // writeFile writes a Dataset to a DICOM file.
+//
+// The bytes go to a temporary file beside the target, which is renamed onto it
+// only once the whole write has succeeded. Everything the writer can reject --
+// a value the VR cannot hold, a strict OnDiagnostic hook, a character set
+// changed without re-encoding -- is found part way through the stream, and a
+// half-written file is worse than no file: it opens, so nothing downstream
+// notices. The rename means a failure leaves the previous file as it was.
 func writeFile(ctx context.Context, filename string, source writeSource, opts *WriteOptions) error {
-	// Checked before the file is created: refusing after os.Create would leave an
-	// empty file where a good one used to be.
+	// Checked before a file is created at all: these need no I/O to fail, and
+	// this is the same refusal a caller gets from writeTo.
 	if err := validateWriteSource(source); err != nil {
 		return err
 	}
+
+	perm, replaceable := replaceableMode(filename)
+	if !replaceable {
+		return writeInPlace(ctx, filename, source, opts)
+	}
+
+	f, err := createSibling(filename, perm)
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	committed := false
+	defer func() {
+		// Best effort: the temporary file is a name the caller never asked for,
+		// but a failure to remove it must not replace the error being returned.
+		if !committed {
+			f.Close()
+			os.Remove(name)
+		}
+	}()
+
+	if err := writeTo(ctx, f, source, opts); err != nil {
+		return err
+	}
+	// Close before the rename, not deferred until after it: a Close error is the
+	// last chance to hear that the data did not reach the file, and once the
+	// name has moved that report would come too late to be acted on.
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, filename); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+// replaceableMode reports the permission bits a replacement file should carry,
+// and whether filename can be replaced by a rename at all. Zero means "the mode
+// os.Create would have asked for", with the umask deciding the rest.
+//
+// A path that exists as something other than a regular file is written through
+// instead: rename swaps the name, so a symlink would turn into a plain file and
+// a device or a pipe would be replaced by one.
+func replaceableMode(filename string) (os.FileMode, bool) {
+	info, err := os.Lstat(filename)
+	if err != nil {
+		// Not there, or not stat-able. Let the open decide whether the path is
+		// usable -- it gives the better error.
+		return 0, true
+	}
+	if !info.Mode().IsRegular() {
+		return 0, false
+	}
+	return info.Mode().Perm(), true
+}
+
+// writeInPlace is the old behaviour, kept for a path whose mode forbids the
+// rename: the bytes go straight to the named file, so a failure can leave a
+// partial one.
+func writeInPlace(ctx context.Context, filename string, source writeSource, opts *WriteOptions) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return writeTo(ctx, f, source, opts)
+	if err := writeTo(ctx, f, source, opts); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// createSibling creates an empty file in filename's directory, so the rename
+// that follows stays inside one filesystem -- os.Rename fails across devices,
+// and a temp directory would usually be a different one.
+//
+// The permission bits go through os.OpenFile rather than os.CreateTemp because
+// the latter always creates 0600, and through Chmod as well when a mode is
+// specified, because O_CREATE would run it through the umask and a file that was
+// 0600 would come back as 0644 on a permissive system.
+func createSibling(filename string, perm os.FileMode) (*os.File, error) {
+	dir, base := filepath.Split(filename)
+	// A zero mode means the target did not exist, so there is nothing to copy:
+	// ask for what os.Create asks for and let the umask narrow it.
+	keepMode := perm != 0
+	if !keepMode {
+		perm = 0o666
+	}
+	for attempt := 0; ; attempt++ {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return nil, err
+		}
+		name := filepath.Join(dir, "."+base+".godicom-"+hex.EncodeToString(b[:]))
+		f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
+		if err == nil {
+			if !keepMode {
+				return f, nil
+			}
+			if err := f.Chmod(perm); err != nil {
+				f.Close()
+				os.Remove(name)
+				return nil, err
+			}
+			return f, nil
+		}
+		if !errors.Is(err, fs.ErrExist) || attempt == 4 {
+			return nil, err
+		}
+	}
 }
 
 // validateWriteSource runs every check that can reject a file before its first
