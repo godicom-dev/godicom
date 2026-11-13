@@ -16,11 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Class table. An instance that is missing an element PS3.3 Section F.5 requires
   at its level, or that has one with no value, is refused rather than filed
   under a record with holes. This is the record-creating half of the File-set
-  writer; the DICOMDIR itself is not written yet
+  writer; the DICOMDIR the records go into is written by the entries below
 - `GenerateFilename` and `IsConformantFileID` cover the File ID rules of PS3.10
   Sections 8.2 and 8.5: eight characters per component, eight components, and
   [0-9][A-Z] and '_' only. `GenerateFilename` yields numeric or alphanumeric
   suffixes, and like pydicom it leaves J out of the alphanumeric set
+- `FileSet.WriteDICOMDIR` and `FileSet.EncodeDICOMDIR` write the DICOMDIR
+  itself: the records are laid out depth first, each one's *Offset of the Next
+  Directory Record* and *Offset of Referenced Lower Level Directory Entity* set
+  to where the record it links to landed, and the root's first and last record
+  pointers filled in last. `FileSet.Write` replaces the DICOMDIR of the File-set
+  it was read from. The result is byte for byte what pydicom 3.0.0's
+  `FileSet._write_dicomdir()` produces for the same File-set, in explicit VR
+  and with `ForceImplicitVR` alike, from the reordered, no-offset, big endian
+  and implicit VR DICOMDIR test fixtures as well as the conformant one
 
 ## [0.37.0] - 2026-11-13
 

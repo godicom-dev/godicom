@@ -437,8 +437,19 @@ matches := fs.Find(map[godicom.Tag]string{
 ds, err := matches[0].Load()
 ```
 
-`tag` is `github.com/godicom-dev/godicom/tag`. Writing a DICOMDIR, and adding or
-removing instances, is not included.
+`tag` is `github.com/godicom-dev/godicom/tag`.
+
+To write the DICOMDIR back, `WriteDICOMDIR` writes a new one at the path given
+and `Write` replaces the File-set's own; both rebuild the offsets from the tree,
+so a record added or dropped before writing is linked correctly.
+
+```go
+err = fs.WriteDICOMDIR("out/DICOMDIR", nil)
+```
+
+`WriteDICOMDIROptions{ForceImplicitVR: true}` writes implicit VR little endian,
+which PS3.10 forbids for a DICOMDIR and some older readers require. Adding or
+removing instances is not included.
 
 ## Overlays
 
