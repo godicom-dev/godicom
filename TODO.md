@@ -6,7 +6,7 @@ this file tracks deferred work and known gaps.
 ## Status
 
 *godicom* reads, modifies and writes DICOM datasets, pixel data, and DICOM JSON.
-As of **v0.38.0** the released surface covers Part 10 and dataset encode/decode,
+As of **v0.39.0** the released surface covers Part 10 and dataset encode/decode,
 transfer syntaxes through HTJ2K, pixel decode and encode (native, RLE, Deflated,
 JPEG, JPEG-LS, JPEG 2000, HTJ2K), `PixelArray` / `DisplayFrame`, a single
 encapsulated frame read out of an `io.ReaderAt` (`encaps.GetFrameFrom`), palette
@@ -16,7 +16,7 @@ color lookup (`ApplyColorLUT`), `dicomjson` (a declined BulkDataURI is inlined),
 private dictionary, `PrivateBlock`, read/write diagnostic hooks, streaming
 `Read`, `ReadOptions.OnElement`, File-sets (`OpenFileSet` / `LoadFileSet`,
 `NewFileSet` / `Add` / `AddCustom` / `Remove` / `Save` / `CopyTo`,
-`WriteDICOMDIR`), `Dataset.OverlayArray`, and enhanced multi-frame functional
+`WriteDICOMDIR`), the coded terminology (`sr.Scheme` / `sr.CID` / `sr.Codes`, backed by `sr/codes.txt`), `waveforms.MultiplexArray` / `Multiplexes` / `WithChannelSensitivity`, `Dataset.OverlayArray`, and enhanced multi-frame functional
 groups — resolved per frame → shared → top
 level by `DisplayFrame`, the `...ForFrame` entry points and
 `PixelMeasures(frameIndex)`, while the dataset-wide calls keep reading shared
@@ -31,8 +31,6 @@ Networking (DIMSE / DICOMweb) is **out of scope** — see
 |------|-------|---------|
 | String-form `DeferSize` (`"2 kB"`) | `ReadOptions.DeferSize uint32` only | API parity for string sizes |
 | `RegisterTransferSyntax` | Not implemented | Private transfer syntaxes at runtime |
-| File-set / DICOMDIR write | Read-only tree and File ID lookup (`OpenFileSet`) | Media interchange that must write a DICOMDIR |
-| Waveforms | Done | `waveforms.MultiplexArray` / `Multiplexes` / `WithChannelSensitivity` |
 | Supplemental palettes | `Supplemental Palette Color Lookup Table Sequence (0028,1450)` is not applied, so a frame relying on one renders with the primary palette | A PET/CT series that actually carries one |
 
 Do not start these without a real consumer. Prefer fixing gaps that block

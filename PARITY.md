@@ -1,7 +1,7 @@
 # godicom ↔ pydicom parity audit
 
 Snapshot of **main** against the `pydicom/` submodule. The latest tag is
-**v0.38.0**, and it matches main.
+**v0.39.0**, and it matches main.
 
 This is a **coverage map**, not a claim of full parity.
 

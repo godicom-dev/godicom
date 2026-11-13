@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-13
+
+Two domains that pydicom reaches as generated Python modules are pure Go here,
+compared against pydicom 3.1.0.dev0 value for value. `sr` carries PS3.16's
+coded terminology -- 18735 codes and 1355 CIDs read once on first use, all
+45766 (collection, keyword, code) triples agreeing with pydicom -- and
+`waveforms` decodes the Waveform module's ten Bits Allocated / Sample
+Interpretation pairs, with every raw and corrected sample of the ECG fixture,
+134400 values, matching pydicom. Reading a pixel data value of undefined
+length no longer stops its delimiter scan three bytes short of the truth.
+
 ### Added
 - `sr` is the coded terminology of PS3.16: the codes, and the contexts (CIDs)
   that group them. It is `pydicom.sr`, which since 3.0 is the code dictionary
