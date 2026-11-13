@@ -215,20 +215,22 @@ func TestScanUntilDelimiter(t *testing.T) {
 		t.Fatal("readBytesUntilDelimiter should return a copy")
 	}
 
-	// A tail too short to hold a tag cannot contain a delimiter, so the scan
-	// stops at the offset and the value comes back empty.
-	if got := scanUntilDelimiter(data[:2], 0, SequenceDelimiterTag, true); got != 0 {
-		t.Fatalf("scan over a 2-byte tail = %d, want 0", got)
+	// A tail too short to hold a tag cannot contain a delimiter, so the value
+	// is the tail itself and the next element begins after it. Returning the
+	// scan position instead handed the caller the last bytes of the value to
+	// read as an element header -- a two-byte tail came back as "end 0",
+	// which re-parses the tail.
+	if got := scanUntilDelimiter(data[:2], 0, SequenceDelimiterTag, true); got != 2 {
+		t.Fatalf("scan over a 2-byte tail = %d, want 2", got)
 	}
 	value, endPos = readBytesUntilDelimiter(data[:2], 0, SequenceDelimiterTag, true)
-	if endPos != 0 || len(value) != 0 {
-		t.Fatalf("read over a 2-byte tail %v end %d", value, endPos)
+	if endPos != 2 || !bytes.Equal(value, data[:2]) {
+		t.Fatalf("read over a 2-byte tail %v end %d, want the tail itself and end 2", value, endPos)
 	}
-	// Five bytes can hold one tag position, so the scan stops where the next
-	// tag could no longer start.
+	// Five bytes: the same, all of it value.
 	five := []byte{1, 2, 3, 4, 5}
-	if got := scanUntilDelimiter(five, 0, SequenceDelimiterTag, true); got != 2 {
-		t.Fatalf("scan over five bytes = %d, want 2", got)
+	if got := scanUntilDelimiter(five, 0, SequenceDelimiterTag, true); got != 5 {
+		t.Fatalf("scan over five bytes = %d, want 5", got)
 	}
 
 	// The same tag in big-endian order: group FFFE, element E0DD -> FF FE E0 DD.
@@ -236,7 +238,10 @@ func TestScanUntilDelimiter(t *testing.T) {
 	if got := scanUntilDelimiter(be, 0, SequenceDelimiterTag, false); got != 9 {
 		t.Fatalf("big-endian scan = %d, want 9", got)
 	}
-	if got := scanUntilDelimiter(be, 0, SequenceDelimiterTag, true); got != 2 {
-		t.Fatalf("big-endian bytes read as little endian = %d, want no match", got)
+	// The same bytes in the other order hold no little endian delimiter, so
+	// the scan runs to the end: 1 junk byte, 4 that would be the tag, and
+	// nothing after.
+	if got := scanUntilDelimiter(be, 0, SequenceDelimiterTag, true); got != 5 {
+		t.Fatalf("big-endian bytes read as little endian = %d, want 5 (no match)", got)
 	}
 }
