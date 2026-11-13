@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `DirectoryRecords` builds the directory records a DICOMDIR holds for one SOP
+  instance: the PATIENT/STUDY/SERIES/leaf chain for an ordinary instance, or a
+  single record for the SOP Classes DICOM files directly under the File-set root
+  (PALETTE, IMPLANT, HANGING PROTOCOL and the rest), chosen the way pydicom
+  chooses them — Modality and the instance's own attributes first, then the SOP
+  Class table. An instance that is missing an element PS3.3 Section F.5 requires
+  at its level, or that has one with no value, is refused rather than filed
+  under a record with holes. This is the record-creating half of the File-set
+  writer; the DICOMDIR itself is not written yet
+- `GenerateFilename` and `IsConformantFileID` cover the File ID rules of PS3.10
+  Sections 8.2 and 8.5: eight characters per component, eight components, and
+  [0-9][A-Z] and '_' only. `GenerateFilename` yields numeric or alphanumeric
+  suffixes, and like pydicom it leaves J out of the alphanumeric set
+
 ## [0.37.0] - 2026-11-13
 
 Nothing in the library changed. What this release accepts and what it writes is
