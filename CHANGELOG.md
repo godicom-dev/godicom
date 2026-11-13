@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The two callbacks pydicom's hooks module (3.0) spells "raw_element_vr" and
+  "raw_element_value" arrive as `ReadOptions.Hooks`, per read rather than on a
+  process-global singleton, and as middleware: each receives the function
+  godicom would otherwise call, and calls it when it wants the default, which
+  is the shape pydicom's own convenience callbacks take. `ResolveVR` answers
+  the one question the reader cannot answer alone -- what VR does this element
+  have when the file did not say -- and `ConvertValue` wraps the conversion of
+  the bytes the header promised, able to edit them on the way past;
+  `FixSeparatorValue` and `RetryValue` build the two fix-ups pydicom ships,
+  `raw_element_value_fix_separator` and `raw_element_value_retry`. Against
+  pydicom 3.1.0.dev0, run with `scripts/check_hooks.py`: the fixed separators
+  convert to the same values with the same original strings, the five-byte US
+  element retries to OB under the same VR, and the forced VR converts the
+  private element's two bytes to the same 57. Where pydicom hands back an
+  unparsed string or raises, godicom keeps the raw bytes -- the standing
+  difference, pinned with a comment in the tests.
+### Added
 - The write side of encapsulation takes the frames from readable, seekable
   buffers rather than from bytes in memory. `EncapsulatedBuffer` is one
   `io.ReadSeeker` over the complete encapsulated value -- the Basic Offset

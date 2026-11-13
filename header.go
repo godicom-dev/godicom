@@ -48,9 +48,10 @@ func decodeElementHeader(
 	}
 
 	if enc.IsImplicitVR {
+		length := uint32At(data, pos+4, enc.IsLittleEndian)
 		return elementHeader{
-			VR:     vr.vrFor(tag),
-			Length: uint32At(data, pos+4, enc.IsLittleEndian),
+			VR:     vr.vrFor(tag, enc, length),
+			Length: length,
 			Size:   8,
 		}, 8, true
 	}
@@ -59,9 +60,10 @@ func decodeElementHeader(
 	encoded := VR(string(vrBytes))
 
 	if !isVRByte(vrBytes[0]) || !isVRByte(vrBytes[1]) {
+		length := uint32At(data, pos+4, enc.IsLittleEndian)
 		return elementHeader{
-			VR:     vr.vrFor(tag),
-			Length: uint32At(data, pos+4, enc.IsLittleEndian),
+			VR:     vr.vrFor(tag, enc, length),
+			Length: length,
 			Size:   8,
 		}, 8, true
 	}
@@ -101,6 +103,7 @@ func elementsResolver(rc *readContext, elements *[]*DataElement) vrResolver {
 	return vrResolver{
 		dict:    rc.dictionary(),
 		creator: func(t Tag) string { return privateCreatorFromElements(*elements, t) },
+		hooks:   rc.hooksFrom(),
 	}
 }
 
@@ -117,5 +120,6 @@ func datasetResolver(rc *readContext, ds *Dataset) vrResolver {
 	return vrResolver{
 		dict:    rc.dictionary(),
 		creator: func(t Tag) string { return privateCreatorFromDataset(ds, t) },
+		hooks:   rc.hooksFrom(),
 	}
 }

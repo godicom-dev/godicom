@@ -40,6 +40,25 @@ type ReadOptions struct {
 	StopBeforePixels bool
 	Force            bool
 	SpecificTags     []Tag
+	// Hooks carries the ResolveVR and ConvertValue callbacks pydicom spells
+	// "raw_element_vr" and "raw_element_value", per read rather than on a
+	// process-global singleton. Both are middleware: each receives the function
+	// godicom would otherwise call, and calls it when it wants the default.
+	// FixSeparatorValue and RetryValue build the two fix-ups pydicom ships.
+	//
+	//	A bad separator in the DS and IS values of a device's files:
+	//		opts.Hooks = &godicom.Hooks{ConvertValue: godicom.FixSeparatorValue(":", godicom.VRDS, godicom.VRIS)}
+	//
+	//	A file whose DS elements hold binary US data:
+	//		opts.Hooks = &godicom.Hooks{ConvertValue: godicom.RetryValue(map[godicom.VR][]godicom.VR{godicom.VRDS: {godicom.VRUS, godicom.VRSS}})}
+	//
+	// ResolveVR fires when the encoding did not name a VR -- implicit VR, or
+	// explicit VR bytes that are not letters -- and not for the elements whose
+	// VR the wire carried. ConvertValue fires for every element converted
+	// during the read, but not on a deferred reload, which keeps the
+	// historical fallback so a reload never behaves differently from the
+	// original read.
+	Hooks *Hooks
 	// OnElement decides, per element, whether to parse its value, step over it,
 	// or stop reading -- the whole point being that a caller who wants seven index
 	// tags out of a 200 MB file should not pay to decode the other 199:
@@ -394,6 +413,7 @@ func readBytes(ctx context.Context, data []byte, filename string, modTime int64,
 		ctx:                  ctx,
 		onDiag:               diagnosticHook(opts),
 		dict:                 readDictionary(opts),
+		hooks:                opts.Hooks,
 		invalidCharLimit:     invalidCharLimitFrom(opts),
 		reportDefaultCharset: reportsDefaultCharset(opts),
 	}
@@ -1111,7 +1131,7 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext,
 		IsLittleEndian: cc.IsLittleEndian,
 		IsRaw:          true,
 	}
-	converted, err := convertValueWithCharsets(raw, decodeCharsets)
+	converted, err := convertElementValue(raw, decodeCharsets, rc.hooksFrom())
 	if err != nil {
 		// Keep the historical fallback -- the raw bytes as the element value,
 		// with RawValue still intact -- but stop pretending the conversion
@@ -1124,6 +1144,14 @@ func assignElementBytes(elem *DataElement, value []byte, vr VR, cc codecContext,
 		return rc.reportInvalidCharacterData(elem.Tag, vr, valueStart, err)
 	}
 	elem.Value = converted
+	// A ConvertValue hook that switched VRs -- RetryValue is the one that
+	// ships -- records the VR the value converted under, pydicom's
+	// data["VR"] = candidate, so the element and its value agree. Without a
+	// hook raw.VR is never touched, and the check costs a comparison.
+	if raw.VR != vr {
+		elem.VR = raw.VR
+		vr = raw.VR
+	}
 	// The value decoded, which for the default repertoire proves nothing: every
 	// byte sequence "decodes" when the set is not used at all. Ask the other
 	// question, and only when the caller said they want it answered.

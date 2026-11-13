@@ -322,7 +322,7 @@ func TagFromKeyword(keyword string) (Tag, error) {
 // The read path resolves those through the dictionary it was given, which has
 // the creator in hand; see ReadOptions.Dictionary.
 func LookupVR(tag Tag) VR {
-	return vrResolver{}.vrFor(tag)
+	return vrResolver{}.vrFor(tag, EncodingInfo{}, 0)
 }
 
 // vrResolver answers the one question a header decoder asks the dictionary: what
@@ -339,10 +339,18 @@ func LookupVR(tag Tag) VR {
 type vrResolver struct {
 	dict    Dictionary
 	creator creatorFunc
+	// hooks is ReadOptions.Hooks, or nil. ResolveVR wraps only the fallback
+	// resolution below: decodeElementHeader consults the resolver when the
+	// encoding did not name a VR, and that is the question a ResolveVR hook
+	// exists to answer.
+	hooks *Hooks
 }
 
 // vrFor resolves tag's VR, mirroring pydicom datadict.dictionary_VR plus the UN
-// fallback filereader relies on.
+// fallback filereader relies on. enc and length feed the ResolveVR hook, which
+// sees the raw element as far as the header has got -- tag, no VR, the declared
+// length -- and decides before resolve is called; when there is no hook, or
+// the hook hands the question back, resolveVR answers.
 //
 // A tag with no entry is UN rather than an error. PS3.5 reads an element of
 // unknown VR as UN, and a file full of one vendor's private elements stays
@@ -352,7 +360,23 @@ type vrResolver struct {
 // An entry that names no VR counts as no entry. The generated tables contain no
 // such thing, but a caller's Dictionary may, and "" is not a VR that anything
 // downstream matches, while UN is.
-func (r vrResolver) vrFor(tag Tag) VR {
+func (r vrResolver) vrFor(tag Tag, enc EncodingInfo, length uint32) VR {
+	if r.hooks != nil && r.hooks.ResolveVR != nil {
+		return r.hooks.ResolveVR(RawDataElement{
+			Tag:            tag,
+			Length:         length,
+			IsImplicitVR:   enc.IsImplicitVR,
+			IsLittleEndian: enc.IsLittleEndian,
+			IsRaw:          true,
+		}, func() VR { return r.resolveVR(tag) })
+	}
+	return r.resolveVR(tag)
+}
+
+// resolveVR is the resolution a ResolveVR hook receives as resolve: the data
+// dictionary, the private dictionary the read was given, the private creator
+// scan, and the UN fallback, in that order.
+func (r vrResolver) resolveVR(tag Tag) VR {
 	// PS3.5 fixes the Private Creator element at LO whatever a dictionary says,
 	// and none of them list the (gggg,0010-00FF) block anyway, so asking would
 	// only ever answer UN.
