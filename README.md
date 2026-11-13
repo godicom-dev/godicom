@@ -549,6 +549,43 @@ arr, err := dicomjson.MarshalDatasets([]*godicom.Dataset{ds1, ds2})
 dss, err := dicomjson.ParseDatasets(arr)
 ```
 
+## Coded terminology (SR)
+
+`sr` holds PS3.16: the codes, and the contexts (CIDs) that group them. It is
+pydicom's `pydicom.sr`, which since 3.0 is the code dictionary and nothing else.
+
+```go
+import "github.com/godicom-dev/godicom/sr"
+
+lung, err := sr.Scheme("SCT")
+code, err := lung.Lookup("Lung")            // (SCT, "39607008", "Lung")
+
+context, err := sr.CID(2)                   // the contexts PS3.16 defines
+transverse, err := context.Lookup("Transverse")
+
+names := context.Dir("Thoracic")            // the context's words, filtered
+```
+
+A keyword is the camel case form of a code meaning, as in pydicom, so
+`codes.SCT.Lung` is `sr.Scheme("SCT").Lookup("Lung")`. `Code.Equal` compares the
+concept and not the text: the meaning does not take part, and a SNOMED code
+given under the retired `SRT` designator equals the same code under `SCT`. That
+is a method rather than `==` because Go's comparison cannot do it, which also
+means a `Code` is not a map key.
+
+```go
+codes := sr.Codes()                         // every collection, loaded once
+codes.Schemes()                             // ["DCM", "SCT", ...]
+codes.CIDs()                                // ["CID2", "CID4", ...]
+
+anatomic, err := sr.CID(244)
+if anatomic.ContainsCode(code) { ... }      // the concept, not the text
+```
+
+The terminology is 2.4 MB of text in `sr/codes.txt`, generated from pydicom's
+three dictionaries by `generate_sr_dict.py` and read on first use. It is all of
+PS3.16: 18 schemes, 18735 codes, 1355 contexts and 27033 memberships.
+
 ## CLI
 
 ```bash
