@@ -180,6 +180,12 @@ func TestSaveAsKeepsTheFileMode(t *testing.T) {
 // rename replaces the name, so writing through a symlink that way would leave a
 // regular file where the caller had a link -- and would silently stop updating
 // whatever the link pointed at.
+//
+// The target starts out holding an older dataset, so the write has something to
+// overwrite rather than a zero-length file, and os.SameFile says whether the
+// file the link pointed at before the write is still the file it points at
+// after. A rename would have swapped in a different file and this would be
+// false; writing through leaves the same file with new contents.
 func TestSaveAsFollowsASymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("creating a symlink needs a privilege the test runner may not have")
@@ -187,9 +193,70 @@ func TestSaveAsFollowsASymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real.dcm")
 	link := filepath.Join(dir, "link.dcm")
-	if err := os.WriteFile(real, nil, 0o644); err != nil {
+	if err := goodDataset(t, "Old^Name").SaveAs(real, nil); err != nil {
+		t.Fatalf("SaveAs(real) error = %v", err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	before, err := os.Stat(real)
+	if err != nil {
 		t.Fatal(err)
 	}
+
+	if err := goodDataset(t, "New^Name").SaveAs(link, nil); err != nil {
+		t.Fatalf("SaveAs(link) error = %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("the symlink was replaced by a regular file")
+	}
+	after, err := os.Stat(real)
+	if err != nil {
+		t.Fatalf("the link's target is gone: %v", err)
+	}
+	if !os.SameFile(before, after) {
+		t.Error("the write replaced the target instead of writing into it")
+	}
+	back, err := ReadFile(real, nil)
+	if err != nil {
+		t.Fatalf("the link's target does not read back as a DICOM file: %v", err)
+	}
+	if v, _ := back.GetString(MustTag("PatientName")); v != "New^Name" {
+		t.Errorf("PatientName = %q, want the value written through the link", v)
+	}
+	// The in-place path has no temporary file to leave behind, so the directory
+	// holds the target and the link and nothing else.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("directory holds %v, want only real.dcm and link.dcm", names)
+	}
+}
+
+// TestSaveAsCreatesTheTargetOfADanglingSymlink pins the case where the link
+// points at a name that does not exist yet. os.Create follows the link and
+// creates the target, which is what pydicom and dcm4che do with the same path;
+// nothing replaces the link with a file. It also means the writer follows a link
+// through a directory it was not told about, so a chain is only ever as
+// writable as its final target.
+func TestSaveAsCreatesTheTargetOfADanglingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symlink needs a privilege the test runner may not have")
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "not-yet.dcm")
+	link := filepath.Join(dir, "link.dcm")
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
@@ -203,11 +270,11 @@ func TestSaveAsFollowsASymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		t.Fatal("the symlink was replaced by a regular file")
+		t.Fatal("the dangling symlink was replaced by a regular file")
 	}
 	back, err := ReadFile(real, nil)
 	if err != nil {
-		t.Fatalf("the link's target does not read back as a DICOM file: %v", err)
+		t.Fatalf("the write did not create the link's target: %v", err)
 	}
 	if v, _ := back.GetString(MustTag("PatientName")); v != "Doe^John" {
 		t.Errorf("PatientName = %q, want Doe^John", v)
