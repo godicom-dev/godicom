@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-13
+
 ### Changed
 - `SaveAs`, `WriteFile` and `WriteFileContext` write to a temporary file beside
   the target and rename it onto the target only once the whole write succeeded.
@@ -992,7 +994,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: DICOM file read/write, tag dictionary, basic VR conversion
 - pydicom test file compatibility for core read paths
 
-[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/godicom-dev/godicom/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/godicom-dev/godicom/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/godicom-dev/godicom/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/godicom-dev/godicom/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/godicom-dev/godicom/compare/v0.32.0...v0.33.0
